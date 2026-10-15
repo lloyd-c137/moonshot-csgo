@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { advance, collectErrors, enterCampus, hold, loadSimulated, position } from './support';
+import { advance, collectErrors, enterAtSpawn, enterCampus, hold, loadSimulated, position, walk } from './support';
 
 const horizontal = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
@@ -19,7 +19,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(initial.position[1]).toBeLessThan(1.05);
     expect(initial.position[2]).toBeCloseTo(-2.86, 1);
 
-    await enterCampus(page);
+    await enterAtSpawn(page);
     await advance(page, 500);
     await expect(page.locator('#current-location')).toHaveText('东入口门厅 · ENTRANCE-EAST');
 
@@ -70,10 +70,10 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
 test('open entrances and the top seat row do not lead out of the level; a fall is recovered', async ({ page }) => {
     const errors = collectErrors(page);
     await loadSimulated(page);
-    await enterCampus(page);
+    await enterAtSpawn(page);
 
     // The east entrance has no source wall: the slab ends at x≈67.5. The authored barrier stops the capsule there.
-    await hold(page, ['d'], 15_000);
+    await walk(page, 1, 0, 15_000);
     const atEntrance = await position(page);
     expect(atEntrance[0]).toBeGreaterThan(65);
     expect(atEntrance[0]).toBeLessThan(67.5);
@@ -84,7 +84,7 @@ test('open entrances and the top seat row do not lead out of the level; a fall i
     await advance(page, 500);
     const onSeat = await position(page);
     expect(onSeat[1]).toBeGreaterThan(3.8);
-    await hold(page, ['a'], 4_000);
+    await walk(page, -1, 0, 4_000);
     expect((await position(page))[0]).toBeGreaterThan(-31.2);
 
     // Anything that still leaves the level is returned to the safe spawn automatically.

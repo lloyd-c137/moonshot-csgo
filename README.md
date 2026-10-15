@@ -22,7 +22,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>), wait for **校园与碰撞已准备**, then click **Enter Campus**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, Escape to pause/release the pointer, R to return to the safe spawn, and the pause menu to resume or recover. Leaving the level (falling below Y = −3 m) returns the player to the safe spawn automatically.
+Open the URL printed by Vite (normally <http://localhost:5173>), wait for **校园与碰撞已准备**, then click **Enter Campus**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, Escape to pause/release the pointer, R to return to the safe spawn, and the pause menu to resume or recover. Recovery restores the spawn heading as well as the position. Leaving the level (falling below Y = −3 m) returns the player to the safe spawn automatically.
 
 ## Checks and production preview
 
@@ -39,7 +39,7 @@ npm run audit:nav            # offline reachability audit; add -- --png nav.png 
 
 `npm run build` writes a static site to `dist/`; `npm run start` previews it locally. The two Playwright suites cover actual movement/jump/pause/recovery, boundary barriers and the S308/S309 route in development, and asset loading/entry/pause in the production preview. GitHub Actions runs them after unit, lint, typecheck and production-build checks.
 
-The development browser tests run the game on Playwright's virtual clock with drawing disabled (`tests/browser/support.ts`): game time only advances through `page.clock.runFor`, so movement assertions do not depend on the test machine's GPU. Headless CI renders with software WebGL at about 1 FPS, where the engine's 0.1 s frame-time clamp previously slowed the simulation roughly tenfold and made wall-clock waits fail. Rendering is still exercised by the production smoke test.
+The development browser tests run the game on Playwright's virtual clock with drawing disabled (`tests/browser/support.ts`): the clock is installed before navigation and paused once the campus is ready, so game time only advances through `page.clock.runFor` and movement assertions do not depend on the test machine's GPU. Tests reset to the spawn pose after entry, because the CI headless shell delivers a pointer-lock movement delta that turns the camera. Headless CI renders with software WebGL at about 1 FPS, where the engine's 0.1 s frame-time clamp previously slowed the simulation roughly tenfold and made wall-clock waits fail. Rendering is still exercised by the production smoke test.
 
 ## Runtime architecture
 

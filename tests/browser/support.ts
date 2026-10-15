@@ -37,16 +37,45 @@ export const collectErrors = (page: Page) => {
  * second). Rendering itself is covered by the production smoke test.
  */
 export const loadSimulated = async (page: Page) => {
+    // Install before navigation so every animation frame of the game loop is virtual. After install() the virtual
+    // clock still follows real time; pauseAt() stops it, after which game time only moves through advance().
+    await page.clock.install();
     await page.goto('/');
     await expect(page.locator('#load-status')).toHaveText('校园与碰撞已准备', { timeout: 90_000 });
-    await page.clock.install();
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
+    // Pause a little ahead of the page's virtual "now"; retry further ahead if real time overtook the target.
+    for (let ahead = 1_000; ; ahead *= 4) {
+        try {
+            await page.clock.pauseAt((await page.evaluate(() => Date.now())) + ahead);
+            break;
+        } catch (error) {
+            if (ahead > 60_000 || !String(error).includes('Cannot fast-forward to the past')) throw error;
+        }
+    }
 };
 
 export const enterCampus = async (page: Page) => {
     await page.getByRole('button', { name: /Enter Campus|Resume/ }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'playing');
+};
+
+/**
+ * Enters play and resets to the spawn pose. Clicking the entry button can itself emit pointer movement (observed in
+ * the Chromium headless shell used by CI: yaw 18.7° after entry), so tests must not assume the initial heading.
+ */
+export const enterAtSpawn = async (page: Page) => {
+    await enterCampus(page);
+    // Pointer-lock entry can deliver a late movement delta in real time; let it arrive and be consumed first.
+    for (let attempt = 0; attempt < 5; attempt++) {
+        await page.waitForTimeout(250);
+        await page.clock.runFor(100);
+        await page.evaluate(() => window.__MOONSHOT__!.recover());
+        await page.clock.runFor(200);
+        const yaw = (await page.evaluate(() => window.__MOONSHOT__!.cameraAngles()))[1];
+        if (Math.abs(yaw) < 0.01) return;
+    }
+    throw new Error('Could not reset the camera to the spawn heading');
 };
 
 /** Advances simulated game time. */

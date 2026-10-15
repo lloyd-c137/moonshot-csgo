@@ -46,10 +46,16 @@ export const createPlayer = (app: AppBase) => {
     return { player, camera };
 };
 
+/**
+ * Returns the player to the safe spawn, stopped and facing the spawn heading (north, yaw 0). The upstream controller
+ * keeps its look angles in `_angles` and has no public setter, so the reset writes that field directly.
+ */
 export const recoverPlayer = (player: Entity) => {
     player.rigidbody!.teleport(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z, 0, 0, 0);
     player.rigidbody!.linearVelocity = Vec3.ZERO;
     player.rigidbody!.angularVelocity = Vec3.ZERO;
+    const controller = player.script?.get(FirstPersonController) as unknown as { _angles?: Vec3 } | null;
+    controller?._angles?.set(0, 0, 0);
 };
 
 /** True when the capsule centre has dropped below the level and must be recovered. */

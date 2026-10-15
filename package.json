@@ -1,0 +1,32 @@
+{
+    "name": "moonshot-csgo",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Moonshot Open World browser FPS bootstrap",
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite",
+        "fmt": "prettier --check .",
+        "fmt:fix": "prettier --write .",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "start": "vite preview",
+        "test": "node --test",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "playcanvas": "2.23.2"
+    },
+    "devDependencies": {
+        "@playcanvas/eslint-config": "3.0.0-beta.8",
+        "@playcanvas/inspector": "0.2.0",
+        "eslint": "9.39.5",
+        "prettier": "3.9.10",
+        "typescript": "6.0.3",
+        "vite": "8.3.4"
+    },
+    "engines": {
+        "node": ">=22.23.2"
+    }
+}

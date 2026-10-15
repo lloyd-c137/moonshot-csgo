@@ -126,6 +126,32 @@ export const findRoomAt = (point: Point2, rooms: CampusRoom[]) =>
         .filter((room) => pointInRoom(point, room))
         .sort((a, b) => polygonArea(a.polygon!.outer) - polygonArea(b.polygon!.outer) || a.id.localeCompare(b.id))[0];
 
+/**
+ * GAMEPLAY_AUTHORED circular trigger for a label-only space (no source polygon), centred on its source label anchor.
+ */
+export type AnchorTrigger = { room: CampusRoom; center: Point2; radius: number };
+
+const anchorDistance = (point: Point2, anchor: AnchorTrigger) =>
+    Math.hypot(point[0] - anchor.center[0], point[1] - anchor.center[1]);
+
+/** Builds triggers for every label-only room; each must have a source anchor position. */
+export const createAnchorTriggers = (rooms: CampusRoom[], anchors: Map<string, Point2>, radius: number) =>
+    rooms
+        .filter((room) => !room.hasRegion)
+        .map((room): AnchorTrigger => {
+            const center = anchors.get(room.id);
+            if (!center) throw new Error(`Label-only space ${room.id} has no source label anchor`);
+            return { room, center, radius };
+        });
+
+/** Source polygons win; an anchor trigger only applies where no polygon contains the point. */
+export const findLocationAt = (point: Point2, rooms: CampusRoom[], anchors: AnchorTrigger[] = []) =>
+    findRoomAt(point, rooms) ??
+    anchors
+        .filter((anchor) => anchorDistance(point, anchor) <= anchor.radius)
+        .sort((a, b) => anchorDistance(point, a) - anchorDistance(point, b) || a.room.id.localeCompare(b.room.id))[0]
+        ?.room;
+
 const nearOuterBoundary = (point: Point2, room: CampusRoom, margin: number) => {
     const polygon = room.polygon;
     if (!polygon || (polygon.holes ?? []).some((hole) => ringRelation(point, hole, 1e-5) !== 'outside')) return false;
@@ -150,9 +176,17 @@ export class RoomTracker {
     private readonly onChange: (room: CampusRoom | undefined) => void;
     private readonly hysteresis: number;
     private readonly dwell: number;
+    private readonly anchors: AnchorTrigger[];
 
-    constructor(rooms: CampusRoom[], onChange: (room: CampusRoom | undefined) => void, hysteresis = 0.35, dwell = 0.2) {
+    constructor(
+        rooms: CampusRoom[],
+        onChange: (room: CampusRoom | undefined) => void,
+        hysteresis = 0.35,
+        dwell = 0.2,
+        anchors: AnchorTrigger[] = []
+    ) {
         this.rooms = rooms;
+        this.anchors = anchors;
         this.onChange = onChange;
         this.hysteresis = hysteresis;
         this.dwell = dwell;
@@ -163,12 +197,13 @@ export class RoomTracker {
         if (this.sampleTime < 0.15) return;
         const dt = this.sampleTime;
         this.sampleTime = 0;
-        let next = findRoomAt(point, this.rooms);
-        if (
-            this.current &&
-            (pointInRoom(point, this.current) || nearOuterBoundary(point, this.current, this.hysteresis))
-        ) {
-            next = this.current;
+        let next = findLocationAt(point, this.rooms, this.anchors);
+        const current = this.current;
+        if (current?.hasRegion) {
+            if (pointInRoom(point, current) || nearOuterBoundary(point, current, this.hysteresis)) next = current;
+        } else if (current && !next?.hasRegion) {
+            const anchor = this.anchors.find((candidate) => candidate.room === current);
+            if (anchor && anchorDistance(point, anchor) <= anchor.radius + this.hysteresis) next = current;
         }
         const key = next?.id ?? '';
         if (key === this.current?.id || (!this.current && !next)) {

@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { findRoomAt, parseCampusRooms, pointInRoom, RoomTracker } from '../src/world/roomIndex.ts';
+import {
+    createAnchorTriggers,
+    findLocationAt,
+    findRoomAt,
+    parseCampusRooms,
+    pointInRoom,
+    RoomTracker
+} from '../src/world/roomIndex.ts';
 
 const asset = JSON.parse(readFileSync(new URL('../public/assets/campus/rooms.json', import.meta.url)));
 
@@ -138,4 +145,47 @@ test('room tracking filters boundary jitter and reports exits to unknown', () =>
     tracker.update([3, 1], 0.2);
     assert.equal(tracker.current, undefined);
     assert.deepEqual(changes, ['R1', null]);
+});
+
+test('label-only spaces resolve through source anchors only where no polygon applies', () => {
+    const data = parseCampusRooms({
+        model: 'FF01-CAMPUS-3D-V1',
+        status: 'SOURCE_DERIVED_3D_UNVERIFIED',
+        frame: { units: 'm', axes: { x: 'east', y: 'up', z: 'south' } },
+        rooms: [
+            {
+                id: 'POLY',
+                name: 'Polygon Room',
+                kind: 'room',
+                hasRegion: true,
+                polygon: {
+                    outer: [
+                        [0, 0],
+                        [2, 0],
+                        [2, 2],
+                        [0, 2]
+                    ]
+                }
+            },
+            { id: 'LOBBY', name: 'Lobby', kind: 'public', hasRegion: false }
+        ]
+    }).rooms;
+    assert.throws(() => createAnchorTriggers(data, new Map(), 4), /LOBBY has no source label anchor/);
+    const anchors = createAnchorTriggers(data, new Map([['LOBBY', [1, 1]]]), 4);
+    assert.equal(findLocationAt([1, 1], data, anchors)?.id, 'POLY');
+    assert.equal(findLocationAt([4, 1], data, anchors)?.id, 'LOBBY');
+    assert.equal(findLocationAt([6, 1], data, anchors), undefined);
+
+    const changes = [];
+    const tracker = new RoomTracker(data, (room) => changes.push(room?.id ?? null), 0.35, 0.2, anchors);
+    tracker.update([4, 1], 0.2);
+    tracker.update([4, 1], 0.2);
+    assert.equal(tracker.current?.id, 'LOBBY');
+    tracker.update([5.2, 1], 0.2);
+    tracker.update([5.2, 1], 0.2);
+    assert.equal(tracker.current?.id, 'LOBBY', 'hysteresis keeps the anchor just outside its radius');
+    tracker.update([1, 1], 0.2);
+    tracker.update([1, 1], 0.2);
+    assert.equal(tracker.current?.id, 'POLY');
+    assert.deepEqual(changes, ['LOBBY', 'POLY']);
 });

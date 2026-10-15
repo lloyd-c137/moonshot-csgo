@@ -2,7 +2,7 @@
 
 **Document version:** 1.0 · **2026-10-15**  
 **Project:** [lloyd-c137/moonshot-csgo](https://github.com/lloyd-c137/moonshot-csgo)  
-**Project state:** DESIGN APPROVED / IMPLEMENTATION NOT STARTED. This document is a development contract, not a completion report.  
+**Project state:** DESIGN APPROVED / M0.1–M0.4 IN PROGRESS (see README "Verification state"). This document is a development contract, not a completion report.  
 **Audience:** Coding agents, gameplay developers, environment artists, reviewers.
 
 ## 1. Product brief

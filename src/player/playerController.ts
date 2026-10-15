@@ -2,15 +2,17 @@ import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
 import { Color, Entity, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
-export const SAFE_SPAWN = { x: 50.85, y: 0.92, z: -2.86 };
+import { FALL_RECOVERY_Y, PLAYER, SAFE_SPAWN } from '../config/gameplay';
+
+export { SAFE_SPAWN };
 
 export const createPlayer = (app: AppBase) => {
     const player = new Entity('player');
     player.setPosition(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z);
-    player.addComponent('collision', { type: 'capsule', radius: 0.34, height: 1.8 });
+    player.addComponent('collision', { type: 'capsule', radius: PLAYER.radius, height: PLAYER.height });
     player.addComponent('rigidbody', {
         type: 'dynamic',
-        mass: 80,
+        mass: PLAYER.mass,
         linearDamping: 0,
         angularDamping: 0,
         linearFactor: Vec3.ONE,
@@ -18,7 +20,7 @@ export const createPlayer = (app: AppBase) => {
         friction: 0.2,
         restitution: 0
     });
-    (player.rigidbody!.system as RigidBodyComponentSystem).gravity.set(0, -18, 0);
+    (player.rigidbody!.system as RigidBodyComponentSystem).gravity.set(0, PLAYER.gravity, 0);
     player.addComponent('script');
 
     const camera = new Entity('player-camera');
@@ -28,7 +30,7 @@ export const createPlayer = (app: AppBase) => {
         nearClip: 0.08,
         farClip: 180
     });
-    camera.setLocalPosition(0, 0.66, 0);
+    camera.setLocalPosition(0, PLAYER.eyeOffset, 0);
     player.addChild(camera);
     player.script!.create(FirstPersonController, {
         properties: {
@@ -49,3 +51,6 @@ export const recoverPlayer = (player: Entity) => {
     player.rigidbody!.linearVelocity = Vec3.ZERO;
     player.rigidbody!.angularVelocity = Vec3.ZERO;
 };
+
+/** True when the capsule centre has dropped below the level and must be recovered. */
+export const isOutOfWorld = (y: number) => !Number.isFinite(y) || y < FALL_RECOVERY_Y;

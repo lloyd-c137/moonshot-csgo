@@ -2,7 +2,7 @@
 
 > Binding engineering instructions for coding agents working in this repository. Read this file **before** modifying the project. Read [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the authoritative roadmap.
 >
-> State as of 2026-10-15: **planning / repository bootstrap only**. No game implementation, assets, tests, or performance results may be claimed as complete merely because they are described here.
+> State as of 2026-10-15: **M0.1–M0.4 in progress** (scene, collision, controls, room HUD and browser tests exist; see README "Verification state"). No milestone, asset, test or performance result may be claimed as complete merely because it is described here.
 
 ## 1. Mission and operating mode
 

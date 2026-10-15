@@ -22,6 +22,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
 
     await page.getByRole('button', { name: 'Enter Campus' }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
+    await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'playing');
     await page.keyboard.press('Escape');
     await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'paused');
     expect(runtimeErrors).toEqual([]);

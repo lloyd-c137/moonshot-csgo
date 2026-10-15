@@ -2,7 +2,7 @@
 
 Browser-first first-person exploration game based on the Moonshot Academy FF-01 architectural model.
 
-> **In development: M0.1–M0.3.** The actual FF-01 GLB, a static collision layer, the official PlayCanvas first-person controller, entry/pause/recovery controls, and room recognition are implemented. Automated browser checks cover control input; corridor/classroom/arena route and doorway traversal acceptance remain in progress. This is not yet declared PLAYABLE.
+> **In development: M0.1–M0.4.** The actual FF-01 GLB, a static collision layer, the official PlayCanvas first-person controller, entry/pause/recovery controls, room recognition, and a browser-tested route from the east entry through S308 to S309 are implemented. Classroom/arena traversal and three-doorway acceptance remain in progress. This is not yet declared PLAYABLE.
 
 ## Requirements
 
@@ -56,8 +56,9 @@ Scaffolded in a temporary directory with the official `create-playcanvas@0.10.1`
 
 - PASS: exact source GLB hash, node set, coordinate frame, root scale and computed world bounds validated; actual GLB loads in development and production browser.
 - PASS: 13 structural static collision bodies initialize; east-entrance candidate passes floor support and capsule headroom ray probes.
-- PASS: browser test verifies Enter/pointer lock, WASD displacement, mouse look, jump/landing, Escape pause, Resume and R recovery.
+- PASS: browser test verifies Enter/pointer lock, WASD displacement, a camera turn from a standard PointerEvent movement delta, jump/landing, Escape pause, Resume and R recovery. Manual hardware-mouse playtesting is NOT RUN.
+- PASS: browser route test walks from the entry corridor through S308 and S309; it checks wall blocking and both room HUD transitions.
 - PASS: pure geometry tests cover all 165 records, all 159 polygons and six label-only rooms, holes, concavity, overlaps and boundary hysteresis.
-- NOT RUN: end-to-end traversal through three doorways, classroom entry, corridor route to Lotus Arena, manual playtest, representative desktop performance benchmark.
+- NOT RUN: glass blocking, three distinct doorway passages, classroom entry, corridor route to Lotus Arena, manual playtest, representative desktop performance benchmark.
 
 The source geometries remain unverified derivations from drawings; no source mesh or room polygon was modified. The detailed checklist is in [docs/COLLISION_AUDIT.md](docs/COLLISION_AUDIT.md) and [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).

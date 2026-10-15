@@ -27,6 +27,8 @@ Candidate: `[50.85, 0.92, -2.86]` metres, near the source's label-only east entr
 | Spawn headroom samples | No solid obstruction | Clear at five points across capsule footprint | PASS |
 | WASD displacement | Player moves while locked | Browser test observed >0.8 m displacement | PASS |
 | Jump and land | Rise and return to supported floor | Browser test verified rise and grounded-height recovery | PASS |
+| Pointer look event | Camera changes rotation while pointer locked | Browser test dispatches a standard mouse `PointerEvent` with movement delta and observes yaw change | PASS (event path) |
+| Hardware mouse look | Camera follows physical mouse movement | Not manually playtested | NOT RUN |
 | Solid wall stop | Capsule cannot pass through | East-entry corridor walk stopped at X≈21.4 m against source wall | PASS |
 | S308 doorway | Opening traversable by capsule | From the observed corridor stop, walked north and west into S308; room HUD changed | PASS |
 | S308 to S309 route | Connected corridor/room traversal | Walked east, north, west and southwest around the source geometry; room HUD changed to S309 | PASS |

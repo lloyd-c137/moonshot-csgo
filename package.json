@@ -7,6 +7,7 @@
     "scripts": {
         "audit:nav": "node tools/navAuditCli.ts",
         "build": "vite build",
+        "derive:world": "node tools/deriveWorldCli.ts",
         "dev": "vite",
         "fmt": "prettier --check .",
         "fmt:fix": "prettier --write .",

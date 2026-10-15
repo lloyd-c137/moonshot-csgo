@@ -3,9 +3,10 @@ import {
     AppOptions,
     CameraComponentSystem,
     CollisionComponentSystem,
-    Color,
     ContainerHandler,
-    Entity,
+    ADDRESS_CLAMP_TO_EDGE,
+    FILTER_LINEAR,
+    TextureHandler,
     FILLMODE_FILL_WINDOW,
     LightComponentSystem,
     RenderComponentSystem,
@@ -16,12 +17,18 @@ import {
     WasmModule,
     createGraphicsDevice
 } from 'playcanvas';
+import type { Entity, Texture } from 'playcanvas';
 
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
+import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { addCampusCollisions } from './physics/collisionWorld';
-import { createPlayer, isOutOfWorld, recoverPlayer, SAFE_SPAWN } from './player/playerController';
+import { createPlayer, isOutOfWorld, recoverPlayer, SAFE_SPAWN, setLook } from './player/playerController';
+import { createLightPool, setupAtmosphere } from './render/atmosphere';
 import { createGameHud } from './ui/gameHud';
+import { createMinimap } from './ui/minimap';
 import { loadCampus } from './world/campusLoader';
+import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressing';
+import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
 import './starter.css';
@@ -34,8 +41,14 @@ type DebugWindow = Window & {
         recover: () => void;
         collisionCount: number;
         barrierWalls: number;
+        dressing: { doors: number; furniture: number; lights: number };
         teleport: (x: number, y: number, z: number) => void;
         recoveries: () => number;
+        setLook: (pitch: number, yaw: number) => void;
+        setEnabled: (name: string, enabled: boolean) => boolean;
+        cameraFrame: (enabled: boolean) => void;
+        cameraFrameSet: (group: string, key: string, value: unknown) => void;
+        raycast: (from: number[], to: number[]) => string | null;
         spawn: number[];
         roomId: () => string | null;
         setRendering: (enabled: boolean) => void;
@@ -85,6 +98,22 @@ const inspectSpawn = (app: AppBase) => {
     };
 };
 
+const loadTexture = (app: AppBase, url: string) =>
+    new Promise<Texture>((resolve, reject) => {
+        app.assets.loadFromUrl(url, 'texture', (error, asset) => {
+            const texture = asset?.resource as Texture | undefined;
+            if (error || !texture) {
+                reject(new Error(`Derived texture failed to load: ${url} ${error ?? ''}`));
+                return;
+            }
+            texture.mipmaps = false;
+            texture.minFilter = FILTER_LINEAR;
+            texture.addressU = ADDRESS_CLAMP_TO_EDGE;
+            texture.addressV = ADDRESS_CLAMP_TO_EDGE;
+            resolve(texture);
+        });
+    });
+
 const boot = async () => {
     ui.setStatus('正在初始化物理运行时…');
     await waitForAmmo();
@@ -101,34 +130,35 @@ const boot = async () => {
         CollisionComponentSystem,
         RigidBodyComponentSystem
     ];
-    options.resourceHandlers = [ContainerHandler];
+    options.resourceHandlers = [ContainerHandler, TextureHandler];
 
     const app = new AppBase(canvas);
     app.init(options);
     app.setCanvasFillMode(FILLMODE_FILL_WINDOW);
     app.setCanvasResolution(RESOLUTION_AUTO);
-    app.scene.ambientLight = new Color(0.48, 0.52, 0.58);
-    const keyLight = new Entity('campus-key-light');
-    keyLight.addComponent('light', { type: 'directional', intensity: 1.5 });
-    keyLight.setEulerAngles(48, 35, 0);
-    app.root.addChild(keyLight);
-    const fillLight = new Entity('campus-fill-light');
-    fillLight.addComponent('light', { type: 'directional', intensity: 0.65 });
-    fillLight.setEulerAngles(-25, -145, 0);
-    app.root.addChild(fillLight);
     // AppBase installs the Ammo physics world during start; static bodies must be added afterward.
     app.start();
 
     ui.setStatus('正在加载 FF-01 校园场景…');
-    const [campus, roomResponse] = await Promise.all([
+    const [campus, roomResponse, worldResponse, ceilingMask] = await Promise.all([
         loadCampus(app, ui.setProgress),
-        fetch('/assets/campus/rooms.json')
+        fetch('/assets/campus/rooms.json'),
+        fetch(DERIVED_WORLD_URL),
+        loadTexture(app, CEILING_MASK_URL)
     ]);
     if (!roomResponse.ok) throw new Error(`Room data failed to load: HTTP ${roomResponse.status}`);
+    if (!worldResponse.ok) throw new Error(`Derived world data failed to load: HTTP ${worldResponse.status}`);
     const rooms = parseCampusRooms(await roomResponse.json());
+    const derivedWorld = parseDerivedWorld(await worldResponse.json());
+    applyWallHeightAdapter(campus.root);
     app.root.addChild(campus.root);
     const collisions = addCampusCollisions(app, campus.root);
+    ui.setStatus('正在布置门、家具与灯光…');
+    const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask);
     const { player, camera } = createPlayer(app);
+    setupAtmosphere(app, camera);
+    const lightPool = createLightPool(app, derivedWorld.lights);
+    const minimap = createMinimap();
     const rigidbodySystem = app.systems.rigidbody as RigidBodyComponentSystem;
     const anchorPositions = new Map<string, Point2>();
     for (const room of rooms.rooms) {
@@ -141,7 +171,8 @@ const boot = async () => {
         (room) => ui.setLocation(room ? `${room.name} · ${room.id}` : 'FF-01 · 区域未知'),
         0.35,
         0.2,
-        anchors
+        anchors,
+        [arenaLocation(derivedWorld)]
     );
     ui.setLocation('FF-01 · 区域未知');
     let recoveries = 0;
@@ -154,6 +185,9 @@ const boot = async () => {
             return;
         }
         roomTracker.update([position.x, position.z], deltaTime);
+        lightPool.update(deltaTime, position);
+        const forward = camera.forward;
+        minimap.update(deltaTime, position.x, position.z, forward.x, forward.z);
     });
 
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -180,10 +214,12 @@ const boot = async () => {
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
             ui.playing();
+            minimap.setActive(true);
         } else if (hasEntered) {
             clearVelocity();
             rigidbodySystem.timeScale = 0;
             ui.paused();
+            minimap.setActive(false);
         }
     });
     document.addEventListener('pointerlockerror', () => ui.showError('浏览器拒绝了鼠标锁定'));
@@ -222,11 +258,32 @@ const boot = async () => {
             recover,
             collisionCount: collisions.sourceBodies,
             barrierWalls: collisions.barrierWalls,
+            dressing,
             teleport: (x: number, y: number, z: number) => {
                 player.rigidbody!.teleport(x, y, z, 0, 0, 0);
                 clearVelocity();
             },
             recoveries: () => recoveries,
+            setLook: (pitch: number, yaw: number) => setLook(player, pitch, yaw),
+            setEnabled: (name: string, enabled: boolean) => {
+                const entity = app.root.findByName(name) as Entity | null;
+                if (entity) entity.enabled = enabled;
+                return !!entity;
+            },
+            raycast: (from: number[], to: number[]) =>
+                rigidbodySystem.raycastFirst(new Vec3(from[0], from[1], from[2]), new Vec3(to[0], to[1], to[2]))?.entity
+                    .name ?? null,
+            cameraFrameSet: (group: string, key: string, value: unknown) => {
+                const frame = camera.script?.get('cameraFrame') as unknown as Record<
+                    string,
+                    Record<string, unknown>
+                > | null;
+                if (frame?.[group]) frame[group][key] = value;
+            },
+            cameraFrame: (enabled: boolean) => {
+                const frame = camera.script?.get('cameraFrame');
+                if (frame) frame.enabled = enabled;
+            },
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
             // Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed.

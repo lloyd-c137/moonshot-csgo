@@ -144,9 +144,18 @@ export const createAnchorTriggers = (rooms: CampusRoom[], anchors: Map<string, P
             return { room, center, radius };
         });
 
-/** Source polygons win; an anchor trigger only applies where no polygon contains the point. */
-export const findLocationAt = (point: Point2, rooms: CampusRoom[], anchors: AnchorTrigger[] = []) =>
+/**
+ * Source polygons win; GAMEPLAY_AUTHORED regions (e.g. the derived arena) come next; an anchor trigger only applies
+ * where no polygon contains the point.
+ */
+export const findLocationAt = (
+    point: Point2,
+    rooms: CampusRoom[],
+    anchors: AnchorTrigger[] = [],
+    authoredRegions: CampusRoom[] = []
+) =>
     findRoomAt(point, rooms) ??
+    findRoomAt(point, authoredRegions) ??
     anchors
         .filter((anchor) => anchorDistance(point, anchor) <= anchor.radius)
         .sort((a, b) => anchorDistance(point, a) - anchorDistance(point, b) || a.room.id.localeCompare(b.room.id))[0]
@@ -177,16 +186,19 @@ export class RoomTracker {
     private readonly hysteresis: number;
     private readonly dwell: number;
     private readonly anchors: AnchorTrigger[];
+    private readonly authoredRegions: CampusRoom[];
 
     constructor(
         rooms: CampusRoom[],
         onChange: (room: CampusRoom | undefined) => void,
         hysteresis = 0.35,
         dwell = 0.2,
-        anchors: AnchorTrigger[] = []
+        anchors: AnchorTrigger[] = [],
+        authoredRegions: CampusRoom[] = []
     ) {
         this.rooms = rooms;
         this.anchors = anchors;
+        this.authoredRegions = authoredRegions;
         this.onChange = onChange;
         this.hysteresis = hysteresis;
         this.dwell = dwell;
@@ -197,7 +209,7 @@ export class RoomTracker {
         if (this.sampleTime < 0.15) return;
         const dt = this.sampleTime;
         this.sampleTime = 0;
-        let next = findLocationAt(point, this.rooms, this.anchors);
+        let next = findLocationAt(point, this.rooms, this.anchors, this.authoredRegions);
         const current = this.current;
         if (current?.hasRegion) {
             if (pointInRoom(point, current) || nearOuterBoundary(point, current, this.hysteresis)) next = current;

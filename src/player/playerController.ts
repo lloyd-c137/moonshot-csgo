@@ -54,8 +54,13 @@ export const recoverPlayer = (player: Entity) => {
     player.rigidbody!.teleport(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z, 0, 0, 0);
     player.rigidbody!.linearVelocity = Vec3.ZERO;
     player.rigidbody!.angularVelocity = Vec3.ZERO;
+    setLook(player, 0, 0);
+};
+
+/** Sets the controller's pitch/yaw in degrees (writes the upstream controller's private `_angles`). */
+export const setLook = (player: Entity, pitch: number, yaw: number) => {
     const controller = player.script?.get(FirstPersonController) as unknown as { _angles?: Vec3 } | null;
-    controller?._angles?.set(0, 0, 0);
+    controller?._angles?.set(pitch, yaw, 0);
 };
 
 /** True when the capsule centre has dropped below the level and must be recovered. */

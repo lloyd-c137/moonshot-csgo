@@ -27,6 +27,12 @@ One additional static, unrendered triangle-mesh body (`GameplayAuthored_Barriers
 
 Barriers are a game boundary decision, not modelled doors or glass. Entrances read as invisible walls until authored doors or exterior ground exist.
 
+## Presentation adapter and authored colliders
+
+- The source `Walls`, `Walls_Top` and `Glazing` entities are scaled vertically by 3.6 / 2.8 before colliders are built (`src/world/presentation.ts`). Ammo logs that its build lacks `btScaledBvhTriangleMeshShape`; browser raycasts nevertheless hit `Walls` at 3.3 m and not at 3.75 m, so the scale is applied at collider creation. Rescaling at runtime is not supported and is not done.
+- `GameplayAuthored_ArenaWallCollider`: the 10 m arena perimeter wall along the derived arena outline (from 3.55 m), static mesh. Raycast at 8 m hits it.
+- `GameplayAuthored_FurnitureColliders`: tables and counters (≥0.7 m) from the derived furniture, static mesh. Seats, door leaves, lintels and partitions are visual only. With furniture rasterised into the static audit, reachable floor drops from 10,464 m² to 10,383 m² and the reachable room set is unchanged (145/159).
+
 ## Player capsule
 
 The capsule radius is 0.28 m (height 1.8 m), down from 0.34 m. The static audit showed 14 source door gaps between 0.56 m and 0.68 m wide, including S308 and S309: a 0.68 m capsule could only pass them by penetrating the wall mesh. These widths come from the unverified 2D-derived walls, not from measured doors.

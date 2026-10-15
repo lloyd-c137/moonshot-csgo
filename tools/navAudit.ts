@@ -1,9 +1,10 @@
 // Offline 2D navigation audit of the FF-01 collision layer. It rasterises blocking geometry at body height onto an
 // X/Z grid, inflates it by the player capsule radius and flood-fills from the spawn. This is a conservative static
 // approximation of the Ammo capsule, not a physics simulation; browser tests remain the runtime evidence.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { BARRIER_TOP_Y, PLAYER, SAFE_SPAWN } from '../src/config/gameplay.ts';
+import { JUMP_APEX, scaleWallVertex } from '../src/config/presentation.ts';
 import type { BarrierWall, Triangle } from '../src/physics/boundaryBarriers.ts';
 import { campusBarrierWalls, horizontalTrianglesAt } from '../src/physics/boundaryBarriers.ts';
 import { parseCampusRooms, pointInRoom } from '../src/world/roomIndex.ts';
@@ -12,9 +13,34 @@ import { GlbScene } from './glb.ts';
 
 const GLB = new URL('../public/assets/campus/MAC_Campus_FF01.glb', import.meta.url);
 const ROOMS = new URL('../public/assets/campus/rooms.json', import.meta.url);
+const DERIVED_WORLD = new URL('../public/assets/campus/derived/world.json', import.meta.url);
+
+type FurnitureBox = { center: [number, number]; size: [number, number]; yaw: number; height: number; collide: boolean };
+
+/** Colliding furniture from the derived world data, as two triangles each (footprint only). */
+const furnitureFootprints = (): Triangle[] => {
+    if (!existsSync(DERIVED_WORLD)) return [];
+    const world = JSON.parse(readFileSync(DERIVED_WORLD, 'utf8')) as { furniture: FurnitureBox[] };
+    return world.furniture
+        .filter((item) => item.collide)
+        .flatMap(({ center: [x, z], size: [w, d], yaw, height }) => {
+            const c = Math.cos(yaw);
+            const s = Math.sin(yaw);
+            const p = [
+                [-w / 2, -d / 2],
+                [w / 2, -d / 2],
+                [w / 2, d / 2],
+                [-w / 2, d / 2]
+            ].map(([u, v]): [number, number, number] => [x + u * c - v * s, height / 2, z + u * s + v * c]);
+            return [
+                [p[0], p[1], p[2]],
+                [p[0], p[2], p[3]]
+            ] as Triangle[];
+        });
+};
 const SEAT_NODES = Array.from({ length: 8 }, (_, index) => `Arena_Seats_Row${String(index).padStart(2, '0')}`);
 
-export const CELL = { WALL: 1, GLASS: 2, STAND: 3, BARRIER: 4 } as const;
+export const CELL = { WALL: 1, GLASS: 2, STAND: 3, BARRIER: 4, FURNITURE: 5 } as const;
 
 export class Grid {
     readonly resolution: number;
@@ -124,19 +150,22 @@ export const loadCampusGeometry = () => {
     const scene = new GlbScene(GLB);
     const rooms = parseCampusRooms(JSON.parse(readFileSync(ROOMS, 'utf8')));
     const floor = scene.triangles('Floor_Slab');
-    const barrierWalls = campusBarrierWalls(
-        { floor, wallTops: scene.triangles('Walls_Top'), glazing: scene.triangles('Glazing') },
-        BARRIER_TOP_Y
-    );
+    // Same presentation adapter as the runtime: walls, wall tops and glazing are scaled vertically.
+    const scaled = (name: string) => scene.triangles(name).map((triangle) => triangle.map(scaleWallVertex) as Triangle);
+    const walls = scaled('Walls');
+    const wallTops = scaled('Walls_Top');
+    const glazing = scaled('Glazing');
+    const barrierWalls = campusBarrierWalls({ floor, wallTops, glazing }, BARRIER_TOP_Y);
     return {
         scene,
         rooms: rooms.rooms,
         floor: [...horizontalTrianglesAt(floor, 0), ...horizontalTrianglesAt(scene.triangles('Arena_Court'), 0)],
-        walls: scene.triangles('Walls'),
-        glazing: scene.triangles('Glazing'),
+        walls,
+        glazing,
         stands: [scene.triangles('Arena_StandBase'), ...SEAT_NODES.map((name) => scene.triangles(name))].flat(),
         topSeats: scene.triangles('Arena_Seats_Row07'),
-        wallTops: scene.triangles('Walls_Top'),
+        furniture: furnitureFootprints(),
+        wallTops,
         barrierWalls
     };
 };
@@ -168,6 +197,7 @@ export const auditFloor = (
         if (overlaps(triangle, 0.25, 1.85)) grid.triangle(solid, triangle, CELL.GLASS);
     for (const triangle of geometry.stands)
         if (overlaps(triangle, 0.25, 1.85)) grid.triangle(solid, triangle, CELL.STAND);
+    for (const triangle of geometry.furniture) grid.triangle(solid, triangle, CELL.FURNITURE);
     if (barriers) {
         for (const wall of geometry.barrierWalls as BarrierWall[]) {
             if (wall.bottom < 1.85) grid.segment(solid, wall.edge[0], wall.edge[1], CELL.BARRIER);
@@ -225,10 +255,12 @@ export const auditTopSeats = (geometry: Geometry, { radius = PLAYER.radius, barr
     const solid = new Uint8Array(size);
     const tops = new Uint8Array(size);
     for (const triangle of geometry.wallTops) grid.triangle(tops, triangle, 1);
-    for (const triangle of horizontalTrianglesAt(geometry.glazing, 2.576, 0.01)) grid.triangle(tops, triangle, 1);
+    const glazingTop = Math.max(...geometry.glazing.flat().map((vertex) => vertex[1]));
+    for (const triangle of horizontalTrianglesAt(geometry.glazing, glazingTop, 0.01)) grid.triangle(tops, triangle, 1);
     const topY = Math.max(...geometry.topSeats.flat().map((vertex) => vertex[1]));
-    const low = topY + 0.05;
-    const high = topY + PLAYER.height;
+    // Feet at the jump apex from the top seat row, head a capsule height above.
+    const low = topY + JUMP_APEX;
+    const high = low + PLAYER.height;
     for (const triangle of geometry.walls) if (overlaps(triangle, low, high)) grid.triangle(solid, triangle, CELL.WALL);
     for (const triangle of geometry.glazing)
         if (overlaps(triangle, low, high)) grid.triangle(solid, triangle, CELL.GLASS);

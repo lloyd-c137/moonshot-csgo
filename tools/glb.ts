@@ -123,6 +123,28 @@ export class GlbScene {
         return [world[12], world[13], world[14]];
     }
 
+    /** World-space X/Z line segments of a named node's line-list primitives (mode 1). */
+    segments(name: string): [[number, number], [number, number]][] {
+        const { node, world } = this.node(name);
+        if (node.mesh === undefined) throw new Error(`GLB node has no mesh: ${name}`);
+        const segments: [[number, number], [number, number]][] = [];
+        for (const primitive of this.gltf.meshes[node.mesh].primitives) {
+            if (primitive.mode !== 1) continue;
+            const points = this.read(primitive.attributes.POSITION).map(([x, y, z]): [number, number] => [
+                world[0] * x + world[4] * y + world[8] * z + world[12],
+                world[2] * x + world[6] * y + world[10] * z + world[14]
+            ]);
+            const indices =
+                primitive.indices === undefined
+                    ? points.map((_, index) => index)
+                    : this.read(primitive.indices).map(([index]) => index);
+            for (let index = 0; index + 1 < indices.length; index += 2) {
+                segments.push([points[indices[index]], points[indices[index + 1]]]);
+            }
+        }
+        return segments;
+    }
+
     /** World-space triangles of a named node's mesh (triangle-list primitives only). */
     triangles(name: string): Triangle[] {
         const { node, world } = this.node(name);

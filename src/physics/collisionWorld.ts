@@ -24,7 +24,7 @@ const renderEntity = (campus: Entity, name: string) => {
 };
 
 /** World-space triangles of a source render entity, read from its GPU mesh without modifying it. */
-const worldTriangles = (entity: Entity): Triangle[] => {
+export const worldTriangles = (entity: Entity): Triangle[] => {
     const triangles: Triangle[] = [];
     const local = new Vec3();
     const world = new Vec3();

@@ -14,6 +14,9 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     }));
     expect(initial.colliders).toBe(13);
     expect(initial.barriers).toBeGreaterThan(1000);
+    const dressing = await page.evaluate(() => window.__MOONSHOT__!.dressing);
+    expect(dressing.doors).toBeGreaterThan(100);
+    expect(dressing.lights).toBeGreaterThan(500);
     expect(initial.position[0]).toBeCloseTo(50.85, 1);
     expect(initial.position[1]).toBeGreaterThan(0.75);
     expect(initial.position[1]).toBeLessThan(1.05);
@@ -86,6 +89,18 @@ test('open entrances and the top seat row do not lead out of the level; a fall i
     expect(onSeat[1]).toBeGreaterThan(3.8);
     await walk(page, -1, 0, 4_000);
     expect((await position(page))[0]).toBeGreaterThan(-31.2);
+
+    // The presented 3.6 m walls collide above the 2.8 m source height, and the arena perimeter wall stands to 10 m.
+    const hits = await page.evaluate(() => ({
+        wallLow: window.__MOONSHOT__!.raycast([22.5, 1.5, -3], [19.5, 1.5, -3]),
+        wallHigh: window.__MOONSHOT__!.raycast([22.5, 3.3, -3], [19.5, 3.3, -3]),
+        aboveWall: window.__MOONSHOT__!.raycast([22.5, 3.75, -3], [19.5, 3.75, -3]),
+        arenaWall: window.__MOONSHOT__!.raycast([-8, 8, -3], [-45, 8, -3])
+    }));
+    expect(hits.wallLow).toBe('Walls');
+    expect(hits.wallHigh).toBe('Walls');
+    expect(hits.aboveWall).not.toBe('Walls');
+    expect(hits.arenaWall).toBe('GameplayAuthored_ArenaWallCollider');
 
     // Anything that still leaves the level is returned to the safe spawn automatically.
     await page.evaluate(() => window.__MOONSHOT__!.teleport(80, 1, 0));

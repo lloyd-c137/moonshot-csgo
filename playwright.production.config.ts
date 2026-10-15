@@ -4,6 +4,8 @@ export default defineConfig({
     testDir: './tests/browser',
     testMatch: 'production-smoke.spec.ts',
     timeout: 120_000,
+    // Rendering is on here: CI's software WebGL takes seconds per frame with the full scene and post-processing.
+    expect: { timeout: 30_000 },
     use: {
         baseURL: 'http://127.0.0.1:4174',
         browserName: 'chromium',

@@ -1,0 +1,16 @@
+{
+  "model": "FF01-CAMPUS-3D-V1",
+  "integrity": "SOURCE_DERIVED_3D_UNVERIFIED",
+  "units": "metre",
+  "axes": { "x": "east", "y": "up", "z": "south" },
+  "glb": "MAC_Campus_FF01.glb",
+  "glbSha256": "2580173bb23c56961c033f4eafeb01dfd4eec047d5ebd2bee8fc9bf16c9a57a4",
+  "worldBoundsMetres": { "min": [-67.53, -0.3, -60.95], "max": [69.77, 3.11, 58.67] },
+  "sourceRoomsSha256": "d71f6bbb1107c37cac326226e549bf8f0d9de0c3eaec016b5ca8b0d54cfd4dfb",
+  "curatedRoomsSha256": "668f57c9ca4877daace2966ee7745b2f83a126629b3a71d51d9cb2087553ae85",
+  "roomRecords": 165,
+  "roomRegions": 159,
+  "labelOnly": 6,
+  "publication": "private-repository-runtime-asset",
+  "source": "MAC_Campus_FF01_3D_Export.zip supplied by the user; source archive is not included"
+}

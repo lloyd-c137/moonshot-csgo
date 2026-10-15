@@ -2,7 +2,7 @@
 
 Browser-first first-person exploration game based on the Moonshot Academy FF-01 architectural model.
 
-> **M0.0 bootstrap only.** This checkout currently contains the unmodified official PlayCanvas First-Person Controller demo. Its obstacle course is starter content, not a substitute for the FF01 source model. The supplied campus ZIP and game assets are intentionally not included; M0.1 requires asset review before import.
+> **In development: M0.1 scene ingestion.** The real FF-01 source GLB is now loaded at its original 1:1 scale. First-person play, collision, room HUD and route acceptance remain in progress; the start screen is not yet a playable entry flow.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>). Click the scene to lock the pointer; use **WASD** to move, the mouse to look, and **Space** to jump. Press Escape to release the pointer.
+Open the URL printed by Vite (normally <http://localhost:5173>). M0.1 currently presents the actual model in a scene overview; player controls are being implemented in M0.2.
 
 ## Checks and production preview
 
@@ -32,10 +32,12 @@ npm run start
 
 ## M0.0 architecture
 
-- `src/main.ts` initializes Ammo, registers PlayCanvas render/camera/light/script/collision/rigidbody systems, and builds the unchanged starter obstacle course.
-- `src/controller.ts` adapts the Engine's built-in First-Person Controller script; movement and physics behavior are upstream code.
+- `src/main.ts` initializes Ammo and renders the FF-01 scene using the PlayCanvas Engine.
+- `src/world/campusLoader.ts` loads the source GLB as a PlayCanvas container, preserves its hierarchy and root scale, and hides room color patches, linework and label anchors.
+- `src/ui/loadingScreen.ts` exposes loading progress, a non-playable M0.1 entry panel and actionable load errors.
 - `vite.config.ts` injects the PlayCanvas Inspector only for development. It is excluded from production builds.
-- `public/ammo/` holds the static physics runtime; no FF01 model, room data, backend, or campus sensor endpoint is loaded in this milestone.
+- `public/assets/campus/` contains the original GLB and a minimal rooms derivative. The original export archive, access/capacity fields, sensor bindings, source plans and web-map configuration are excluded. See [docs/ASSET_PIPELINE.md](docs/ASSET_PIPELINE.md).
+- `public/ammo/` holds the static physics runtime; the full player/collision scene is not implemented yet.
 
 ## Physics runtime
 

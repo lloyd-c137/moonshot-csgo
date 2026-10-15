@@ -3,6 +3,7 @@ import { Color, Entity, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
 import { FALL_RECOVERY_Y, PLAYER, SAFE_SPAWN } from '../config/gameplay';
+import type { Settings } from '../ui/settings';
 
 export { SAFE_SPAWN };
 
@@ -65,3 +66,10 @@ export const setLook = (player: Entity, pitch: number, yaw: number) => {
 
 /** True when the capsule centre has dropped below the level and must be recovered. */
 export const isOutOfWorld = (y: number) => !Number.isFinite(y) || y < FALL_RECOVERY_Y;
+
+/** Applies player-facing settings: mouse sensitivity (upstream controller `lookSens`) and camera field of view. */
+export const applySettings = (player: Entity, camera: Entity, settings: Settings) => {
+    const controller = player.script?.get(FirstPersonController) as unknown as { lookSens?: number } | null;
+    if (controller) controller.lookSens = settings.lookSensitivity;
+    if (camera.camera) camera.camera.fov = settings.fieldOfView;
+};

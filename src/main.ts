@@ -19,41 +19,31 @@ import {
 } from 'playcanvas';
 import type { Entity, Texture } from 'playcanvas';
 
+import { installDebugHooks } from './app/debugHooks';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
+import { browserStorage, DiscoveryLog } from './gameplay/discovery';
 import { addCampusCollisions } from './physics/collisionWorld';
-import { createPlayer, isOutOfWorld, recoverPlayer, SAFE_SPAWN, setLook } from './player/playerController';
+import {
+    applySettings,
+    createPlayer,
+    isOutOfWorld,
+    recoverPlayer,
+    SAFE_SPAWN,
+    setLook
+} from './player/playerController';
 import { createLightPool, setupAtmosphere } from './render/atmosphere';
-import { createGameHud } from './ui/gameHud';
-import { createMinimap } from './ui/minimap';
+import { loadSettings, saveSettings } from './ui/settings';
+import type { Ui } from './ui/shell';
+import { createUi } from './ui/shell';
 import { loadCampus } from './world/campusLoader';
+import { cutDoorwaysInto } from './world/doorwayCutter';
 import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressing';
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
-import './starter.css';
 
-const ui = createGameHud();
-type DebugWindow = Window & {
-    __MOONSHOT__?: {
-        position: () => number[];
-        cameraAngles: () => number[];
-        recover: () => void;
-        collisionCount: number;
-        barrierWalls: number;
-        dressing: { doors: number; furniture: number; lights: number };
-        teleport: (x: number, y: number, z: number) => void;
-        recoveries: () => number;
-        setLook: (pitch: number, yaw: number) => void;
-        setEnabled: (name: string, enabled: boolean) => boolean;
-        cameraFrame: (enabled: boolean) => void;
-        cameraFrameSet: (group: string, key: string, value: unknown) => void;
-        raycast: (from: number[], to: number[]) => string | null;
-        spawn: number[];
-        roomId: () => string | null;
-        setRendering: (enabled: boolean) => void;
-    };
-};
+let ui: Ui | null = null;
 
 const waitForAmmo = () =>
     new Promise<void>((resolve, reject) => {
@@ -114,9 +104,24 @@ const loadTexture = (app: AppBase, url: string) =>
         });
     });
 
+const fetchJson = async (url: string, label: string) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${label}加载失败（HTTP ${response.status}）`);
+    return response.json() as Promise<unknown>;
+};
+
 const boot = async () => {
-    ui.setStatus('正在初始化物理运行时…');
+    // Room data first: the UI needs the location list for the discovery map.
+    const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
+    const derivedWorld = parseDerivedWorld(await fetchJson(DERIVED_WORLD_URL, '场景布置数据'));
+    const arena = arenaLocation(derivedWorld);
+    const locations = [...rooms.rooms, arena];
+    ui = createUi(locations);
+    const shell = ui;
+
+    shell.stage('physics', 'active');
     await waitForAmmo();
+    shell.stage('physics', 'done');
 
     const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
     const device = await createGraphicsDevice(canvas);
@@ -139,26 +144,42 @@ const boot = async () => {
     // AppBase installs the Ammo physics world during start; static bodies must be added afterward.
     app.start();
 
-    ui.setStatus('正在加载 FF-01 校园场景…');
-    const [campus, roomResponse, worldResponse, ceilingMask] = await Promise.all([
-        loadCampus(app, ui.setProgress),
-        fetch('/assets/campus/rooms.json'),
-        fetch(DERIVED_WORLD_URL),
+    shell.stage('campus', 'active');
+    const [campus, ceilingMask] = await Promise.all([
+        loadCampus(app, () => undefined),
         loadTexture(app, CEILING_MASK_URL)
     ]);
-    if (!roomResponse.ok) throw new Error(`Room data failed to load: HTTP ${roomResponse.status}`);
-    if (!worldResponse.ok) throw new Error(`Derived world data failed to load: HTTP ${worldResponse.status}`);
-    const rooms = parseCampusRooms(await roomResponse.json());
-    const derivedWorld = parseDerivedWorld(await worldResponse.json());
+    shell.stage('campus', 'done');
+
+    shell.stage('structure', 'active');
     applyWallHeightAdapter(campus.root);
+    // GAMEPLAY_AUTHORED doorways for rooms the source walls seal off; cut before colliders are built.
+    for (const [name, reveals] of [
+        ['Walls', true],
+        ['Glazing', false]
+    ] as const) {
+        cutDoorwaysInto(app, campus.root.findByName(name) as Entity, derivedWorld.doorways, reveals);
+    }
     app.root.addChild(campus.root);
     const collisions = addCampusCollisions(app, campus.root);
-    ui.setStatus('正在布置门、家具与灯光…');
+    shell.stage('structure', 'done');
+
+    shell.stage('dressing', 'active');
     const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask);
     const { player, camera } = createPlayer(app);
     setupAtmosphere(app, camera);
     const lightPool = createLightPool(app, derivedWorld.lights);
-    const minimap = createMinimap();
+    const storage = browserStorage();
+    const settings = loadSettings(storage);
+    applySettings(player, camera, settings);
+
+    const discovery = new DiscoveryLog(
+        locations.map((location) => location.id),
+        storage
+    );
+    shell.setDiscovered(discovery.list, discovery.total);
+    discovery.onChange(() => shell.setDiscovered(discovery.list, discovery.total));
+
     const rigidbodySystem = app.systems.rigidbody as RigidBodyComponentSystem;
     const anchorPositions = new Map<string, Point2>();
     for (const room of rooms.rooms) {
@@ -168,33 +189,38 @@ const boot = async () => {
     const anchors = createAnchorTriggers(rooms.rooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
     const roomTracker = new RoomTracker(
         rooms.rooms,
-        (room) => ui.setLocation(room ? `${room.name} · ${room.id}` : 'FF-01 · 区域未知'),
+        (location) => {
+            const isNew = location ? discovery.visit(location.id) : false;
+            shell.setLocation(location, isNew);
+            if (location && isNew) shell.discovered(location, discovery.count, discovery.total);
+        },
         0.35,
         0.2,
         anchors,
-        [arenaLocation(derivedWorld)]
+        [arena]
     );
-    ui.setLocation('FF-01 · 区域未知');
+    shell.setLocation(undefined, false);
     let recoveries = 0;
     app.on('update', (deltaTime: number) => {
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
             recoverPlayer(player);
-            ui.notify('已离开可探索范围，已返回东入口安全点');
+            shell.notify('已离开可探索范围，已回到东入口');
             return;
         }
         roomTracker.update([position.x, position.z], deltaTime);
         lightPool.update(deltaTime, position);
         const forward = camera.forward;
-        minimap.update(deltaTime, position.x, position.z, forward.x, forward.z);
+        shell.drawMaps(position.x, position.z, forward.x, forward.z);
     });
 
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const spawnCheck = inspectSpawn(app);
     if (!spawnCheck.supported || !spawnCheck.clear) {
-        throw new Error(`东入口候选出生点未通过楼板支撑与头顶净空检查：${JSON.stringify(spawnCheck)}`);
+        throw new Error(`东入口出生点未通过楼板支撑与头顶净空检查：${JSON.stringify(spawnCheck)}`);
     }
+    shell.stage('dressing', 'done');
 
     const clearVelocity = () => {
         if (player.rigidbody) {
@@ -203,37 +229,35 @@ const boot = async () => {
         }
     };
     const enter = () => {
-        void canvas.requestPointerLock().catch((error: unknown) => {
-            ui.showError(`无法捕获鼠标：${error instanceof Error ? error.message : String(error)}`);
+        void canvas.requestPointerLock().catch(() => {
+            shell.notify('浏览器没有允许锁定鼠标，请再点一次“进入校园”');
         });
     };
-    const recover = () => recoverPlayer(player);
+    const recover = () => {
+        recoverPlayer(player);
+        shell.notify('已回到东入口');
+    };
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
-            ui.playing();
-            minimap.setActive(true);
+            shell.playing();
         } else if (hasEntered) {
             clearVelocity();
             rigidbodySystem.timeScale = 0;
-            ui.paused();
-            minimap.setActive(false);
+            shell.paused();
         }
     });
-    document.addEventListener('pointerlockerror', () => ui.showError('浏览器拒绝了鼠标锁定'));
-    window.addEventListener('blur', () => {
+    document.addEventListener('pointerlockerror', () => shell.notify('浏览器没有允许锁定鼠标，请再点一次'));
+    const pause = () => {
         clearVelocity();
         rigidbodySystem.timeScale = 0;
         if (document.pointerLockElement === canvas) document.exitPointerLock();
-    });
+    };
+    window.addEventListener('blur', pause);
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            clearVelocity();
-            rigidbodySystem.timeScale = 0;
-            if (document.pointerLockElement === canvas) document.exitPointerLock();
-        }
+        if (document.hidden) pause();
     });
     window.addEventListener(
         'keydown',
@@ -241,21 +265,37 @@ const boot = async () => {
             if (event.code === 'Escape' && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 document.exitPointerLock();
-            } else if (event.code === 'KeyR' && hasEntered) {
+            } else if (event.code === 'KeyR' && hasEntered && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 recover();
+            } else if (event.code === 'KeyM' && document.pointerLockElement === canvas) {
+                event.preventDefault();
+                shell.toggleMap();
             }
         },
         true
     );
     rigidbodySystem.timeScale = 0;
-    ui.ready({ enter: () => enter(), recover });
+    shell.ready(
+        {
+            enter,
+            recover: () => {
+                recover();
+                enter();
+            },
+            settingsChanged: (next) => {
+                applySettings(player, camera, next);
+                saveSettings(storage, next);
+            }
+        },
+        settings
+    );
 
     if (import.meta.env.DEV) {
-        (window as DebugWindow).__MOONSHOT__ = {
+        installDebugHooks({
             position: () => player.getPosition().toArray(),
             cameraAngles: () => camera.getEulerAngles().toArray(),
-            recover,
+            recover: () => recoverPlayer(player),
             collisionCount: collisions.sourceBodies,
             barrierWalls: collisions.barrierWalls,
             dressing,
@@ -265,38 +305,24 @@ const boot = async () => {
             },
             recoveries: () => recoveries,
             setLook: (pitch: number, yaw: number) => setLook(player, pitch, yaw),
-            setEnabled: (name: string, enabled: boolean) => {
-                const entity = app.root.findByName(name) as Entity | null;
-                if (entity) entity.enabled = enabled;
-                return !!entity;
-            },
             raycast: (from: number[], to: number[]) =>
                 rigidbodySystem.raycastFirst(new Vec3(from[0], from[1], from[2]), new Vec3(to[0], to[1], to[2]))?.entity
                     .name ?? null,
-            cameraFrameSet: (group: string, key: string, value: unknown) => {
-                const frame = camera.script?.get('cameraFrame') as unknown as Record<
-                    string,
-                    Record<string, unknown>
-                > | null;
-                if (frame?.[group]) frame[group][key] = value;
-            },
-            cameraFrame: (enabled: boolean) => {
-                const frame = camera.script?.get('cameraFrame');
-                if (frame) frame.enabled = enabled;
-            },
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
-            // Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed.
+            discovered: () => [...discovery.list],
             setRendering: (enabled: boolean) => {
                 app.autoRender = enabled;
                 app.renderNextFrame = true;
             }
-        };
+        });
     }
     window.addEventListener('resize', () => app.resizeCanvas());
 };
 
 boot().catch((error: unknown) => {
     console.error(error);
-    ui.showError(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    if (!ui) ui = createUi([]);
+    ui.showError(message);
 });

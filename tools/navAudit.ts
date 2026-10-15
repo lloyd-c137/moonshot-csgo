@@ -7,6 +7,8 @@ import { BARRIER_TOP_Y, PLAYER, SAFE_SPAWN } from '../src/config/gameplay.ts';
 import { JUMP_APEX, scaleWallVertex } from '../src/config/presentation.ts';
 import type { BarrierWall, Triangle } from '../src/physics/boundaryBarriers.ts';
 import { campusBarrierWalls, horizontalTrianglesAt } from '../src/physics/boundaryBarriers.ts';
+import type { Doorway } from '../src/world/doorways.ts';
+import { doorwayContains } from '../src/world/doorways.ts';
 import { parseCampusRooms, pointInRoom } from '../src/world/roomIndex.ts';
 
 import { GlbScene } from './glb.ts';
@@ -17,11 +19,14 @@ const DERIVED_WORLD = new URL('../public/assets/campus/derived/world.json', impo
 
 type FurnitureBox = { center: [number, number]; size: [number, number]; yaw: number; height: number; collide: boolean };
 
+const readDerived = () =>
+    existsSync(DERIVED_WORLD)
+        ? (JSON.parse(readFileSync(DERIVED_WORLD, 'utf8')) as { furniture: FurnitureBox[]; doorways?: Doorway[] })
+        : { furniture: [], doorways: [] };
+
 /** Colliding furniture from the derived world data, as two triangles each (footprint only). */
-const furnitureFootprints = (): Triangle[] => {
-    if (!existsSync(DERIVED_WORLD)) return [];
-    const world = JSON.parse(readFileSync(DERIVED_WORLD, 'utf8')) as { furniture: FurnitureBox[] };
-    return world.furniture
+const furnitureFootprints = (furniture: FurnitureBox[]): Triangle[] =>
+    furniture
         .filter((item) => item.collide)
         .flatMap(({ center: [x, z], size: [w, d], yaw, height }) => {
             const c = Math.cos(yaw);
@@ -37,7 +42,7 @@ const furnitureFootprints = (): Triangle[] => {
                 [p[0], p[2], p[3]]
             ] as Triangle[];
         });
-};
+
 const SEAT_NODES = Array.from({ length: 8 }, (_, index) => `Arena_Seats_Row${String(index).padStart(2, '0')}`);
 
 export const CELL = { WALL: 1, GLASS: 2, STAND: 3, BARRIER: 4, FURNITURE: 5 } as const;
@@ -144,7 +149,15 @@ export class Grid {
     }
 }
 
-export type AuditOptions = { radius?: number; barriers?: boolean; resolution?: number };
+export type AuditOptions = {
+    radius?: number;
+    barriers?: boolean;
+    resolution?: number;
+    /** Doorways cut through walls/glazing; defaults to the derived world's doorways. */
+    cuts?: Doorway[];
+    /** Include colliding derived furniture (default true). */
+    furniture?: boolean;
+};
 
 export const loadCampusGeometry = () => {
     const scene = new GlbScene(GLB);
@@ -156,6 +169,7 @@ export const loadCampusGeometry = () => {
     const wallTops = scaled('Walls_Top');
     const glazing = scaled('Glazing');
     const barrierWalls = campusBarrierWalls({ floor, wallTops, glazing }, BARRIER_TOP_Y);
+    const derived = readDerived();
     return {
         scene,
         rooms: rooms.rooms,
@@ -164,7 +178,8 @@ export const loadCampusGeometry = () => {
         glazing,
         stands: [scene.triangles('Arena_StandBase'), ...SEAT_NODES.map((name) => scene.triangles(name))].flat(),
         topSeats: scene.triangles('Arena_Seats_Row07'),
-        furniture: furnitureFootprints(),
+        furniture: furnitureFootprints(derived.furniture),
+        doorways: derived.doorways ?? [],
         wallTops,
         barrierWalls
     };
@@ -183,7 +198,7 @@ const overlaps = (triangle: Triangle, low: number, high: number) => {
  */
 export const auditFloor = (
     geometry: Geometry,
-    { radius = PLAYER.radius, barriers = true, resolution = 0.05 }: AuditOptions = {}
+    { radius = PLAYER.radius, barriers = true, resolution = 0.05, cuts, furniture = true }: AuditOptions = {}
 ) => {
     const grid = new Grid(resolution);
     const size = grid.width * grid.height;
@@ -197,7 +212,18 @@ export const auditFloor = (
         if (overlaps(triangle, 0.25, 1.85)) grid.triangle(solid, triangle, CELL.GLASS);
     for (const triangle of geometry.stands)
         if (overlaps(triangle, 0.25, 1.85)) grid.triangle(solid, triangle, CELL.STAND);
-    for (const triangle of geometry.furniture) grid.triangle(solid, triangle, CELL.FURNITURE);
+    if (furniture) for (const triangle of geometry.furniture) grid.triangle(solid, triangle, CELL.FURNITURE);
+    // Authored doorways open the walls/glazing over their footprint (the cut spans the whole body band).
+    for (const cut of cuts ?? geometry.doorways) {
+        const reach = Math.max(cut.width, cut.depth);
+        for (let x = cut.center[0] - reach; x <= cut.center[0] + reach; x += resolution / 2) {
+            for (let z = cut.center[1] - reach; z <= cut.center[1] + reach; z += resolution / 2) {
+                const k = grid.index(x, z);
+                if (k >= 0 && (solid[k] === CELL.WALL || solid[k] === CELL.GLASS) && doorwayContains(cut, x, z))
+                    solid[k] = 0;
+            }
+        }
+    }
     if (barriers) {
         for (const wall of geometry.barrierWalls as BarrierWall[]) {
             if (wall.bottom < 1.85) grid.segment(solid, wall.edge[0], wall.edge[1], CELL.BARRIER);
@@ -234,6 +260,7 @@ export const auditFloor = (
         grid,
         floor,
         solid,
+        inflated,
         reached,
         spawnFree: count > 0,
         reachableArea: count * resolution * resolution,

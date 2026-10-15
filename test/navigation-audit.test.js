@@ -6,9 +6,9 @@ import { auditFloor, auditTopSeats, loadCampusGeometry } from '../tools/navAudit
 
 const geometry = loadCampusGeometry();
 
-// Source rooms the capsule still cannot enter at PLAYER.radius: door gaps below 0.56 m or no door in the source walls.
-// Opening them needs reviewed GAMEPLAY_AUTHORED door overrides; this list must only shrink.
-const KNOWN_UNREACHABLE = [
+// Rooms the source walls seal off (door gaps below 0.56 m or no door at all). Each now gets exactly one
+// GAMEPLAY_AUTHORED doorway (public/assets/campus/derived/world.json → doorways).
+const SEALED_BY_SOURCE = [
     'A106',
     'A203',
     'COURTYARD-02',
@@ -37,12 +37,15 @@ test('source geometry alone lets the player walk off the slab (regression baseli
     assert.ok(audit.fallArea > 100, `expected open slab edges, got ${audit.fallArea} m²`);
 });
 
-test('with barriers the spawn is enclosed, nothing falls off and known rooms stay reachable', () => {
+test('with barriers and authored doorways every source room is reachable and nothing falls off', () => {
     assert.equal(PLAYER.radius, 0.28);
     const audit = auditFloor(geometry, { barriers: true });
     assert.ok(audit.spawnFree, 'spawn is clear of inflated geometry');
     assert.equal(audit.fallArea, 0);
-    assert.deepEqual([...audit.unreachableRooms].sort(), KNOWN_UNREACHABLE);
+    assert.deepEqual(audit.unreachableRooms, []);
+    assert.deepEqual(geometry.doorways.map((doorway) => doorway.room).sort(), SEALED_BY_SOURCE);
+    const sealed = auditFloor(geometry, { cuts: [] });
+    assert.deepEqual([...sealed.unreachableRooms].sort(), SEALED_BY_SOURCE, 'without doorways the source seals them');
     for (const id of ['S308', 'S309', 'COURTYARD-01']) assert.ok(audit.reachableRooms.includes(id), id);
 });
 

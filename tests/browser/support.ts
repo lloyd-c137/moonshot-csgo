@@ -18,6 +18,8 @@ declare global {
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
             raycast: (from: number[], to: number[]) => string | null;
+            setLook: (pitch: number, yaw: number) => void;
+            discovered: () => string[];
             dressing: { doors: number; furniture: number; lights: number };
         };
     }
@@ -43,7 +45,7 @@ export const loadSimulated = async (page: Page) => {
     // clock still follows real time; pauseAt() stops it, after which game time only moves through advance().
     await page.clock.install();
     await page.goto('/');
-    await expect(page.locator('#load-status')).toHaveText('校园与碰撞已准备', { timeout: 90_000 });
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     // Pause a little ahead of the page's virtual "now"; retry further ahead if real time overtook the target.
     for (let ahead = 1_000; ; ahead *= 4) {
@@ -57,9 +59,9 @@ export const loadSimulated = async (page: Page) => {
 };
 
 export const enterCampus = async (page: Page) => {
-    await page.getByRole('button', { name: /Enter Campus|Resume/ }).click();
+    await page.getByRole('button', { name: /进入校园|继续探索/ }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
-    await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'playing');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
 };
 
 /**

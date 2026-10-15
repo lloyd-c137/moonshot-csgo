@@ -2,8 +2,6 @@
 import { Inspector } from '@playcanvas/inspector';
 import type { AppBase } from 'playcanvas';
 
-import './inspector.css';
-
 type Hook = {
     register?(app: AppBase, info: object): void;
     unregister?(app: AppBase): void;
@@ -29,10 +27,4 @@ scope[KEY] = {
     }
 };
 
-console.info('PlayCanvas Inspector: press ` to toggle');
-
-// Key hint, a separate corner chip so the starter's own UI stays untouched
-const hint = document.createElement('p');
-hint.className = 'inspector-hint';
-hint.innerHTML = '<kbd>`</kbd> inspector · <kbd>F9</kbd> pause · <kbd>F10</kbd> step';
-document.body.append(hint);
+console.info('PlayCanvas Inspector: press ` to toggle, F9 to pause, F10 to step');

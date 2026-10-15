@@ -24,7 +24,18 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
 
     await enterAtSpawn(page);
     await advance(page, 500);
-    await expect(page.locator('#current-location')).toHaveText('东入口门厅 · ENTRANCE-EAST');
+    await expect(page.locator('#location-code')).toContainText('东入口门厅');
+    await expect(page.locator('#location-name')).toHaveText('ENTRANCE-EAST');
+    // The spawn lobby is the first discovery: plate tag, toast and tally all report it.
+    expect(await page.evaluate(() => window.__MOONSHOT__!.discovered())).toEqual(['ENTRANCE-EAST']);
+    await expect(page.locator('#location')).toHaveAttribute('data-new', 'true');
+    await expect(page.locator('#toast')).toContainText('东入口门厅');
+    await expect(page.locator('#tally')).toHaveText('已发现 1 / 166');
+
+    await page.keyboard.press('m');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'open');
+    await page.keyboard.press('m');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'closed');
 
     const start = await position(page);
     await hold(page, ['w'], 500);
@@ -60,7 +71,8 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(landedY).toBeLessThan(1.1);
 
     await page.keyboard.press('Escape');
-    await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'paused');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'paused');
+    await expect(page.locator('#progress-label')).toHaveText('已发现 1 / 166 处地点');
     await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
     await enterCampus(page);
 
@@ -107,6 +119,6 @@ test('open entrances and the top seat row do not lead out of the level; a fall i
     await advance(page, 2_000);
     expect(await page.evaluate(() => window.__MOONSHOT__!.recoveries())).toBe(1);
     expect(horizontal(await position(page), [50.85, 0, -2.86])).toBeLessThan(0.2);
-    await expect(page.locator('#game-toast')).toBeVisible();
+    await expect(page.locator('#toast')).toContainText('已回到东入口');
     expect(errors).toEqual([]);
 });

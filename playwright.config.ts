@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
     testDir: './tests/browser',
+    // The production smoke test runs against the production preview (playwright.production.config.ts).
+    testIgnore: 'production-smoke.spec.ts',
     timeout: 120_000,
     expect: { timeout: 20_000 },
     use: {

@@ -31,7 +31,7 @@ Barriers are a game boundary decision, not modelled doors or glass. Entrances re
 
 - The source `Walls`, `Walls_Top` and `Glazing` entities are scaled vertically by 3.6 / 2.8 before colliders are built (`src/world/presentation.ts`). Ammo logs that its build lacks `btScaledBvhTriangleMeshShape`; browser raycasts nevertheless hit `Walls` at 3.3 m and not at 3.75 m, so the scale is applied at collider creation. Rescaling at runtime is not supported and is not done.
 - `GameplayAuthored_ArenaWallCollider`: the 10 m arena perimeter wall along the derived arena outline (from 3.55 m), static mesh. Raycast at 8 m hits it.
-- `GameplayAuthored_FurnitureColliders`: tables and counters (≥0.7 m) from the derived furniture, static mesh. Seats, door leaves, lintels and partitions are visual only. With furniture rasterised into the static audit, reachable floor drops from 10,464 m² to 10,383 m² and the reachable room set is unchanged (145/159).
+- `GameplayAuthored_FurnitureColliders`: tables and counters (≥0.7 m) from the derived furniture, static mesh. Seats, door leaves, lintels and partitions are visual only. With furniture rasterised into the static audit, reachable floor drops from 10,464 m² to 10,383 m² and the reachable room set is unchanged. With the per-room layouts (classroom desks, lab benches, library shelves, office desks, meeting and dining tables; 828 colliding items in total) every room stays reachable; reachable floor is 9,332 m².
 
 ## Player capsule
 
@@ -49,7 +49,11 @@ The capsule radius is 0.28 m (height 1.8 m), down from 0.34 m. The static audit 
 
 At stand height (capsule on the 3.11 m top row), the reachable area over wall or glazing tops falls from 2,117 m² without barriers to 0 with them.
 
-Still unreachable at r = 0.28 m: `A203`, `M124`, `SVC-03`, `SVC-15` (source gaps 0.30–0.55 m) and `A106`, `S204`, `S205`, `S206`, `S207`, `S406`, `SVC-01`, `SVC-05`, `SVC-11`, `COURTYARD-02` (no gap in the source walls at any radius). Opening them requires reviewed `GAMEPLAY_AUTHORED` door overrides; the test locks this list so that it can only shrink.
+Sealed by the source walls at r = 0.28 m: `A203`, `M124`, `SVC-03`, `SVC-15` (source gaps 0.30–0.55 m) and `A106`, `S204`, `S205`, `S206`, `S207`, `S406`, `SVC-01`, `SVC-05`, `SVC-11`, `COURTYARD-02` (no gap at any radius). Each now has one `GAMEPLAY_AUTHORED` doorway (see below); with them all 159 regions are reachable.
+
+## Authored doorways
+
+`tools/deriveWorld.ts` searches each sealed region for the thinnest straight crossing of a single source wall (or glazing) into reachable floor that also holds across the doorway width (0.95 m, 0.8 m fallback), refines the direction to the wall normal, and repeats with the new openings until nothing changes (14 doorways). At load `src/world/doorwayCutter.ts` clips the `Walls` and `Glazing` triangles out of each doorway box up to 2.15 m and adds jamb and head faces, so the render mesh and the Ammo collider agree; the wall above the opening is kept as the lintel. A browser test walks through every doorway in both directions. The positions are game decisions and do not claim where real doors are.
 
 ## Spawn probe
 

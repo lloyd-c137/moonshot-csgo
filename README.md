@@ -22,7 +22,9 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>), wait for **校园与碰撞已准备**, then click **Enter Campus**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, Escape to pause/release the pointer, R to return to the safe spawn, and the pause menu to resume or recover. Recovery restores the spawn heading as well as the position. Leaving the level (falling below Y = −3 m) returns the player to the safe spawn automatically. The circular minimap (top right, north up) follows the player; press M to toggle the full-floor map.
+Open the URL printed by Vite (normally <http://localhost:5173>), wait for the four loading stages to finish, then click **进入校园**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, M for the full-floor map, Escape to pause, and R to return to the east entrance (position and heading). Leaving the level (falling below Y = −3 m) returns the player there automatically.
+
+The top-left plate names the current location (room number, name, kind colour). Entering a location for the first time marks it **新发现**, shows a toast and lifts the hatching from that room on the minimap and full map; the tally counts discovered locations out of 166 (165 source records plus the arena). Discoveries, mouse sensitivity and field of view (pause menu) are saved in the browser's local storage only.
 
 ## Checks and production preview
 
@@ -51,7 +53,8 @@ The development browser tests run the game on Playwright's virtual clock with dr
 - `src/config/presentation.ts` holds the presentation parameters (wall/ceiling height, arena perimeter wall, door height, derived-asset paths). `src/world/presentation.ts` is the named wall-height adapter: it scales the source `Walls`, `Walls_Top` and `Glazing` entities from 2.8 m to 3.6 m before colliders are built; the GLB is untouched.
 - `src/world/dressing.ts` builds the `GAMEPLAY_AUTHORED` dressing: floor finishes per room kind (on the source room patches), a ceiling cut away over the open-air arena and courtyards by a derived mask, the arena perimeter wall (with collision), door lintels and open leaves, furniture (tables/counters collide), restroom partitions, court/stair markings and emissive light panels. Textures are procedural canvas textures (`src/render/textures.ts`), with no external image assets.
 - `src/render/atmosphere.ts` sets ambient/sun light, ACES tone mapping, light bloom and vignette through the engine's upstream `CameraFrame` script, and a pool of 14 omni lights re-assigned to the light fixtures nearest the player. `src/render/sky.ts` draws an unlit gradient sky dome. SSAO is off: it blacked out whole distant wall faces in testing.
-- `src/ui/minimap.ts` draws the circular minimap from the derived map image.
+- `src/ui/shell.ts` + `src/ui/theme.css` are the whole UI (wayfinding-signage style): title/loading screen with staged progress and the floor plan as backdrop, HUD (location plate, crosshair, circular north-up minimap with discovery tally, key hints, toasts), full-floor map, and pause menu with discovery progress and settings. `src/ui/minimap.ts` draws both maps with a hatch over undiscovered rooms. `src/gameplay/discovery.ts` is the discovery log; `src/ui/settings.ts` persists settings. `src/app/debugHooks.ts` defines the development-only test hooks.
+- `src/world/doorwayCutter.ts` cuts the derived `GAMEPLAY_AUTHORED` doorways out of the source `Walls`/`Glazing` meshes at load (render and collider), lining each opening with jambs and a head; `src/world/doorways.ts` holds the shared clipping geometry.
 - `src/player/playerController.ts` uses PlayCanvas Engine's upstream First-Person Controller for movement, sprint, jump, look and pointer lock.
 - `src/world/roomIndex.ts` validates room data and performs polygon/hole lookup with deterministic overlap and boundary hysteresis; label-only spaces use circular triggers at their source label anchors, only where no polygon applies.
 - `src/ui/gameHud.ts` exposes loading/error states, entry, crosshair/location display, pause and recovery.
@@ -77,9 +80,11 @@ Scaffolded in a temporary directory with the official `create-playcanvas@0.10.1`
 - PASS: browser test walks out of the open east entrance and is stopped by the barrier; pushing west from the 3.11 m top seat row does not cross the 2.8 m wall behind it; a player placed outside the level is recovered automatically.
 - PASS: browser route test walks from the entry corridor through S308 and S309 along navigation-grid waypoints; it checks wall blocking and both room HUD transitions.
 - PASS: pure geometry tests cover all 165 records, all 159 polygons, label-only anchor triggers, holes, concavity, overlaps and boundary hysteresis.
-- PASS (static audit, not physics): with a 0.28 m capsule and barriers, 145 of 159 source regions are reachable from the spawn and no reachable floor ends at an open edge; 14 rooms remain unreachable because their source door gaps are narrower than 0.56 m or absent (listed in `test/navigation-audit.test.js`).
-- PASS: browser raycasts confirm the presented walls collide at 3.3 m (above the 2.8 m source height) and not at 3.75 m, and the arena perimeter wall collides at 8 m. The derived furniture colliders leave the same 145 source regions reachable.
-- PASS (visual, software WebGL screenshots only): ceilings indoors, sky above the arena and courtyards, 10 m arena wall, doors, furniture, minimap orientation. Real-GPU appearance and frame rate are NOT RUN.
+- PASS (static audit, not physics): with a 0.28 m capsule, barriers, all furniture and the 14 authored doorways, all 159 source regions are reachable from the spawn and no reachable floor ends at an open edge. Without the doorways exactly the 14 rooms listed in `test/navigation-audit.test.js` are sealed by the source walls.
+- PASS: browser test walks the capsule through each of the 14 authored doorways in both directions.
+- PASS: browser raycasts confirm the presented walls collide at 3.3 m (above the 2.8 m source height) and not at 3.75 m, and the arena perimeter wall collides at 8 m. The 2,774 derived furniture items (828 colliding) leave every room reachable.
+- PASS: browser tests cover the new UI flow (staged loading, 进入校园, location plate, discovery toast/tally, M map toggle, pause progress, recovery toast).
+- PASS (visual, software WebGL screenshots only): ceilings indoors, sky above the arena and courtyards, 10 m arena wall, doors, furnished classrooms/labs/dining/library, UI screens at desktop and 390 px width. Real-GPU appearance and frame rate are NOT RUN.
 - NOT RUN: glass blocking probe, corridor route to Lotus Arena, manual playtest, representative desktop performance benchmark.
 - History: before these fixes the GitHub Actions browser job failed on every push from `feat: add FF01 exploration controls` onwards; the earlier S308/S309 PASS was observed only on a local GPU.
 

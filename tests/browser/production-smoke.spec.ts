@@ -15,15 +15,19 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
 
     await page.goto('/');
     await expect(page).toHaveTitle('Moonshot Open World · FF-01');
-    await expect(page.locator('#load-status')).toHaveText('校园与碰撞已准备', { timeout: 60_000 });
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(4);
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
     expect(assets['/ammo/ammo.wasm.wasm']).toBe(200);
+    for (const name of ['world.json', 'ceiling-mask.png', 'minimap.png']) {
+        expect(assets[`/assets/campus/derived/${name}`]).toBe(200);
+    }
 
-    await page.getByRole('button', { name: 'Enter Campus' }).click();
+    await page.getByRole('button', { name: '进入校园' }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
-    await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'playing');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     await page.keyboard.press('Escape');
-    await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'paused');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'paused');
     expect(runtimeErrors).toEqual([]);
 });

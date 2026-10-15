@@ -9,6 +9,7 @@ import { worldTriangles } from '../physics/collisionWorld';
 import { MeshBuilder } from '../render/meshBuilder';
 import { createTexture } from '../render/textures';
 
+import type { Doorway } from './doorways';
 import type { CampusRoom } from './roomIndex';
 
 export type Vec2Tuple = [number, number];
@@ -19,8 +20,24 @@ export type DerivedWorld = {
     ceilingHeight: number;
     arena: { outline: Vec2Tuple[]; center: Vec2Tuple };
     doorHeight: number;
-    doors: { hinge: Vec2Tuple; closed: Vec2Tuple; open: Vec2Tuple; offset: number; thickness: number }[];
-    furniture: { center: Vec2Tuple; size: Vec2Tuple; yaw: number; height: number; collide: boolean }[];
+    doors: {
+        hinge: Vec2Tuple;
+        closed: Vec2Tuple;
+        open: Vec2Tuple;
+        offset: number;
+        thickness: number;
+        authored?: true;
+    }[];
+    doorways: Doorway[];
+    furniture: {
+        type?: string;
+        source?: string;
+        center: Vec2Tuple;
+        size: Vec2Tuple;
+        yaw: number;
+        height: number;
+        collide: boolean;
+    }[];
     partitions: [Vec2Tuple, Vec2Tuple][];
     lights: [number, number, number, number][];
 };
@@ -30,7 +47,7 @@ export const parseDerivedWorld = (value: unknown): DerivedWorld => {
     if (!world || world.schema !== 1 || world.status !== 'GAMEPLAY_AUTHORED') {
         throw new Error('Derived world data has an unexpected schema; run npm run derive:world');
     }
-    for (const key of ['doors', 'furniture', 'partitions', 'lights'] as const) {
+    for (const key of ['doors', 'doorways', 'furniture', 'partitions', 'lights'] as const) {
         if (!Array.isArray(world[key])) throw new Error(`Derived world data is missing ${key}`);
     }
     if (!Array.isArray(world.arena?.outline) || world.arena.outline.length < 3) {
@@ -277,15 +294,17 @@ export const buildDressing = (
         const yaw = Math.atan2(cz - hz, cx - hx);
         const nx = -Math.sin(yaw);
         const nz = Math.cos(yaw);
-        lintels.box(
-            (hx + cx) / 2 + nx * door.offset,
-            world.doorHeight,
-            (hz + cz) / 2 + nz * door.offset,
-            width + 0.02,
-            door.thickness,
-            world.wallHeight - world.doorHeight,
-            yaw
-        );
+        // Authored doorways keep the source wall above the cut as their lintel.
+        if (!door.authored)
+            lintels.box(
+                (hx + cx) / 2 + nx * door.offset,
+                world.doorHeight,
+                (hz + cz) / 2 + nz * door.offset,
+                width + 0.02,
+                door.thickness,
+                world.wallHeight - world.doorHeight,
+                yaw
+            );
         const [ox, oz] = door.open;
         const leafLength = Math.hypot(ox - hx, oz - hz);
         leaves.box(
@@ -307,33 +326,70 @@ export const buildDressing = (
         makeMaterial('door-leaf', { texture: textures.wood, colour: [0.85, 0.7, 0.55], gloss: 0.4 })
     );
 
-    // Furniture from enclosed linework outlines; restroom linework becomes cubicle partitions.
+    // Furniture: linework-derived outlines plus per-room layouts (see tools/deriveWorld.ts). Built per type.
     const tops = new MeshBuilder();
     const legs = new MeshBuilder();
     const blocks = new MeshBuilder();
     const seats = new MeshBuilder();
+    const shelves = new MeshBuilder();
     const colliders = new MeshBuilder();
+    const along = (x: number, z: number, yaw: number, u: number, v: number): [number, number] => [
+        x + u * Math.cos(yaw) - v * Math.sin(yaw),
+        z + u * Math.sin(yaw) + v * Math.cos(yaw)
+    ];
+    const table = (x: number, z: number, width: number, depth: number, height: number, yaw: number, top = 0.04) => {
+        tops.box(x, height - top, z, width, depth, top, yaw);
+        for (const [u, v] of [
+            [-1, -1],
+            [1, -1],
+            [1, 1],
+            [-1, 1]
+        ]) {
+            const [lx, lz] = along(x, z, yaw, (u * (width - 0.1)) / 2, (v * (depth - 0.1)) / 2);
+            legs.box(lx, 0, lz, 0.045, 0.045, height - top, yaw);
+        }
+    };
     for (const item of world.furniture) {
         const [x, z] = item.center;
         const [width, depth] = item.size;
-        if (item.height <= 0.5) {
-            seats.box(x, 0, z, width, depth, item.height, item.yaw);
-        } else if (item.height < 0.8) {
-            tops.box(x, item.height - 0.04, z, width, depth, 0.04, item.yaw);
-            const c = Math.cos(item.yaw);
-            const s = Math.sin(item.yaw);
-            for (const [u, v] of [
-                [-1, -1],
-                [1, -1],
-                [1, 1],
-                [-1, 1]
-            ]) {
-                const lu = (u * (width - 0.1)) / 2;
-                const lv = (v * (depth - 0.1)) / 2;
-                legs.box(x + lu * c - lv * s, 0, z + lu * s + lv * c, 0.05, 0.05, item.height - 0.04, item.yaw);
+        const type = item.type ?? (item.height <= 0.5 ? 'seat' : item.height < 0.8 ? 'table' : 'counter');
+        switch (type) {
+            case 'desk':
+            case 'teacher-desk':
+            case 'table':
+                table(x, z, width, depth, item.height, item.yaw);
+                if (type === 'teacher-desk')
+                    blocks.box(x, 0.05, z, width - 0.12, depth - 0.12, item.height - 0.1, item.yaw);
+                break;
+            case 'lab-bench':
+            case 'counter':
+                blocks.box(x, 0, z, width, depth, item.height - 0.04, item.yaw);
+                tops.box(x, item.height - 0.04, z, width + 0.04, depth + 0.04, 0.04, item.yaw);
+                break;
+            case 'chair': {
+                table(x, z, width, depth, 0.45, item.yaw, 0.05);
+                const [bx, bz] = along(x, z, item.yaw, -width / 2 + 0.02, 0);
+                seats.box(bx, 0.45, bz, 0.03, depth, 0.42, item.yaw);
+                break;
             }
-        } else {
-            blocks.box(x, 0, z, width, depth, item.height, item.yaw);
+            case 'stool':
+                seats.box(x, item.height - 0.05, z, width, depth, 0.05, item.yaw);
+                legs.box(x, 0, z, 0.06, 0.06, item.height - 0.05, item.yaw);
+                break;
+            case 'shelf':
+                shelves.box(x, 0, z, width, depth, item.height, item.yaw, 5);
+                for (let h = 0.4; h < item.height; h += 0.42)
+                    tops.box(x, h, z, width + 0.02, depth + 0.02, 0.025, item.yaw);
+                break;
+            case 'bench':
+                tops.box(x, item.height - 0.06, z, width, depth, 0.06, item.yaw);
+                for (const u of [-1, 1]) {
+                    const [lx, lz] = along(x, z, item.yaw, (u * (width - 0.2)) / 2, 0);
+                    legs.box(lx, 0, lz, 0.06, depth - 0.05, item.height - 0.06, item.yaw);
+                }
+                break;
+            default:
+                seats.box(x, 0, z, width, depth, item.height, item.yaw);
         }
         if (item.collide) colliders.box(x, 0, z, width, depth, item.height, item.yaw);
     }
@@ -350,9 +406,22 @@ export const buildDressing = (
         );
     }
     const laminate = makeMaterial('laminate', { texture: textures.laminate, gloss: 0.45 });
-    addMesh(app, root, 'Furniture_Tops', tops, laminate);
+    addMesh(
+        app,
+        root,
+        'Furniture_Tops',
+        tops,
+        makeMaterial('worktop', { texture: textures.wood, colour: [1.05, 1, 0.95], gloss: 0.5 })
+    );
     addMesh(app, root, 'Furniture_Legs', legs, makeMaterial('metal', { colour: [0.25, 0.26, 0.28], gloss: 0.6 }));
     addMesh(app, root, 'Furniture_Blocks', blocks, laminate);
+    addMesh(
+        app,
+        root,
+        'Furniture_Shelves',
+        shelves,
+        makeMaterial('shelving', { texture: textures.wood, colour: [0.62, 0.55, 0.5] })
+    );
     addMesh(
         app,
         root,

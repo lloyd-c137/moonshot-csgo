@@ -33,8 +33,14 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#game-menu')).toHaveAttribute('data-mode', 'playing');
 
+    console.log(
+        'entry facing and west inputs',
+        await page.evaluate(() => window.__MOONSHOT__!.cameraAngles()),
+        await keysForDirection(page, -1, 0)
+    );
     await walk(page, -1, 0, 10_000);
     const wallStop = await page.evaluate(() => window.__MOONSHOT__!.position());
+    console.log('after west walk', wallStop);
     expect(wallStop[0]).toBeGreaterThan(20.8);
     expect(wallStop[0]).toBeLessThan(21.8);
 

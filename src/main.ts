@@ -17,11 +17,13 @@ import {
     createGraphicsDevice
 } from 'playcanvas';
 
+import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { addCampusCollisions } from './physics/collisionWorld';
-import { createPlayer, recoverPlayer, SAFE_SPAWN } from './player/playerController';
+import { createPlayer, isOutOfWorld, recoverPlayer, SAFE_SPAWN } from './player/playerController';
 import { createGameHud } from './ui/gameHud';
 import { loadCampus } from './world/campusLoader';
-import { parseCampusRooms, RoomTracker } from './world/roomIndex';
+import type { Point2 } from './world/roomIndex';
+import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
 import './starter.css';
 
 const ui = createGameHud();
@@ -31,8 +33,12 @@ type DebugWindow = Window & {
         cameraAngles: () => number[];
         recover: () => void;
         collisionCount: number;
+        barrierWalls: number;
+        teleport: (x: number, y: number, z: number) => void;
+        recoveries: () => number;
         spawn: number[];
         roomId: () => string | null;
+        setRendering: (enabled: boolean) => void;
     };
 };
 
@@ -56,12 +62,13 @@ const inspectSpawn = (app: AppBase) => {
     const floorNames = new Set(['Floor_Slab', 'Arena_Court']);
     const groundHits = physics.raycastAll(start, end).map((hit) => hit.entity.name);
 
+    const probe = PLAYER.radius * 0.8;
     const offsets = [
         [0, 0],
-        [0.23, 0],
-        [-0.23, 0],
-        [0, 0.23],
-        [0, -0.23]
+        [probe, 0],
+        [-probe, 0],
+        [0, probe],
+        [0, -probe]
     ];
     const overheadHits = offsets.map(([x, z]) => {
         const ceiling = physics.raycastAll(
@@ -120,15 +127,32 @@ const boot = async () => {
     if (!roomResponse.ok) throw new Error(`Room data failed to load: HTTP ${roomResponse.status}`);
     const rooms = parseCampusRooms(await roomResponse.json());
     app.root.addChild(campus.root);
-    const collisionCount = addCampusCollisions(campus.root);
+    const collisions = addCampusCollisions(app, campus.root);
     const { player, camera } = createPlayer(app);
     const rigidbodySystem = app.systems.rigidbody as RigidBodyComponentSystem;
-    const roomTracker = new RoomTracker(rooms.rooms, (room) => {
-        ui.setLocation(room ? `${room.name} · ${room.id}` : 'FF-01 · 区域未知');
-    });
+    const anchorPositions = new Map<string, Point2>();
+    for (const room of rooms.rooms) {
+        const anchor = campus.root.findByName(`Label_${room.id}`);
+        if (anchor) anchorPositions.set(room.id, [anchor.getPosition().x, anchor.getPosition().z]);
+    }
+    const anchors = createAnchorTriggers(rooms.rooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
+    const roomTracker = new RoomTracker(
+        rooms.rooms,
+        (room) => ui.setLocation(room ? `${room.name} · ${room.id}` : 'FF-01 · 区域未知'),
+        0.35,
+        0.2,
+        anchors
+    );
     ui.setLocation('FF-01 · 区域未知');
+    let recoveries = 0;
     app.on('update', (deltaTime: number) => {
         const position = player.getPosition();
+        if (isOutOfWorld(position.y)) {
+            recoveries++;
+            recoverPlayer(player);
+            ui.notify('已离开可探索范围，已返回东入口安全点');
+            return;
+        }
         roomTracker.update([position.x, position.z], deltaTime);
     });
 
@@ -196,9 +220,20 @@ const boot = async () => {
             position: () => player.getPosition().toArray(),
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover,
-            collisionCount,
+            collisionCount: collisions.sourceBodies,
+            barrierWalls: collisions.barrierWalls,
+            teleport: (x: number, y: number, z: number) => {
+                player.rigidbody!.teleport(x, y, z, 0, 0, 0);
+                clearVelocity();
+            },
+            recoveries: () => recoveries,
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
-            roomId: () => roomTracker.current?.id ?? null
+            roomId: () => roomTracker.current?.id ?? null,
+            // Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed.
+            setRendering: (enabled: boolean) => {
+                app.autoRender = enabled;
+                app.renderNextFrame = true;
+            }
         };
     }
     window.addEventListener('resize', () => app.resizeCanvas());

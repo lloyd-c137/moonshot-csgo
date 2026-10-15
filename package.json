@@ -5,6 +5,7 @@
     "description": "Moonshot Open World browser FPS bootstrap",
     "type": "module",
     "scripts": {
+        "audit:nav": "node tools/navAuditCli.ts",
         "build": "vite build",
         "dev": "vite",
         "fmt": "prettier --check .",

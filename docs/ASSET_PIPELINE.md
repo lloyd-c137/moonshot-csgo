@@ -10,7 +10,7 @@ The hashes and counts are in `public/assets/campus/manifest.json`; `npm test` ve
 
 ## Distribution boundary
 
-These runtime assets are present only in the private GitHub repository and are served by the local/private build. No public deployment is configured. The model contains a detailed campus-derived floor, including room names and layouts; public distribution requires a separate asset/privacy review. The archive's sensor endpoint and demo content are excluded.
+The runtime assets are publicly served at <https://moonshot-csgo.pages.dev/>. On 2026-10-15, the repository owner explicitly approved public hosting of the FF-01 GLB and curated room derivative after reviewing that they expose the campus-derived first-floor layout and room names. The source ZIP, source plans, sensor endpoint, and demo content remain excluded. The deployment does not enable Cloudflare Access; the site and runtime assets are available to anyone with the URL.
 
 ## Import behavior
 

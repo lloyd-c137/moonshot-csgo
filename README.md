@@ -4,6 +4,12 @@ Browser-first first-person exploration game based on the Moonshot Academy FF-01 
 
 > **In development: M0.1–M0.4.** The actual FF-01 GLB, a static collision layer, the official PlayCanvas first-person controller, entry/pause/recovery controls, room recognition, and a browser-tested route from the east entry through S308 to S309 are implemented. Classroom/arena traversal and three-doorway acceptance remain in progress. This is not yet declared PLAYABLE.
 
+## Cloudflare Pages
+
+The public production build is available at <https://moonshot-csgo.pages.dev/>. The Pages project is connected to the private `lloyd-c137/moonshot-csgo` GitHub repository: pushes to `main` build and deploy production, and other branches receive preview deployments. Cloudflare runs `npm run build` with `dist/` as the output directory and Node.js `24.16.0` (pinned in `.nvmrc`).
+
+The repository owner explicitly approved public hosting of the FF-01 runtime GLB and curated room data on 2026-10-15. This remains an in-development game; deployment does not imply that unverified classroom/arena routes are playable.
+
 ## Requirements
 
 - Node.js `>=22.23.2` (bootstrap verified with Node `24.16.0` and npm `11.13.0`)

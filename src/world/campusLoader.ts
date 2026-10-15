@@ -2,14 +2,7 @@ import type { AppBase, Entity } from 'playcanvas';
 import { Asset } from 'playcanvas';
 
 export const CAMPUS_ASSET_URL = '/assets/campus/MAC_Campus_FF01.glb';
-export const REQUIRED_SOURCE_NODES = [
-    'Floor_Slab',
-    'Walls',
-    'Walls_Top',
-    'Glazing',
-    'Arena_Court',
-    'Arena_StandBase'
-];
+export const REQUIRED_SOURCE_NODES = ['Floor_Slab', 'Walls', 'Walls_Top', 'Glazing', 'Arena_Court', 'Arena_StandBase'];
 
 export type CampusLoadResult = {
     root: Entity;

@@ -13,6 +13,8 @@
         "lint:fix": "eslint . --fix",
         "start": "vite preview",
         "test": "node --test",
+        "test:e2e": "playwright test",
+        "test:e2e:prod": "npm run build && playwright test --config playwright.production.config.ts",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
@@ -21,6 +23,7 @@
     "devDependencies": {
         "@playcanvas/eslint-config": "3.0.0-beta.8",
         "@playcanvas/inspector": "0.2.0",
+        "@playwright/test": "1.64.1",
         "eslint": "9.39.5",
         "prettier": "3.9.10",
         "typescript": "6.0.3",

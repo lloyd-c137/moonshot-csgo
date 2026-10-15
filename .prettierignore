@@ -1,6 +1,10 @@
 .claude
 .agents
 public/ammo
+public/assets/campus
 AGENTS.md
 docs/
+.playwright-cli/
+test-results/
+playwright-report/
 .playwright-cli/

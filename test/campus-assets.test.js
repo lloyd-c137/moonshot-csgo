@@ -12,10 +12,22 @@ const matrixFor = (node) => {
     const [sx, sy, sz] = node.scale ?? [1, 1, 1];
     const [tx, ty, tz] = node.translation ?? [0, 0, 0];
     return [
-        (1 - 2 * y * y - 2 * z * z) * sx, (2 * x * y + 2 * z * w) * sx, (2 * x * z - 2 * y * w) * sx, 0,
-        (2 * x * y - 2 * z * w) * sy, (1 - 2 * x * x - 2 * z * z) * sy, (2 * y * z + 2 * x * w) * sy, 0,
-        (2 * x * z + 2 * y * w) * sz, (2 * y * z - 2 * x * w) * sz, (1 - 2 * x * x - 2 * y * y) * sz, 0,
-        tx, ty, tz, 1
+        (1 - 2 * y * y - 2 * z * z) * sx,
+        (2 * x * y + 2 * z * w) * sx,
+        (2 * x * z - 2 * y * w) * sx,
+        0,
+        (2 * x * y - 2 * z * w) * sy,
+        (1 - 2 * x * x - 2 * z * z) * sy,
+        (2 * y * z + 2 * x * w) * sy,
+        0,
+        (2 * x * z + 2 * y * w) * sz,
+        (2 * y * z - 2 * x * w) * sz,
+        (1 - 2 * x * x - 2 * y * y) * sz,
+        0,
+        tx,
+        ty,
+        tz,
+        1
     ];
 };
 
@@ -84,7 +96,18 @@ test('curated FF-01 runtime assets match the reviewed manifest', () => {
     assert.deepEqual(rooms.frame.axes, manifest.axes);
     assert.deepEqual(modelBounds(model), manifest.worldBoundsMetres);
     const nodeNames = new Set(model.nodes.map((node) => node.name));
-    for (const name of ['MAC_Campus_FF01', 'Structure', 'Floor_Slab', 'Walls', 'Walls_Top', 'Glazing', 'Rooms', 'Arena', 'Arena_Court', 'Arena_StandBase']) {
+    for (const name of [
+        'MAC_Campus_FF01',
+        'Structure',
+        'Floor_Slab',
+        'Walls',
+        'Walls_Top',
+        'Glazing',
+        'Rooms',
+        'Arena',
+        'Arena_Court',
+        'Arena_StandBase'
+    ]) {
         assert.ok(nodeNames.has(name), `missing source node ${name}`);
     }
 

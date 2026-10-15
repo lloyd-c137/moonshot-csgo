@@ -21,9 +21,9 @@ export const FALL_RECOVERY_Y = -3;
 
 /**
  * Invisible barrier ceiling. Barriers extrude the floor-slab outline from the floor and the wall/glazing tops from
- * their source height up to this level, so neither open entrances nor the 3.11 m top seat row lead out of the level.
+ * their source height up to this level, so neither open entrances nor jumps from the 3.11 m top seat row lead out of the level.
  */
-export const BARRIER_TOP_Y = 6;
+export const BARRIER_TOP_Y = 7;
 
 /**
  * Circular triggers for the six label-only spaces, centred on their source label anchors. The radius is authored;

@@ -1,20 +1,11 @@
-// The night guard in the world: a figure in a dark uniform and cap holding a flashlight. Before the blackout he stands
+// The night guard in the world: a rigged mannequin in a dark uniform holding a flashlight. Before the blackout he stands
 // at the south gate; after it he walks his rounds and the torch throws a real spot light and a visible beam. Placed from
 // the room clock (gameplay/guard.ts); `catches` tells whether the local player is in the beam with nothing in between.
 import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'playcanvas';
-import {
-    BLEND_ADDITIVE,
-    Color,
-    CULLFACE_BACK,
-    CULLFACE_NONE,
-    Entity,
-    Mesh,
-    MeshInstance,
-    StandardMaterial,
-    Vec3
-} from 'playcanvas';
+import { BLEND_ADDITIVE, Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
-import { box, cylinder, merge, place, sphere } from '../render/shapes';
+import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+import { cylinder, place } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
 import { GUARD, guardAt, inBeam } from './guard';
@@ -31,69 +22,30 @@ const meshOf = (app: AppBase, shape: Shape) => {
     mesh.incRefCount();
     return mesh;
 };
-const solid = (colour: [number, number, number], gloss = 0.3) => {
-    const m = new StandardMaterial();
-    m.diffuse = new Color(...colour);
-    m.gloss = gloss;
-    m.cull = CULLFACE_BACK;
-    m.update();
-    return m;
-};
-
-export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement) => {
-    const uniform = solid([0.1, 0.12, 0.18]);
-    const skin = solid([0.9, 0.76, 0.64]);
-    const cap = solid([0.06, 0.07, 0.1], 0.5);
-    const badge = solid([0.95, 0.78, 0.2], 0.8);
-    const torchBody = solid([0.15, 0.15, 0.16], 0.7);
+export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement, characters: CharacterAssetLoader) => {
+    const character = characters.create({
+        name: 'guard',
+        colour: [0, 0, 0],
+        materialColours: { M_Main: [0, 0, 0], M_Joints: [0, 0, 0], M_Head: [0, 0, 0] }
+    });
+    const root = character.root;
     const lens = new StandardMaterial();
     lens.emissive = new Color(1, 0.96, 0.8);
     lens.update();
-
-    const root = new Entity('guard');
-    root.addComponent('render', {
-        castShadows: false,
-        meshInstances: [
-            new MeshInstance(
-                meshOf(
-                    app,
-                    merge([
-                        place(cylinder(0.27, 0.8, 20, true, 0.23), { y: 1.2 }),
-                        place(cylinder(0.09, 0.8, 10), { x: -0.12, y: 0.4 }),
-                        place(cylinder(0.09, 0.8, 10), { x: 0.12, y: 0.4 }),
-                        place(cylinder(0.07, 0.6, 10), { x: -0.32, y: 1.2 })
-                    ])
-                ),
-                uniform
-            ),
-            // Right arm raised forward, holding the torch.
-            new MeshInstance(
-                meshOf(app, place(cylinder(0.07, 0.55, 10), { x: 0.3, y: 1.32, z: -0.22, pitch: Math.PI / 2.4 })),
-                uniform
-            ),
-            new MeshInstance(meshOf(app, place(sphere(16, 12), { y: 1.77, sx: 0.15, sy: 0.17, sz: 0.15 })), skin),
-            new MeshInstance(
-                meshOf(
-                    app,
-                    merge([
-                        place(cylinder(0.17, 0.1, 18), { y: 1.9 }),
-                        place(box(0.3, 0.02, 0.14), { y: 1.86, z: -0.14 })
-                    ])
-                ),
-                cap
-            ),
-            new MeshInstance(meshOf(app, place(box(0.08, 0.08, 0.02), { x: -0.12, y: 1.38, z: -0.26 })), badge),
-            new MeshInstance(
-                meshOf(app, place(cylinder(0.04, 0.24, 12), { x: 0.3, y: 1.35, z: -0.48, pitch: Math.PI / 2 })),
-                torchBody
-            ),
-            new MeshInstance(
-                meshOf(app, place(cylinder(0.045, 0.01, 12), { x: 0.3, y: 1.35, z: -0.6, pitch: Math.PI / 2 })),
-                lens
-            )
-        ]
+    const hand = root.findByName('hand_r') as EntityType | null;
+    const flashlight = new Entity('guard-flashlight');
+    flashlight.addComponent('render', {
+        type: 'cylinder',
+        material: character.materials.get('M_Joints'),
+        castShadows: false
     });
-    // The torch: a spot light and a soft visible beam (off until the blackout).
+    if (hand) {
+        hand.addChild(flashlight);
+        flashlight.setLocalPosition(0, 0, -0.12);
+        flashlight.setLocalScale(0.075, 0.28, 0.075);
+        flashlight.setLocalEulerAngles(90, 0, 0);
+    }
+    // The torch: a spot light and a soft visible beam (off until the blackout), parented to the hand bone.
     const torch = new Entity('guard-torch');
     torch.addComponent('light', {
         type: 'spot',
@@ -104,7 +56,7 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
         outerConeAngle: GUARD.halfAngle,
         castShadows: false
     });
-    torch.setLocalPosition(0.3, GUARD.torch, -0.6);
+    torch.setLocalPosition(0, 0, -0.26);
     // Spot lights shine down their -Y axis: tip it forward (toward -Z) and a little down.
     torch.setLocalEulerAngles(-84, 0, 0);
     root.addChild(torch);
@@ -129,9 +81,10 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
             )
         ]
     });
-    beam.setLocalPosition(0.3, GUARD.torch, -0.6);
+    beam.setLocalPosition(0, 0, -0.26);
     beam.setLocalEulerAngles(-84, 0, 0);
-    root.addChild(beam);
+    (hand ?? root).addChild(torch);
+    (hand ?? root).addChild(beam);
     app.root.addChild(root);
 
     const tag = document.createElement('span');
@@ -155,9 +108,9 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
         update(roomMs: number, blackoutAt: number | null, power: PowerState) {
             pose = guardAt(roomMs, blackoutAt, power);
             on = (blackoutAt !== null && roomMs >= blackoutAt) || powerOut(roomMs, power);
-            const bob = pose.walking ? Math.abs(Math.sin(roomMs / 260)) * 0.03 : 0;
-            root.setPosition(pose.x, bob, pose.z);
+            root.setPosition(pose.x, 0, pose.z);
             root.setEulerAngles(0, pose.yaw, 0);
+            character.play(pose.walking ? 'Walk_Loop' : on ? 'Idle_Torch_Loop' : 'Idle_Loop');
             torch.light!.intensity = on ? 3.2 : 0;
             beam.enabled = on;
             head.set(pose.x, 2.15, pose.z);

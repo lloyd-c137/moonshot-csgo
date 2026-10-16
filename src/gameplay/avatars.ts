@@ -1,15 +1,18 @@
 // Other players in the shared world: a simple coloured figure per player (body, head, visor showing facing, a disc
 // in hand) and a name tag drawn in the DOM. Tags hide when a wall is between the camera and the player.
 import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'playcanvas';
-import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
+import { Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
+import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
-import { box, cylinder, merge, place, sphere } from '../render/shapes';
+import { box, merge, place } from '../render/shapes';
 
 import { hueColour } from './discs';
 
 type Avatar = {
+    character: ReturnType<CharacterAssetLoader['create']>;
+    disc: EntityType;
     root: EntityType;
     tag: HTMLElement;
     name: string;
@@ -21,6 +24,8 @@ type Avatar = {
     /** Last written name-tag styles. */
     transform: string;
     opacity: string;
+    lastPosition: Vec3;
+    lastMovedAt: number;
 };
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -35,39 +40,12 @@ const meshOf = (app: AppBase, shape: Shape) => {
     return mesh;
 };
 
-const material = (colour: [number, number, number], gloss = 0.35) => {
-    const m = new StandardMaterial();
-    m.diffuse = new Color(...colour);
-    m.useMetalness = true;
-    m.metalness = 0;
-    m.gloss = gloss;
-    m.cull = CULLFACE_BACK;
-    m.update();
-    return m;
-};
-
-export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLElement) => {
-    // Figure in local space: feet at y = -0.9 (the capsule centre is the origin), facing -Z like the camera.
-    const bodyMesh = meshOf(
-        app,
-        merge([
-            place(cylinder(0.24, 0.75, 20, true, 0.2), { y: -0.05 }),
-            place(sphere(16, 10), { y: 0.32, sx: 0.2, sy: 0.12, sz: 0.2 }),
-            place(cylinder(0.075, 0.55, 10), { x: -0.11, y: -0.65 }),
-            place(cylinder(0.075, 0.55, 10), { x: 0.11, y: -0.65 })
-        ])
-    );
-    const headMesh = meshOf(app, place(sphere(16, 12), { y: 0.63, sx: 0.16, sy: 0.18, sz: 0.16 }));
-    const visorMesh = meshOf(app, place(box(0.22, 0.07, 0.04), { y: 0.66, z: -0.145 }));
-    const discMesh = meshOf(app, place(cylinder(0.135, 0.025, 24), { x: 0.3, y: 0.05, z: -0.12, roll: 1.2 }));
-    const visorMaterial = material([0.08, 0.09, 0.11], 0.8);
-    const skin = material([0.93, 0.8, 0.68], 0.3);
-    const materials = new Map<number, StandardMaterial>();
-    const colourMaterial = (hue: number) => {
-        if (!materials.has(hue)) materials.set(hue, material(hueColour(hue)));
-        return materials.get(hue)!;
-    };
-
+export const createAvatars = (
+    app: AppBase,
+    camera: EntityType,
+    layer: HTMLElement,
+    characters: CharacterAssetLoader
+) => {
     // Scope glint: a bright four-point star in front of an aiming player's visor, so snipers can be spotted.
     const glintMesh = meshOf(
         app,
@@ -90,9 +68,8 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
     const setGold = (holder: string | null) => {
         goldHolder = holder;
         for (const [id, avatar] of avatars) {
-            const instances = avatar.root.render!.meshInstances;
-            const wanted = id === holder && goldMaterial ? goldMaterial : colourMaterial(avatar.hue);
-            if (instances[3] && instances[3].material !== wanted) instances[3].material = wanted;
+            const material = id === holder && goldMaterial ? goldMaterial : avatar.character.materials.get('M_Main')!;
+            for (const instance of avatar.disc.render!.meshInstances) instance.material = material;
         }
     };
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
@@ -102,17 +79,24 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
 
     const add = (id: string, name: string, hue: number) => {
         if (avatars.has(id)) return;
+        const character = characters.create({ name: `avatar-${id}-rig`, colour: hueColour(hue) });
         const root = new Entity(`avatar-${id}`);
-        const body = colourMaterial(hue);
-        root.addComponent('render', {
-            meshInstances: [
-                new MeshInstance(bodyMesh, body),
-                new MeshInstance(headMesh, skin),
-                new MeshInstance(visorMesh, visorMaterial),
-                new MeshInstance(discMesh, body)
-            ],
+        root.addChild(character.root);
+        // The capsule uses centre origin. Offset the model down so scaled feet still meet the floor.
+        character.root.setLocalPosition(0, -0.9 / 0.82, 0);
+        const hand = character.root.findByName('hand_r');
+        const disc = new Entity(`avatar-disc-${id}`);
+        disc.addComponent('render', {
+            type: 'cylinder',
+            material: character.materials.get('M_Main'),
             castShadows: false
         });
+        if (hand) {
+            hand.addChild(disc);
+            disc.setLocalPosition(0, 0.07, 0.025);
+            disc.setLocalScale(0.25, 0.035, 0.25);
+            disc.setLocalEulerAngles(90, 0, 0);
+        }
         root.enabled = false;
         app.root.addChild(root);
         const glint = new Entity('glint');
@@ -132,13 +116,28 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
-        avatars.set(id, { root, tag, name, hue, visible: false, checkedAt: 0, glint, transform: '', opacity: '' });
+        avatars.set(id, {
+            root,
+            character,
+            disc,
+            tag,
+            name,
+            hue,
+            visible: false,
+            checkedAt: 0,
+            glint,
+            transform: '',
+            opacity: '',
+            lastPosition: new Vec3(),
+            lastMovedAt: 0
+        });
         if (goldHolder === id) setGold(id);
     };
 
     const remove = (id: string) => {
         const avatar = avatars.get(id);
         if (!avatar) return;
+        avatar.character.dispose();
         avatar.root.destroy();
         avatar.glint.destroy();
         avatar.tag.remove();
@@ -149,10 +148,13 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
     const update = (poses: Map<string, PlayerPose>, now: number, hiddenIds: ReadonlySet<string> = new Set()) => {
         // Hit flash: the struck player's colour burns white and fades.
         for (const [hue, until] of flashes) {
-            const m = colourMaterial(hue);
             const left = Math.max(0, until - now) / 220;
-            m.emissive.set(left, left, left);
-            m.update();
+            for (const avatar of avatars.values())
+                if (avatar.hue === hue) {
+                    const m = avatar.character.materials.get('M_Main')!;
+                    m.emissive.set(left, left, left);
+                    m.update();
+                }
             if (left <= 0) flashes.delete(hue);
         }
         const cameraComponent = camera.camera!;
@@ -185,6 +187,13 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
             avatar.root.enabled = true;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);
             avatar.root.setEulerAngles(0, pose.yaw, 0);
+            const moved = Math.hypot(pose.p[0] - avatar.lastPosition.x, pose.p[2] - avatar.lastPosition.z);
+            const delta = now - avatar.lastMovedAt;
+            if (delta > 0 && delta < 250 && moved / (delta / 1000) > 0.2) {
+                avatar.character.play(moved / (delta / 1000) > 5.2 ? 'Sprint_Loop' : 'Jog_Fwd_Loop');
+            } else avatar.character.play('Idle_Loop');
+            avatar.lastPosition.set(pose.p[0], pose.p[1], pose.p[2]);
+            avatar.lastMovedAt = now;
             head.set(pose.p[0], pose.p[1] + 1.05, pose.p[2]);
             const distance = head.distance(eye);
             // Line of sight for the name tag, re-checked a few times a second.
@@ -227,7 +236,7 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         update,
         setLeader,
         setGold,
-        /** Material used for the golden disc in a holder's hand. */
+        /** Material used for the golden disc attached to the holder's hand. */
         set goldMaterial(material: StandardMaterial) {
             goldMaterial = material;
             setGold(goldHolder);

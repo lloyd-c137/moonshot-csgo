@@ -4,6 +4,7 @@ import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
 import { BLEND_NORMAL, Color, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
+import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
 import { MONITOR_CONSOLE, SPECIAL_LOCATIONS } from '../config/specialLocations';
@@ -70,12 +71,13 @@ type Options = {
     auth: Auth;
     /** Middle of the 莲花球场 (X/Z): the final showdown is fought there. */
     arenaCenter: [number, number];
+    characters: CharacterAssetLoader;
 };
 
-export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaCenter }: Options) => {
+export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaCenter, characters }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
-    const avatars = createAvatars(app, camera, ui.nameTagLayer());
+    const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters);
     const roster = new Map<string, PlayerSummary>();
     let netState: NetState = 'offline';
     let alive = true;
@@ -105,7 +107,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const sound = createSound();
     const effects = createEffects(app);
     let executionFrozen = false;
-    const executionView = createExecutionView(app, camera, (active) => {
+    const executionView = createExecutionView(app, camera, characters, (active) => {
         executionFrozen = active;
         const script = controller();
         if (script) script.enabled = alive && !inputPaused && !spectating && !active;
@@ -153,7 +155,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const goldView = createGold(app, discs.mesh, effects);
     discs.goldMaterial = goldView.material;
     avatars.goldMaterial = goldView.material;
-    const teacher = createTeacher(app, camera, ui.nameTagLayer());
+    const teacher = createTeacher(app, camera, ui.nameTagLayer(), characters);
     let roundState: RoundState | null = null;
     // Disc ammunition (online): discs in hand; thrown ones lie where they land until someone picks them up.
     const ground = createGroundDiscs(app, discs.mesh);
@@ -172,7 +174,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let goldInspect = false;
     let goldSparkAt = 0;
     let lastGoldMine = false;
-    const guard = createGuard(app, camera, ui.nameTagLayer());
+    const guard = createGuard(app, camera, ui.nameTagLayer(), characters);
     const breakerView = createBreakerView(app);
     const monitorView = createMonitorView(app);
     let power: PowerState = { pulledAt: null };

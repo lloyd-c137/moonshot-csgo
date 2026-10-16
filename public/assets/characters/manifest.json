@@ -1,0 +1,26 @@
+{
+    "source": {
+        "archive": "Universal Animation Library[Standard].zip",
+        "archiveSha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+        "path": "assets/source/characters/UAL1_Standard.fbx",
+        "sha256": "21b32d912da3cb93426d974fb945e86f5b2e86970acd2ce89905e0fbf9f1dcc2",
+        "creator": "Quaternius",
+        "license": "CC0-1.0",
+        "rootMotion": false
+    },
+    "runtime": {
+        "path": "public/assets/characters/moonshot-humanoid.glb",
+        "sha256": "57bc427212dd993e3f48fd6f1337d3fc310fe56f79d9792a56238127d0c430e5",
+        "bytes": 3372192,
+        "generator": "tools/prepareCharacter.py with Blender 4.5.10",
+        "headMaterial": "M_Head",
+        "headUv": "cylindrical, seam at the back"
+    },
+    "verified": {
+        "triangles": 13744,
+        "joints": 65,
+        "animationClips": 43,
+        "heightMeters": 1.829,
+        "skinInfluencesPerVertex": 4
+    }
+}

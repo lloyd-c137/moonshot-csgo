@@ -9,12 +9,13 @@ import type { Settings } from './settings';
 import { SETTING_RANGES } from './settings';
 import './theme.css';
 
-export type LoadStage = 'physics' | 'campus' | 'structure' | 'dressing';
+export type LoadStage = 'physics' | 'campus' | 'structure' | 'dressing' | 'characters';
 const STAGES: [LoadStage, string][] = [
     ['physics', '物理引擎'],
     ['campus', '校园模型与房间数据'],
     ['structure', '墙体、门洞与碰撞'],
-    ['dressing', '家具、灯光与地图']
+    ['dressing', '家具、灯光与地图'],
+    ['characters', '骨骼角色与动作']
 ];
 
 export type AccountView = AccountStats;

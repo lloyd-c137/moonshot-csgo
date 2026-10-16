@@ -1,92 +1,24 @@
 // Original GAMEPLAY_AUTHORED paired animation for the existing simple avatar style. No imported animation assets.
-import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
-import { Color, Entity, StandardMaterial, Vec3 } from 'playcanvas';
+import type { AppBase, Entity, RigidBodyComponentSystem } from 'playcanvas';
+import { Vec3 } from 'playcanvas';
 
-import { hueColour } from './discs';
+import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+
 import { executionFrame, executionProgress } from './execution';
 import type { Execution, ExecutionActor } from './execution';
 
-const makeMaterial = (colour: readonly number[]) => {
-    const material = new StandardMaterial();
-    material.diffuse = new Color(colour[0], colour[1], colour[2]);
-    material.update();
-    return material;
+const makeActor = (app: AppBase, characters: CharacterAssetLoader, actor: ExecutionActor) => {
+    const character = characters.create({ name: `execution-actor-${actor.id}`, colour: [0.12, 0.55, 0.82] });
+    app.root.addChild(character.root);
+    return { ...character, character, root: character.root };
 };
 
-const makeActor = (app: AppBase, actor: ExecutionActor) => {
-    const root = new Entity(`execution-actor-${actor.id}`);
-    app.root.addChild(root);
-    const body = makeMaterial(hueColour(actor.colour)),
-        skin = makeMaterial([0.93, 0.8, 0.68]),
-        dark = makeMaterial([0.08, 0.09, 0.11]);
-    const part = (
-        parent: Entity,
-        name: string,
-        type: 'box' | 'sphere' | 'capsule' | 'cylinder',
-        position: number[],
-        scale: number[],
-        material: StandardMaterial
-    ) => {
-        const entity = new Entity(name);
-        parent.addChild(entity);
-        entity.addComponent('render', { type, material, castShadows: false });
-        entity.setLocalPosition(position[0], position[1], position[2]);
-        entity.setLocalScale(scale[0], scale[1], scale[2]);
-        return entity;
-    };
-    const hips = new Entity('hips');
-    root.addChild(hips);
-    const torso = new Entity('torso');
-    hips.addChild(torso);
-    part(torso, 'body', 'capsule', [0, 0.34, 0], [0.43, 0.76, 0.36], body);
-    part(torso, 'head', 'sphere', [0, 0.87, 0], [0.32, 0.36, 0.32], skin);
-    part(torso, 'visor', 'box', [0, 0.9, -0.16], [0.22, 0.07, 0.04], dark);
-    const arm = (side: number) => {
-        const shoulder = new Entity('shoulder');
-        shoulder.setLocalPosition(side * 0.27, 0.67, 0);
-        torso.addChild(shoulder);
-        part(shoulder, 'upper-arm', 'capsule', [0, -0.17, 0], [0.13, 0.34, 0.13], body);
-        const elbow = new Entity('elbow');
-        elbow.setLocalPosition(0, -0.34, 0);
-        shoulder.addChild(elbow);
-        part(elbow, 'forearm', 'capsule', [0, -0.15, 0], [0.12, 0.3, 0.12], body);
-        part(elbow, 'hand', 'sphere', [0, -0.32, 0], [0.14, 0.14, 0.14], skin);
-        return { shoulder, elbow };
-    };
-    const left = arm(-1),
-        right = arm(1);
-    const disc = part(right.elbow, 'disc', 'cylinder', [0, -0.35, -0.1], [0.27, 0.035, 0.27], body);
-    const legs = [-1, 1].map((side) => {
-        const hip = new Entity('hip');
-        hip.setLocalPosition(side * 0.11, 0, 0);
-        hips.addChild(hip);
-        part(hip, 'thigh', 'capsule', [0, -0.18, 0], [0.14, 0.36, 0.14], body);
-        const knee = new Entity('knee');
-        knee.setLocalPosition(0, -0.36, 0);
-        hip.addChild(knee);
-        part(knee, 'calf', 'capsule', [0, -0.17, 0], [0.13, 0.34, 0.13], body);
-        return { hip, knee };
-    });
-    root.setPosition(actor.pose.p[0], actor.pose.p[1] - 0.9, actor.pose.p[2]);
-    root.setEulerAngles(0, actor.pose.yaw, 0);
-    return {
-        root,
-        hips,
-        torso,
-        left,
-        right,
-        legs,
-        disc,
-        destroy: () => {
-            root.destroy();
-            body.destroy();
-            skin.destroy();
-            dark.destroy();
-        }
-    };
-};
-
-export const createExecutionView = (app: AppBase, camera: Entity, onLocalChange: (active: boolean) => void) => {
+export const createExecutionView = (
+    app: AppBase,
+    camera: Entity,
+    characters: CharacterAssetLoader,
+    onLocalChange: (active: boolean) => void
+) => {
     const system = app.systems.rigidbody as RigidBodyComponentSystem;
     const scenes = new Map<
         string,
@@ -114,8 +46,8 @@ export const createExecutionView = (app: AppBase, camera: Entity, onLocalChange:
         const scene = scenes.get(id);
         if (!scene) return;
         if (shot?.id === id) restoreCamera();
-        scene.attacker.destroy();
-        scene.target.destroy();
+        scene.attacker.dispose();
+        scene.target.dispose();
         scenes.delete(id);
     };
     return {
@@ -123,8 +55,8 @@ export const createExecutionView = (app: AppBase, camera: Entity, onLocalChange:
             if (scenes.has(record.id)) return;
             scenes.set(record.id, {
                 record,
-                attacker: makeActor(app, record.attacker),
-                target: makeActor(app, record.target)
+                attacker: makeActor(app, characters, record.attacker),
+                target: makeActor(app, characters, record.target)
             });
         },
         stop,
@@ -147,37 +79,21 @@ export const createExecutionView = (app: AppBase, camera: Entity, onLocalChange:
                     dz = record.target.pose.p[2] - record.attacker.pose.p[2],
                     distance = Math.hypot(dx, dz);
                 const lunge = Math.min(0.4, Math.max(0, distance - 0.85)) * frame.reach * (1 - frame.recover);
+                attacker.root.enabled = target.root.enabled = true;
                 attacker.root.setPosition(
                     record.attacker.pose.p[0] + (dx / distance) * lunge,
                     record.attacker.pose.p[1] - 0.9,
                     record.attacker.pose.p[2] + (dz / distance) * lunge
                 );
                 attacker.root.setEulerAngles(0, (Math.atan2(-dx, -dz) * 180) / Math.PI, 0);
-                attacker.hips.setLocalPosition(0, 0.72, 0);
-                attacker.torso.setLocalEulerAngles(-frame.attackerLean, 0, 0);
-                attacker.left.shoulder.setLocalEulerAngles(
-                    80 * frame.reach * (1 - frame.recover),
-                    0,
-                    -20 * frame.reach
+                attacker.character.play(frame.reach > 0.45 ? 'Punch_Cross' : 'Interact', 0.08);
+                target.character.play(frame.fall > 0.1 ? 'Death01' : 'Hit_Chest', 0.08);
+                target.root.setPosition(
+                    record.target.pose.p[0],
+                    record.target.pose.p[1] - 0.9 - Math.min(0.45, frame.fall * 0.45),
+                    record.target.pose.p[2]
                 );
-                attacker.left.elbow.setLocalEulerAngles(-30 * frame.reach, 0, 0);
-                attacker.right.shoulder.setLocalEulerAngles(frame.attackerArm, 0, 15 * frame.reach);
-                attacker.right.elbow.setLocalEulerAngles(-40 * frame.reach, 0, 0);
-                const upper = 65 * frame.fall,
-                    knee = -100 * frame.fall;
-                target.hips.setLocalPosition(
-                    0,
-                    0.36 * Math.cos((upper * Math.PI) / 180) + 0.34 * Math.cos(((upper + knee) * Math.PI) / 180) + 0.02,
-                    0
-                );
-                target.torso.setLocalEulerAngles(-frame.targetLean, 0, 15 * frame.fall);
-                for (const leg of target.legs) {
-                    leg.hip.setLocalEulerAngles(upper, 0, 0);
-                    leg.knee.setLocalEulerAngles(knee, 0, 0);
-                }
-                target.left.shoulder.setLocalEulerAngles(frame.targetArm, 0, -30 * frame.reach);
-                target.right.shoulder.setLocalEulerAngles(frame.targetArm, 0, 30 * frame.reach);
-                target.disc.enabled = false;
+                target.root.setEulerAngles(0, (Math.atan2(dx, dz) * 180) / Math.PI, frame.fall * 45);
                 if (record.attacker.id !== self && record.target.id !== self) continue;
                 if (!shot) {
                     const saved = {
@@ -238,8 +154,8 @@ export const createExecutionView = (app: AppBase, camera: Entity, onLocalChange:
                 frame: executionFrame(executionProgress(s.record, now)),
                 actorsVisible: s.attacker.root.enabled && s.target.root.enabled,
                 camera: shot?.id === s.record.id,
-                attackerArm: s.attacker.right.shoulder.getLocalEulerAngles().x,
-                targetLean: s.target.torso.getLocalEulerAngles().x,
+                attackerArm: executionFrame(executionProgress(s.record, now)).attackerArm,
+                targetLean: executionFrame(executionProgress(s.record, now)).targetLean,
                 renderedParts:
                     s.attacker.root.findComponents('render').length + s.target.root.findComponents('render').length,
                 cameraPosition: camera.getPosition().toArray()

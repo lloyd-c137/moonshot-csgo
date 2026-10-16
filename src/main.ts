@@ -1,6 +1,7 @@
 import {
     AppBase,
     AppOptions,
+    AnimComponentSystem,
     CameraComponentSystem,
     CollisionComponentSystem,
     ContainerHandler,
@@ -22,6 +23,7 @@ import type { Entity, StandardMaterial, Texture } from 'playcanvas';
 import { installDebugHooks } from './app/debugHooks';
 import { browserStorage } from './app/storage';
 import { watchForUpdates } from './app/updates';
+import { CharacterAssetLoader } from './characters/CharacterAssetLoader';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
@@ -162,6 +164,7 @@ const boot = async () => {
     options.graphicsDevice = device;
     options.componentSystems = [
         RenderComponentSystem,
+        AnimComponentSystem,
         CameraComponentSystem,
         LightComponentSystem,
         ScriptComponentSystem,
@@ -203,6 +206,9 @@ const boot = async () => {
     for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
     buildSigns(app, campus.root, derivedWorld, rooms.rooms);
     const { player, camera } = createPlayer(app);
+    shell.stage('characters', 'active');
+    const characters = await CharacterAssetLoader.load(app);
+    shell.stage('characters', 'done');
     const { sun, setNight } = setupAtmosphere(app, camera);
     let night = false;
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
@@ -219,7 +225,8 @@ const boot = async () => {
         ui: shell,
         url: serverUrl,
         auth,
-        arenaCenter: derivedWorld.arena.center as [number, number]
+        arenaCenter: derivedWorld.arena.center as [number, number],
+        characters
     });
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {

@@ -10,9 +10,8 @@ export const TEACHER = {
     speed: 1.6,
     /** At each corner he stops and looks around for this long (s). */
     pause: 2.2,
-    /** View: range (m) and half-angle (degrees). */
-    range: 13,
-    halfAngle: 48,
+    /** He notices everything within this radius (m) of him, all round. */
+    range: 10,
     /** Eye height above the floor (m). */
     eye: 1.62
 } as const;
@@ -61,13 +60,6 @@ export const teacherAt = (ms: number): TeacherPose => {
     return { x: leg.to[0], z: leg.to[1], yaw: wrapAngle(leg.heading + turn * p * p + glance), walking: false };
 };
 
-/** Whether a point (x, z) lies inside his view cone (range and angle only; walls are checked by the caller). */
-export const inTeacherView = (teacher: TeacherPose, x: number, z: number) => {
-    const dx = x - teacher.x;
-    const dz = z - teacher.z;
-    const distance = Math.hypot(dx, dz);
-    if (distance > TEACHER.range) return false;
-    if (distance < 1.2) return true; // right next to him
-    const toward = (Math.atan2(-dx, -dz) * 180) / Math.PI;
-    return Math.abs(wrapAngle(toward - teacher.yaw)) <= TEACHER.halfAngle;
-};
+/** Whether a point (x, z) lies inside his watch: a circle of TEACHER.range around him. */
+export const inTeacherView = (teacher: TeacherPose, x: number, z: number) =>
+    Math.hypot(x - teacher.x, z - teacher.z) <= TEACHER.range;

@@ -76,15 +76,8 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect(a.page.locator('#round-clock')).toHaveText(/^(10:00|09:[0-5]\d)$/);
     await expect(b.page.locator('#round-gold')).toContainText('无人持有');
     await expect(a.page.locator('#latency')).toHaveText(/^\d+ ms$/);
-    // A walks onto it: taken, equipped, and everyone sees who holds it.
-    const gold = (await state(a.page)).gold!;
-    expect(gold.holder).toBeNull();
-    await a.page.evaluate(([x, z]) => window.__MOONSHOT__!.teleport(x + 0.5, 0.92, z), [gold.at[0], gold.at[2]]);
-    await expect
-        .poll(async () => (await state(b.page)).gold?.holder, { timeout: 5_000 })
-        .toBe((await state(a.page)).id);
-    await expect(b.page.locator('#round-gold')).toContainText(`${nameA} 持有金飞盘`);
-    await expect(a.page.locator('#round-gold')).toContainText('你持有金飞盘');
+    // Discs are ammunition, shown at the bottom (the local test room hands out extra).
+    await expect(a.page.locator('#ammo-text')).toContainText('飞盘');
 
     // World chat reaches everyone in real time.
     await a.page.evaluate(() => window.__MOONSHOT__!.match.chat('大家好'));
@@ -152,6 +145,27 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'snipe');
     await expect(a.page.locator('#broadcast')).toContainText('狙击爆头');
     await expect(b.page.locator('#popup')).toHaveText('被狙击爆头');
+
+    // A walks onto it: taken, equipped, and everyone sees who holds it.
+    const gold = (await state(a.page)).gold!;
+    expect(gold.holder).toBeNull();
+    await a.page.evaluate(([x, z]) => window.__MOONSHOT__!.teleport(x + 0.5, 0.92, z), [gold.at[0], gold.at[2]]);
+    await expect
+        .poll(async () => (await state(b.page)).gold?.holder, { timeout: 5_000 })
+        .toBe((await state(a.page)).id);
+    await expect(b.page.locator('#round-gold')).toContainText(`${nameA} 持有金飞盘`);
+    await expect(a.page.locator('#round-gold')).toContainText('你持有金飞盘');
+    // An elimination with the golden disc gets its own banner.
+    await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);
+    await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
+    await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
+    await a.page.waitForTimeout(1_800);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.6, 39.6, undefined, true))).toBe(
+        true
+    );
+    await expect(b.page.locator('#gold-kill')).toBeVisible({ timeout: 5_000 });
+    await expect(b.page.locator('#gold-kill')).toContainText(nameA);
+    expect((await state(a.page)).gold?.holder).toBe((await state(a.page)).id);
 
     // Leaving is seen by the other player.
     await b.page.context().close();

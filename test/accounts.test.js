@@ -73,6 +73,7 @@ const harness = (accounts) => {
         24,
         accounts
     );
+    room.startAmmo = 9;
     const join = (id, name, token, now = 0) => {
         inbox.set(id, []);
         room.connect(id);

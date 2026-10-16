@@ -21,12 +21,10 @@ test('纪老师 patrols the loop continuously, on the route, and repeats each la
     }
 });
 
-test('his view: ahead within range is seen, behind or far is not', () => {
-    const facingNorth = { x: 0, z: 0, yaw: 0, walking: true }; // yaw 0 looks toward -Z
-    assert.equal(inTeacherView(facingNorth, 0, -8), true);
-    assert.equal(inTeacherView(facingNorth, 5, -6), true);
-    assert.equal(inTeacherView(facingNorth, 0, 8), false, 'behind');
-    assert.equal(inTeacherView(facingNorth, 0, -20), false, 'too far');
-    assert.equal(inTeacherView(facingNorth, 9, -1), false, 'outside the angle');
-    assert.equal(inTeacherView(facingNorth, 0.5, 0.5), true, 'right next to him');
+test('his watch is a circle around him: any direction within range, nothing beyond', () => {
+    const teacher = { x: 0, z: 0, yaw: 0, walking: true };
+    assert.equal(inTeacherView(teacher, 0, -8), true, 'ahead');
+    assert.equal(inTeacherView(teacher, 0, 8), true, 'behind too');
+    assert.equal(inTeacherView(teacher, -6, 6), true);
+    assert.equal(inTeacherView(teacher, TEACHER.range + 0.5, 0), false, 'too far');
 });

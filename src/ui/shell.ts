@@ -138,6 +138,13 @@ const MARKUP = `
       <span id="round-end-detail"></span>
     </div>
     <span class="latency" id="latency" data-quality="none">离线</span>
+    <div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div>
+    <p class="watch-warning" id="watch-warning" hidden><b>纪老师在附近</b>禁止打飞盘</p>
+    <p class="radar" id="radar" hidden>监控画面 · <b id="radar-seconds">30</b> 秒</p>
+    <div class="gold-kill" id="gold-kill" hidden>
+      <small>金飞盘击杀</small>
+      <strong><b id="gold-kill-by"></b><i aria-hidden="true"></i><b id="gold-kill-target"></b></strong>
+    </div>
     <section class="leaderboard" id="leaderboard" aria-label="实时积分">
       <div class="king-line" id="king-line" hidden><span class="king-crown"><svg viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-9-5 9-6-5z"/></svg></span><span>淘汰王</span><b id="king-line-name"></b><em id="king-line-kills"></em></div>
       <header><span>本局积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
@@ -277,6 +284,7 @@ export const createUi = () => {
     // ---------- title: tabs, identity, board ----------
     let signedIn = false;
     const scopeShown = { aim: -1, ready: false };
+    let goldKillTimer = 0;
     const authError = (message: string) => {
         const error = $('#auth-error');
         error.textContent = message;
@@ -742,6 +750,45 @@ export const createUi = () => {
             replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
             broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
+        },
+        /** Discs in hand (null: offline practice, unlimited). */
+        ammo: (count: number | null, max: number) => {
+            const element = $('#ammo');
+            element.dataset.empty = String(count === 0);
+            $('#ammo-text').textContent =
+                count === null
+                    ? '练习 · 不限'
+                    : count === 0
+                      ? '没有飞盘 · 去捡回或到体育组办公室'
+                      : `飞盘 ${count}/${max}`;
+            const icons = $('#ammo-icons');
+            icons.replaceChildren(
+                ...Array.from({ length: count === null ? 0 : max }, (_, index) => {
+                    const icon = document.createElement('i');
+                    icon.dataset.full = String(count !== null && index < count);
+                    return icon;
+                })
+            );
+        },
+        /** 纪老师's circle: a standing warning while you are inside it. */
+        watchWarning: (show: boolean) => {
+            $('#watch-warning').hidden = !show;
+        },
+        /** Monitoring room radar: seconds left (null hides). */
+        radar: (seconds: number | null) => {
+            $('#radar').hidden = seconds === null;
+            if (seconds !== null) $('#radar-seconds').textContent = String(Math.ceil(seconds));
+        },
+        /** The golden disc took someone out: a big gold kill banner. */
+        goldKill: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me') => {
+            const banner = $('#gold-kill');
+            banner.dataset.tone = tone;
+            $('#gold-kill-by').textContent = killer;
+            $('#gold-kill-target').textContent = victim;
+            banner.hidden = false;
+            replay(banner, 'show');
+            window.clearTimeout(goldKillTimer);
+            goldKillTimer = window.setTimeout(() => (banner.hidden = true), 3200);
         },
         /** A one-line announcement in the broadcast banner (round results and similar). */
         broadcastText: (text: string) => {

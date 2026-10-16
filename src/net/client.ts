@@ -5,6 +5,7 @@ import type {
     AccountStats,
     ChatLine,
     GoldState,
+    GroundDisc,
     King,
     PlayerPose,
     PlayerSummary,
@@ -29,6 +30,8 @@ type Handlers = {
             chat: ChatLine[];
             round: RoundState;
             gold: GoldState;
+            ammo: number;
+            discs: GroundDisc[];
         }
     ) => void;
     joined: (player: PlayerSummary) => void;
@@ -43,7 +46,8 @@ type Handlers = {
         head: boolean,
         at: Vec3Tuple,
         scores: Scores,
-        sniper: boolean
+        sniper: boolean,
+        gold: boolean
     ) => void;
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
@@ -53,6 +57,8 @@ type Handlers = {
     gold: (gold: GoldState, event: 'spawned' | 'taken' | 'dropped') => void;
     round: (round: RoundState, scores: Scores) => void;
     caught: (id: string) => void;
+    ammo: (ammo: number) => void;
+    discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
     /** Round-trip time to the room (ms), smoothed; null when not connected. */
     latency: (ms: number | null) => void;
 };
@@ -95,7 +101,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     king: message.king,
                     chat: message.chat,
                     round: message.round,
-                    gold: message.gold
+                    gold: message.gold,
+                    ammo: message.ammo,
+                    discs: message.discs
                 });
                 break;
             }
@@ -141,7 +149,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.head,
                     message.at,
                     message.scores,
-                    message.sniper === true
+                    message.sniper === true,
+                    message.gold === true
                 );
                 break;
             case 'chat':
@@ -164,6 +173,12 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'caught':
                 handlers.caught(message.id);
+                break;
+            case 'ammo':
+                handlers.ammo(message.ammo);
+                break;
+            case 'discs':
+                handlers.discs(message.discs, message.added);
                 break;
             case 'pong': {
                 const rtt = performance.now() - message.c;
@@ -257,6 +272,10 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         hit(throwId: number, target: string, at: Vec3Tuple) {
             send({ type: 'hit', throwId, target, at });
+        },
+        /** Reports where this player's thrown disc came to rest. */
+        landed(throwId: number, at: Vec3Tuple) {
+            send({ type: 'landed', throwId, at });
         },
         /** Tells the room 纪老师 caught this player throwing. */
         caught() {

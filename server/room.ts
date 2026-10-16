@@ -1,10 +1,12 @@
 // Pure game-room logic for the shared campus world (no Cloudflare APIs, so node tests drive it directly).
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
+import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
     ChatLine,
     ClientMessage,
+    GroundDisc,
     GoldState,
     RoundState,
     PlayerPose,
@@ -16,6 +18,7 @@ import type {
     Vec3Tuple
 } from '../src/net/protocol.ts';
 import {
+    AMMO,
     CHAT,
     cleanChat,
     cleanName,
@@ -53,10 +56,12 @@ type Player = Omit<PlayerSummary, 'account'> & {
     /** Registered username when signed in; lifetime stats are recorded under it. */
     accountName: string | null;
     chatTimes: number[];
+    /** Discs in hand. */
+    ammo: number;
     /** Recent (arrival − sender clock) samples and the smoothed offset that maps the sender's clock to room time. */
     clockSamples: number[];
     clockOffset: number | null;
-    throws: Map<number, { record: ThrowRecord; at: number; scored: boolean }>;
+    throws: Map<number, { record: ThrowRecord; at: number; scored: boolean; golden: boolean; landed: boolean }>;
 };
 
 export type Outbox = {
@@ -81,6 +86,12 @@ export class Room {
     round: RoundState | null = null;
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
+    /** Discs a newcomer carries (tests raise it to throw repeatedly). */
+    startAmmo: number = AMMO.start;
+    /** Discs lying on the floor, and when the PE office last put one out. */
+    discs: GroundDisc[] = [];
+    private discId = 0;
+    private officeAt: number | null = null;
     private readonly random: () => number;
 
     constructor(out: Outbox, spawnCount: number, accounts: Accounts | null = null, random = Math.random) {
@@ -108,7 +119,11 @@ export class Room {
         this.players.delete(id);
         this.out.all({ type: 'left', id });
         // An empty room forgets its round; the next arrival starts a fresh one.
-        if (!this.players.size) this.round = null;
+        if (!this.players.size) {
+            this.round = null;
+            this.discs = [];
+            this.officeAt = null;
+        }
     }
 
     message(id: string, message: ClientMessage | null, now: number) {
@@ -133,6 +148,7 @@ export class Room {
                 player.pose = message.pose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 this.tryPickup(player, now);
+                this.pickupDiscs(player);
                 return;
             case 'throw':
                 return this.throw(player, message.throw, now);
@@ -142,6 +158,8 @@ export class Room {
                 return this.chat(player, message.text, now);
             case 'caught':
                 return this.caught(player, now);
+            case 'landed':
+                return this.landed(player, message.throwId, message.at);
             case 'ping':
                 return this.out.to(player.id, { type: 'pong', c: message.c });
         }
@@ -150,10 +168,15 @@ export class Room {
     /** Periodic work: respawns that are due, and the pose snapshot. */
     tick(now: number) {
         this.advanceRound(now);
+        this.officeTick(now);
         for (const player of this.players.values()) {
             if (!player.alive && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
                 player.hp = MAX_HP;
+                if (player.ammo < AMMO.start) {
+                    player.ammo = AMMO.start;
+                    this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+                }
                 this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
             }
             if (player.alive && player.hp < MAX_HP && now - player.hurtAt > HEAL_SECONDS * 1000) {
@@ -226,6 +249,7 @@ export class Room {
             spawnedAt: now,
             accountName: account?.name ?? null,
             chatTimes: [],
+            ammo: this.startAmmo,
             clockSamples: [],
             clockOffset: null,
             throws: new Map()
@@ -242,6 +266,8 @@ export class Room {
             chat: this.chatLog.slice(-20),
             round: this.round!,
             gold: this.gold,
+            ammo: player.ammo,
+            discs: this.discs,
             t: now
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
@@ -255,8 +281,15 @@ export class Room {
         if (player.pose && distance(player.pose.p, record.o) > 3) return;
         // A sniper flag only counts on a full-speed launch.
         if (record.sniper && speed < SNIPER.minSpeed) record.sniper = false;
+        // Every throw spends a disc, except the golden one (it comes back).
+        const golden = this.gold.holder === player.id;
+        if (!golden) {
+            if (player.ammo <= 0) return;
+            player.ammo--;
+            this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+        }
         player.lastThrowAt = now;
-        player.throws.set(record.id, { record, at: now, scored: false });
+        player.throws.set(record.id, { record, at: now, scored: false, golden, landed: false });
         this.out.all({ type: 'thrown', from: player.id, t: now, throw: record }, player.id);
     }
 
@@ -296,6 +329,7 @@ export class Room {
             out,
             head,
             sniper,
+            gold: entry.golden,
             at,
             scores
         });
@@ -312,6 +346,7 @@ export class Room {
             player.kills = 0;
             player.deaths = 0;
         }
+        this.officeAt = now;
         this.round = { phase: 'playing', endsAt: now + ROUND.roundSeconds * 1000 };
         const [x, z] = SPAWN_POINTS[Math.floor(this.random() * SPAWN_POINTS.length) % SPAWN_POINTS.length];
         this.gold = { holder: null, at: [x, 0.92, z] };
@@ -353,6 +388,50 @@ export class Room {
         this.gold = { holder: null, at };
         this.goldDroppedAt = now;
         this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });
+    }
+
+    /** The thrower reports where its (ordinary) disc came to rest: it lies there for anyone to pick up. */
+    private landed(player: Player, throwId: number, at: Vec3Tuple) {
+        const entry = player.throws.get(throwId);
+        if (!entry || entry.landed || entry.golden) return;
+        entry.landed = true;
+        // Plausibility: within reach of the launch, inside the campus, and laid on the floor.
+        const reach = Math.hypot(...entry.record.v) * DISC_REST_SECONDS + 5;
+        if (distance(entry.record.o, at) > reach || !inBounds({ p: at, yaw: 0, pitch: 0 })) return;
+        this.discs.push({ id: ++this.discId, at: [at[0], Math.max(0.02, Math.min(at[1], 3)), at[2]] });
+        this.out.all({ type: 'discs', discs: this.discs });
+    }
+
+    private pickupDiscs(player: Player) {
+        if (!player.alive || !player.pose || player.ammo >= AMMO.max) return;
+        const [x, y, z] = player.pose.p;
+        const taken = this.discs.filter(
+            (disc) =>
+                Math.hypot(disc.at[0] - x, disc.at[2] - z) <= AMMO.pickupRadius &&
+                Math.abs(disc.at[1] - (y - 0.9)) < 1.6
+        );
+        if (!taken.length) return;
+        const room = AMMO.max - player.ammo;
+        const picked = taken.slice(0, room);
+        player.ammo += picked.length;
+        this.discs = this.discs.filter((disc) => !picked.includes(disc));
+        this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+        this.out.all({ type: 'discs', discs: this.discs });
+    }
+
+    /** The PE office puts out a fresh disc every AMMO.officeSeconds (a few may pile up there, no more). */
+    private officeTick(now: number) {
+        if (!this.players.size) return;
+        if (this.officeAt === null) this.officeAt = now;
+        if (now - this.officeAt < AMMO.officeSeconds * 1000) return;
+        this.officeAt = now;
+        const near = this.discs.filter((disc) => Math.hypot(disc.at[0] - PE_OFFICE.x, disc.at[2] - PE_OFFICE.z) < 3);
+        if (near.length >= AMMO.officeMax) return;
+        const a = this.random() * Math.PI * 2;
+        const r = 0.3 + this.random() * 0.6;
+        const id = ++this.discId;
+        this.discs.push({ id, at: [PE_OFFICE.x + Math.cos(a) * r, 0.02, PE_OFFICE.z + Math.sin(a) * r] });
+        this.out.all({ type: 'discs', discs: this.discs, added: { id, office: true } });
     }
 
     /** A player threw inside 纪老师's view (checked on the client against walls); the room checks he is near. */
@@ -461,6 +540,9 @@ export const stampPose = (
     }
     return Math.max(stamp, player.poseAt + 1);
 };
+
+/** A thrown disc must have come to rest within this long of flight (generous; it bounces and slides). */
+const DISC_REST_SECONDS = 6;
 
 const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const inBounds = ({ p: [x, y, z] }: PlayerPose) =>

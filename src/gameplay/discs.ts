@@ -42,8 +42,8 @@ type Disc = {
 /** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
 const MAX_DISCS = 24;
 const DISC_REMOVE_SECONDS = 8;
-/** A disc lying still on the floor is cleared after this long. */
-const SETTLED_REMOVE_SECONDS = 2.5;
+/** A disc lying still this long is handed over to the floor list (and picked up from there). */
+const SETTLED_HANDOVER_SECONDS = 0.5;
 
 export const hueColour = (hue: number): [number, number, number] => {
     // HSL(hue, 75%, 52%) → RGB
@@ -194,7 +194,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             targets: Map<string, V3>,
             onHit: (throwId: number, target: string, at: V3, velocity: V3) => void,
             onBounce?: (at: V3, speed: number) => void,
-            onTracer?: (at: V3, hue: number) => void
+            onTracer?: (at: V3, hue: number) => void,
+            onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void
         ) {
             bounceHandler = onBounce ?? null;
             // Backwards, so removing a disc does not skip the next one (and no per-frame array copy).
@@ -241,8 +242,21 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 }
                 disc.last = position;
                 disc.settledFor = !disc.live && speed < 0.4 ? disc.settledFor + deltaTime : 0;
-                if (disc.age > DISC_REMOVE_SECONDS || disc.settledFor > SETTLED_REMOVE_SECONDS || p.y < -5)
+                // The golden disc never lies about: once its flight is over it flies back to its holder.
+                // Ordinary discs come to rest and hand over to the room's list of discs lying on the floor.
+                const done = disc.gold
+                    ? !disc.live
+                    : disc.settledFor > SETTLED_HANDOVER_SECONDS || disc.age > DISC_REMOVE_SECONDS || p.y < -5;
+                if (done) {
+                    onRest?.({
+                        owner: disc.owner,
+                        throwId: disc.throwId,
+                        local: disc.local,
+                        gold: disc.gold,
+                        at: p.y < -5 ? null : position
+                    });
                     remove(disc);
+                }
             }
         },
         /** The golden disc's material, for discs its holder throws. */

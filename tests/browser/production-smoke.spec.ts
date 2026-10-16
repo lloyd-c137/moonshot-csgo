@@ -14,7 +14,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     });
 
     await page.goto('/');
-    await expect(page).toHaveTitle('Moonshot Open World · FF-01');
+    await expect(page).toHaveTitle('Moonshot Frisbee Games');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(4);
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);

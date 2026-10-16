@@ -174,16 +174,32 @@ export const createSound = () => {
                 l.upZ.value = 0;
             }
         },
-        /** Weapon inspect: a soft lift, a flick for the twirl, a catch and the flip. */
-        inspect: () =>
+        /**
+         * Weapon inspect: wrist cock, a sharp flick, the whirr of the spinning disc (one pulse per tumble), a solid
+         * snap catch and a light settle. Times are fractions of `seconds`.
+         */
+        inspect: (seconds: number, tossAt: number, catchAt: number) =>
             play((audio, now) => {
                 const out = master!;
-                hiss(audio, out, now, 0.22, 0.12, 500, 1400, 1.4);
-                tone(audio, out, 'triangle', 1800, 1500, now + 0.42, 0.04, 0.05);
-                hiss(audio, out, now + 0.45, 0.5, 0.1, 1600, 4200, 3);
-                tone(audio, out, 'square', 420, 300, now + 1.12, 0.04, 0.035);
-                hiss(audio, out, now + 1.2, 0.3, 0.09, 900, 2200, 1.8);
-                tone(audio, out, 'square', 380, 260, now + 2.05, 0.05, 0.04);
+                const at = (u: number) => now + u * seconds;
+                hiss(audio, out, at(0.02), 0.2, 0.08, 400, 900, 1.2);
+                // Flick: a rising whoosh with a finger snap.
+                hiss(audio, out, at(tossAt) - 0.07, 0.22, 0.2, 900, 3800, 1.6);
+                tone(audio, out, 'triangle', 2400, 1700, at(tossAt) - 0.01, 0.03, 0.08);
+                // In the air: whup-whup of the tumbling disc, rising then falling in pitch.
+                const pulses = 6;
+                for (let i = 0; i < pulses; i++) {
+                    const u = tossAt + ((catchAt - tossAt) * (i + 0.5)) / pulses;
+                    const height = Math.sin(((i + 0.5) / pulses) * Math.PI);
+                    hiss(audio, out, at(u) - 0.05, 0.11, 0.05 + height * 0.06, 1400 + height * 1600, 900, 2.5);
+                }
+                // Catch: a firm slap with a low thump.
+                hiss(audio, out, at(catchAt), 0.08, 0.32, 2600, 1200, 0.9);
+                tone(audio, out, 'sine', 180, 70, at(catchAt), 0.14, 0.4);
+                tone(audio, out, 'square', 520, 360, at(catchAt), 0.03, 0.05);
+                // Settle back into the ready grip.
+                hiss(audio, out, at(0.9), 0.18, 0.06, 700, 1500, 1.4);
+                tone(audio, out, 'square', 380, 260, at(0.99), 0.04, 0.035);
             }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>

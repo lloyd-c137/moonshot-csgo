@@ -54,7 +54,5 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     for (const waypoint of S308_TO_S309) expect(await walkTo(page, waypoint)).toBeLessThanOrEqual(0.3);
     expect(await waitForRoom(page, 'S309'), `at ${await position(page)}`).toBe(true);
     await expect(page.locator('#location-code')).toContainText('S309');
-    const discovered = await page.evaluate(() => window.__MOONSHOT__!.discovered());
-    for (const id of ['ENTRANCE-EAST', 'S308', 'S309']) expect(discovered).toContain(id);
     expect(errors).toEqual([]);
 });

@@ -1,9 +1,14 @@
-// Weapon inspect (F): the in-hand disc is lifted toward the centre of view, twirled, flipped to show its underside
-// and caught back in the ready pose. Pure keyframes (tested in test/inspect.test.js); match.ts drives the viewmodel.
+// Weapon inspect (F): cock the wrist, flick the disc up out of the hand so it flies over the centre of view while
+// tumbling and spinning, snap-catch it, show off its face and settle back into the ready pose.
+// Pure pose maths (tested in test/inspect.test.js); match.ts drives the viewmodel, afterimages, sound and catch kick.
 
-export const INSPECT_SECONDS = 2.4;
+export const INSPECT_SECONDS = 2.2;
+/** Progress (0–1) at which the disc leaves the hand, and at which it is caught. */
+export const TOSS_AT = 0.2;
+export const CATCH_AT = 0.7;
 
-type Pose = [position: [number, number, number], euler: [number, number, number]];
+type V = [number, number, number];
+type Pose = [position: V, euler: V];
 
 /** The resting in-hand pose (camera space): matches the idle viewmodel in match.ts. */
 export const REST: Pose = [
@@ -11,75 +16,64 @@ export const REST: Pose = [
     [18, -12, -8]
 ];
 
-// [time 0–1, pose]; Euler angles are unwrapped so interpolation spins the long way where wanted.
-const KEYS: [number, Pose][] = [
-    [0, REST],
-    // Lift toward centre and tip the face toward the eye.
-    [
-        0.16,
-        [
-            [0.12, -0.17, -0.5],
-            [72, -6, 18]
-        ]
-    ],
-    [
-        0.22,
-        [
-            [0.11, -0.16, -0.5],
-            [76, -4, 24]
-        ]
-    ],
-    // Twirl a full turn in the fingers, with a little wobble half-way round.
-    [
-        0.36,
-        [
-            [0.1, -0.15, -0.49],
-            [62, -18, 204]
-        ]
-    ],
-    [
-        0.5,
-        [
-            [0.1, -0.15, -0.49],
-            [78, -2, 384]
-        ]
-    ],
-    // Flip over to show the underside.
-    [
-        0.68,
-        [
-            [0.15, -0.19, -0.53],
-            [-96, 26, 372]
-        ]
-    ],
-    [
-        0.82,
-        [
-            [0.16, -0.2, -0.54],
-            [-92, 22, 368]
-        ]
-    ],
-    // Back to the ready pose (one turn further around, which is the same orientation).
-    [
-        1,
-        [
-            [0.3, -0.31, -0.66],
-            [18, -12, 352]
-        ]
-    ]
+// Hand poses around the toss. Euler angles are unwrapped (whole turns added) so the spin carries through.
+const DIP: Pose = [
+    [0.27, -0.37, -0.6],
+    [42, -22, -24]
 ];
+const RELEASE: Pose = [
+    [0.2, -0.25, -0.62],
+    [8, -8, -30]
+];
+/** Flight: three tumbles end over end and two spins about the disc's axis. */
+const TUMBLE = 1080;
+const SPIN = 720;
+const APEX = 0.46; // metres above the straight line between release and catch
+const CATCH: Pose = [
+    [0.13, -0.2, -0.55],
+    [RELEASE[1][0] + TUMBLE, 10, RELEASE[1][2] + SPIN]
+];
+const RECOIL: Pose = [
+    [0.15, -0.245, -0.565],
+    [CATCH[1][0] - 8, 14, CATCH[1][2] + 4]
+];
+const SHOW: Pose = [
+    [0.13, -0.18, -0.52],
+    [CATCH[1][0] + 66, 2, CATCH[1][2] + 22]
+];
+const END: Pose = [REST[0], [REST[1][0] + TUMBLE, REST[1][1], REST[1][2] + SPIN]];
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
-const mix = (a: readonly number[], b: readonly number[], t: number) =>
-    a.map((value, index) => value + (b[index] - value) * t) as [number, number, number];
+const easeIn = (t: number) => t * t;
+const mix = (a: V, b: V, t: number) => a.map((value, index) => value + (b[index] - value) * t) as V;
+const blend = (a: Pose, b: Pose, t: number): Pose => [mix(a[0], b[0], t), mix(a[1], b[1], t)];
+const span = (u: number, from: number, to: number) => Math.min(1, Math.max(0, (u - from) / (to - from)));
+
+/** True while the disc is in the air (between the toss and the catch). */
+export const airborne = (u: number) => u > TOSS_AT && u < CATCH_AT;
 
 /** Viewmodel position and Euler angles at progress `u` (0–1) of the inspect. */
 export const inspectPose = (u: number): Pose => {
     const t = Math.min(1, Math.max(0, u));
-    let index = 1;
-    while (index < KEYS.length - 1 && KEYS[index][0] < t) index++;
-    const [t0, a] = KEYS[index - 1];
-    const [t1, b] = KEYS[index];
-    const k = smooth((t - t0) / Math.max(1e-6, t1 - t0));
-    return [mix(a[0], b[0], k), mix(a[1], b[1], k)];
+    if (t < 0.14) return blend(REST, DIP, smooth(span(t, 0, 0.14)));
+    // The flick accelerates into the release so the throw carries straight into the flight.
+    if (t < TOSS_AT) return blend(DIP, RELEASE, easeIn(span(t, 0.14, TOSS_AT)));
+    if (t < CATCH_AT) {
+        const s = span(t, TOSS_AT, CATCH_AT);
+        const lift = 4 * s * (1 - s);
+        const [x, y, z] = mix(RELEASE[0], CATCH[0], s);
+        const wobble = Math.sin(s * Math.PI * 3) * 9;
+        return [
+            [x - 0.06 * lift, y + APEX * lift, z - 0.1 * lift],
+            [
+                RELEASE[1][0] + TUMBLE * s,
+                RELEASE[1][1] + (CATCH[1][1] - RELEASE[1][1]) * s + wobble,
+                RELEASE[1][2] + SPIN * s
+            ]
+        ];
+    }
+    // Snap catch: a short recoil, then show the face, then settle.
+    if (t < 0.76) return blend(CATCH, RECOIL, smooth(span(t, CATCH_AT, 0.76)));
+    if (t < 0.88) return blend(RECOIL, SHOW, smooth(span(t, 0.76, 0.88)));
+    return blend(SHOW, END, smooth(span(t, 0.88, 1)));
 };

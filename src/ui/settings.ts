@@ -1,4 +1,4 @@
-import type { StorageLike } from '../gameplay/discovery';
+import type { StorageLike } from '../app/storage';
 
 export type Settings = { lookSensitivity: number; fieldOfView: number };
 

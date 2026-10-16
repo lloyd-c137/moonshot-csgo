@@ -20,11 +20,11 @@ import {
 import type { Entity, Texture } from 'playcanvas';
 
 import { installDebugHooks } from './app/debugHooks';
+import { browserStorage } from './app/storage';
 import { watchForUpdates } from './app/updates';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
-import { browserStorage, DiscoveryLog } from './gameplay/discovery';
 import { createMatch } from './gameplay/match';
 import { StuckDetector } from './gameplay/stuck';
 import { apiBase, createAuth } from './net/auth';
@@ -119,12 +119,11 @@ const fetchJson = async (url: string, label: string) => {
 };
 
 const boot = async () => {
-    // Room data first: the UI needs the location list for the discovery map.
+    // Room data first: the location plate and room tracker need it.
     const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
     const derivedWorld = parseDerivedWorld(await fetchJson(DERIVED_WORLD_URL, '场景布置数据'));
     const arena = arenaLocation(derivedWorld);
-    const locations = [...rooms.rooms, arena];
-    ui = createUi(locations);
+    ui = createUi();
     const shell = ui;
 
     shell.stage('physics', 'active');
@@ -204,12 +203,8 @@ const boot = async () => {
     const settings = loadSettings(storage);
     applySettings(player, camera, settings);
 
-    const discovery = new DiscoveryLog(
-        locations.map((location) => location.id),
-        storage
-    );
-    shell.setDiscovered(discovery.list, discovery.total);
-    discovery.onChange(() => shell.setDiscovered(discovery.list, discovery.total));
+    // The exploration log was removed; drop what older versions saved.
+    storage?.removeItem('moonshot-open-world.discovered.v1');
 
     const rigidbodySystem = app.systems.rigidbody as RigidBodyComponentSystem;
     const anchorPositions = new Map<string, Point2>();
@@ -218,19 +213,10 @@ const boot = async () => {
         if (anchor) anchorPositions.set(room.id, [anchor.getPosition().x, anchor.getPosition().z]);
     }
     const anchors = createAnchorTriggers(rooms.rooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
-    const roomTracker = new RoomTracker(
-        rooms.rooms,
-        (location) => {
-            const isNew = location ? discovery.visit(location.id) : false;
-            shell.setLocation(location, isNew);
-            if (location && isNew) shell.discovered(location, discovery.count, discovery.total);
-        },
-        0.35,
-        0.2,
-        anchors,
-        [arena]
-    );
-    shell.setLocation(undefined, false);
+    const roomTracker = new RoomTracker(rooms.rooms, (location) => shell.setLocation(location), 0.35, 0.2, anchors, [
+        arena
+    ]);
+    shell.setLocation(undefined);
     let recoveries = 0;
     // Stuck detection: movement keys held with no progress (or sunk into the floor) offers a one-key escape.
     const stuck = new StuckDetector();
@@ -447,7 +433,6 @@ const boot = async () => {
                     .name ?? null,
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
-            discovered: () => [...discovery.list],
             match: match.debug,
             setRendering: (enabled: boolean) => {
                 app.autoRender = enabled;
@@ -461,6 +446,6 @@ const boot = async () => {
 boot().catch((error: unknown) => {
     console.error(error);
     const message = error instanceof Error ? error.message : String(error);
-    if (!ui) ui = createUi([]);
+    if (!ui) ui = createUi();
     ui.showError(message);
 });

@@ -26,10 +26,9 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await advance(page, 500);
     await expect(page.locator('#location-code')).toContainText('南入口门厅');
     await expect(page.locator('#location-name')).toHaveText('ENTRANCE-SOUTH');
-    // The spawn lobby is the first discovery: plate tag and toast report it.
-    expect(await page.evaluate(() => window.__MOONSHOT__!.discovered())).toEqual(['ENTRANCE-SOUTH']);
-    await expect(page.locator('#location')).toHaveAttribute('data-new', 'true');
-    await expect(page.locator('#toast')).toContainText('南入口门厅');
+    // No exploration log: no 新发现 tag and no discovery toast.
+    await expect(page.locator('#location .new-tag')).toHaveCount(0);
+    await expect(page.locator('#progress-label')).toHaveCount(0);
 
     // F inspects the disc in hand; it plays out and returns to the ready pose.
     await page.keyboard.press('f');
@@ -77,7 +76,6 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
 
     await page.keyboard.press('Escape');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'paused');
-    await expect(page.locator('#progress-label')).toHaveText('已发现 1 / 166 处地点');
     await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
     await enterCampus(page);
 

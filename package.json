@@ -2,7 +2,7 @@
     "name": "moonshot-csgo",
     "version": "0.0.0",
     "private": true,
-    "description": "Moonshot Open World browser FPS bootstrap",
+    "description": "Moonshot Frisbee Games: multiplayer frisbee FPS on the FF-01 campus",
     "type": "module",
     "scripts": {
     "audit:nav": "node tools/navAuditCli.ts",

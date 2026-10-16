@@ -1,7 +1,7 @@
 // The shared-world frisbee game: throwing input, the network session, other players, eliminations and respawns.
 // Works offline as frisbee practice when no server is configured or reachable.
 import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
-import { Entity, Vec3 } from 'playcanvas';
+import { BLEND_NORMAL, Color, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
 import { PLAYER } from '../config/gameplay';
@@ -12,14 +12,15 @@ import type { NetState } from '../net/client';
 import type { King, PlayerPose, PlayerSummary, ThrowRecord } from '../net/protocol';
 import { colourFor, MAX_HP, RESPAWN_SECONDS, SPAWN_PROTECTION, THROW_COOLDOWN } from '../net/protocol';
 import { kickLook, setLook } from '../player/playerController';
+import { box, place } from '../render/shapes';
 import type { Ui } from '../ui/shell';
 
 import { createAvatars } from './avatars';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
 import type { V3 } from './frisbee';
-import { chargeSpeed, launchNormal, THROW } from './frisbee';
-import { INSPECT_SECONDS, inspectPose } from './inspect';
+import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
+import { airborne, CATCH_AT, INSPECT_SECONDS, inspectPose, TOSS_AT } from './inspect';
 import { createSound } from './sound';
 
 type Options = {
@@ -71,6 +72,54 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     viewmodel.setLocalScale(0.85, 0.85, 0.85);
     camera.addChild(viewmodel);
     let viewmodelHue = -1;
+    // A white racing stripe across the top (and a crossing one underneath) so the spin reads during an inspect.
+    const stripeMesh = new Mesh(app.graphicsDevice);
+    {
+        const length = 2 * (DISC.radius - 0.03);
+        const top = place(box(length, 0.002, 0.02), { y: 0.0145 });
+        const under = place(box(0.02, 0.002, length * 0.8), { y: -0.0035 });
+        stripeMesh.setPositions([...top.positions, ...under.positions]);
+        stripeMesh.setNormals([...top.normals, ...under.normals]);
+        stripeMesh.setIndices([...top.indices, ...under.indices.map((index) => index + top.positions.length / 3)]);
+        stripeMesh.update();
+    }
+    const stripeMaterial = new StandardMaterial();
+    stripeMaterial.diffuse = new Color(0.95, 0.96, 0.97);
+    stripeMaterial.gloss = 0.6;
+    stripeMaterial.update();
+    const stripe = new Entity('viewmodel-stripe');
+    stripe.addComponent('render', {
+        meshInstances: [new MeshInstance(stripeMesh, stripeMaterial)],
+        castShadows: false
+    });
+    viewmodel.addChild(stripe);
+    // Afterimages trailing the disc while it is airborne during an inspect.
+    const ghosts = [0.42, 0.26, 0.14].map((opacity) => {
+        const material = new StandardMaterial();
+        material.blendType = BLEND_NORMAL;
+        material.opacity = opacity;
+        material.depthWrite = false;
+        material.update();
+        const entity = new Entity('viewmodel-ghost');
+        entity.addComponent('render', { meshInstances: [], castShadows: false });
+        entity.enabled = false;
+        entity.setLocalScale(0.85, 0.85, 0.85);
+        camera.addChild(entity);
+        return { entity, material };
+    });
+    const tintGhosts = (hue: number) => {
+        const mesh = discs.meshInstances(hue)[0].mesh!;
+        const colour = discs.meshInstances(hue)[0].material as StandardMaterial;
+        for (const ghost of ghosts) {
+            ghost.material.diffuse = colour.diffuse.clone();
+            ghost.material.emissive = colour.diffuse.clone();
+            ghost.material.emissiveIntensity = 0.35;
+            ghost.material.update();
+            ghost.entity.render!.meshInstances = [new MeshInstance(mesh, ghost.material)];
+        }
+    };
+    /** Whether the catch kick of the current inspect has fired. */
+    let caught = false;
 
     const selfId = () => net.id ?? 'local';
     const nameOf = (id: string) => roster.get(id)?.name ?? '某人';
@@ -100,6 +149,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         if (myHue !== viewmodelHue) {
             viewmodelHue = myHue;
             viewmodel.render!.meshInstances = discs.meshInstances(myHue);
+            tintGhosts(myHue);
         }
     };
     const refreshCount = refreshBoard;
@@ -380,7 +430,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         const now = performance.now();
         if ((now - lastThrowAt) / 1000 <= THROW_COOLDOWN) return false; // disc not back in hand yet
         inspectSince = now;
-        sound.inspect();
+        caught = false;
+        sound.inspect(INSPECT_SECONDS, TOSS_AT, CATCH_AT);
         return true;
     };
     const showBoard = (show: boolean) => {
@@ -421,15 +472,29 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         const charge = chargingSince === null ? 0 : Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds);
         viewmodel.enabled = started && alive;
         if (!alive) inspectSince = null;
-        if (inspectSince !== null || inspectHold !== null) {
-            const u = inspectHold ?? (now - inspectSince!) / 1000 / INSPECT_SECONDS;
-            if (u >= 1) inspectSince = null;
-            else {
-                const [p, e] = inspectPose(u);
-                viewmodel.setLocalPosition(p[0], p[1], p[2]);
-                viewmodel.setLocalEulerAngles(e[0], e[1], e[2]);
-                return;
+        const inspecting = inspectSince !== null || inspectHold !== null;
+        const u = inspecting ? (inspectHold ?? (now - inspectSince!) / 1000 / INSPECT_SECONDS) : 1;
+        if (u >= 1) inspectSince = null;
+        // Afterimages follow the disc a few milliseconds behind while it flies.
+        ghosts.forEach((ghost, index) => {
+            const lag = u - (index + 1) * 0.011;
+            ghost.entity.enabled = viewmodel.enabled && u < 1 && airborne(u) && airborne(lag);
+            if (!ghost.entity.enabled) return;
+            const [p, e] = inspectPose(lag);
+            ghost.entity.setLocalPosition(p[0], p[1], p[2]);
+            ghost.entity.setLocalEulerAngles(e[0], e[1], e[2]);
+        });
+        if (u < 1) {
+            const [p, e] = inspectPose(u);
+            viewmodel.setLocalPosition(p[0], p[1], p[2]);
+            viewmodel.setLocalEulerAngles(e[0], e[1], e[2]);
+            // Snap catch: a small FOV kick and a jolt of the view.
+            if (!caught && u >= CATCH_AT && inspectHold === null) {
+                caught = true;
+                punch = Math.max(punch, 0.55);
+                shake = Math.max(shake, 0.05);
             }
+            return;
         }
         const bob = Math.sin(now / 260) * 0.004;
         viewmodel.setLocalPosition(

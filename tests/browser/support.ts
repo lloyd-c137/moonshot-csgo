@@ -19,7 +19,6 @@ declare global {
             setRendering: (enabled: boolean) => void;
             raycast: (from: number[], to: number[]) => string | null;
             setLook: (pitch: number, yaw: number) => void;
-            discovered: () => string[];
             dressing: { doors: number; furniture: number; lights: number };
         };
     }
@@ -59,7 +58,7 @@ export const loadSimulated = async (page: Page) => {
 };
 
 export const enterCampus = async (page: Page) => {
-    await page.getByRole('button', { name: /进入校园|继续探索/ }).click();
+    await page.getByRole('button', { name: /进入校园|继续游戏/ }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
 };

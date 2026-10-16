@@ -2,8 +2,9 @@ import { Asset, AnimStateGraph, Entity } from 'playcanvas';
 import type { AppBase, ContainerResource, AnimTrack, StandardMaterial } from 'playcanvas';
 
 export const CHARACTER_ASSET_URL = '/assets/characters/moonshot-humanoid.glb';
-export const CHARACTER_VISUAL_SCALE = 0.33;
-export const CHARACTER_VISUAL_HEIGHT = 1.829 * CHARACTER_VISUAL_SCALE;
+export const CHARACTER_SOURCE_HEIGHT = 1.829;
+export const CHARACTER_VISUAL_SCALE = 0.72;
+export const CHARACTER_VISUAL_HEIGHT = CHARACTER_SOURCE_HEIGHT * CHARACTER_VISUAL_SCALE;
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
@@ -115,9 +116,17 @@ export class CharacterAssetLoader {
         for (const [name, track] of this.tracks)
             modelRoot.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
         const tracks = this.tracks;
+        let visualScale = CHARACTER_VISUAL_SCALE;
         return {
             root,
             materials,
+            get height() {
+                return CHARACTER_SOURCE_HEIGHT * visualScale;
+            },
+            setScale(scale: number) {
+                visualScale = Math.max(0.2, Math.min(1.2, scale));
+                root.setLocalScale(visualScale, visualScale, visualScale);
+            },
             play(name: string, blend = 0.12) {
                 if (!tracks.has(name) || modelRoot.anim!.baseLayer!.activeState === name) return;
                 modelRoot.anim!.baseLayer!.transition(name, blend);

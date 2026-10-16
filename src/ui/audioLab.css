@@ -93,6 +93,22 @@
     width: 70%;
     accent-color: #c8f2bc;
 }
+.audio-lab-scale {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 12px;
+    align-items: center;
+    margin: 14px 0;
+}
+.audio-lab-scale input {
+    grid-column: 1 / -1;
+    width: 100%;
+    accent-color: #c8f2bc;
+}
+.audio-lab-scale small {
+    grid-column: 1 / -1;
+    color: #b8c6b6;
+}
 .audio-lab output {
     margin-left: 8px;
 }

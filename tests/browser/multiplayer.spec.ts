@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { collectErrors } from './support';
 
 // Two players join the local shared-world room (wrangler dev) by typing a new username and password (one-step
-// sign-in registers them). They see each other, chat, and one eliminates the other with frisbees (a headshot, then a body hit); the server
+// sign-in registers them). They see each other, chat, and one eliminates the other with frisbees; the server
 // scores it, records lifetime stats for the account, and respawns the target. Runs in real time.
 const SERVER = 'ws://127.0.0.1:8787/ws';
 const API = 'http://127.0.0.1:8787';
@@ -33,6 +33,32 @@ const enter = async (page: Page, name: string, password: string) => {
 };
 
 const state = (page: Page) => page.evaluate(() => window.__MOONSHOT__!.match.state());
+
+test('lifetime board shows eliminations and measured win rates, including no recorded history', async ({ page }) => {
+    const base = { deaths: 3, hits: 99, score: 999 };
+    await page.route('**/api/leaderboard', (route) =>
+        route.fulfill({
+            json: {
+                king: null,
+                online: 0,
+                top: [
+                    { ...base, name: 'HalfWins', kills: 8, wins: 1, rounds: 2 },
+                    { ...base, name: 'NoWins', kills: 7, wins: 0, rounds: 3 },
+                    { ...base, name: 'NoHistory', kills: 6, wins: 0, rounds: 0 }
+                ]
+            }
+        })
+    );
+    await page.goto(`/?server=${encodeURIComponent(SERVER)}`);
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
+    await page.getByRole('tab', { name: '排行榜' }).click();
+    await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率']);
+    await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '50.0%']);
+    await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '0.0%']);
+    await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '—']);
+    await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
+});
 
 test('accounts, chat, headshots and eliminations in the shared campus', async ({ browser, request }) => {
     const stamp = Date.now().toString(36).slice(-6);
@@ -89,14 +115,13 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
 
-    // First hit to the head: damaged, not out; the thrower gets the head marker, the target's view is knocked up.
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.6, 39.6))).toBe(true);
+    // First body hit: damaged, not out.
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
     await expect
         .poll(async () => [(await state(b.page)).hp, (await state(a.page)).hitsClaimed], { timeout: 5_000 })
         .toEqual([1, 1]);
     expect((await state(b.page)).alive).toBe(true);
-    await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'head');
-    await expect(b.page.locator('#popup')).toHaveText('被爆头');
+    await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
 
     // Second hit (after the throw cooldown): eliminated and broadcast to everyone.
     await a.page.waitForTimeout(700);
@@ -134,8 +159,30 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect(Math.hypot(x + 40.3, z - 39.6)).toBeGreaterThan(3);
     await expect(b.page.locator('#eliminated')).toBeHidden();
 
-    // A fully aimed sniper disc to the head eliminates a full-health player in one hit.
+    // Ordinary throws have lift/drop: use the same verified 6 m passage, not the sniper's 10 m sight line.
+    // An actual ordinary head hit must eliminate a full-health player in one hit.
     expect((await state(b.page)).hp).toBe(2);
+    await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
+    await a.page.waitForTimeout(1_800);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.6, 39.6))).toBe(true);
+    await expect
+        .poll(
+            async () => ({
+                alive: (await state(b.page)).alive,
+                hp: (await state(b.page)).hp,
+                hitsClaimed: (await state(a.page)).hitsClaimed,
+                position: await b.page.evaluate(() => window.__MOONSHOT__!.position())
+            }),
+            { timeout: 5_000 }
+        )
+        .toMatchObject({ alive: false, hp: 0, hitsClaimed: 3 });
+    await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
+    await expect(a.page.locator('#popup')).toContainText('爆头淘汰');
+    await expect(b.page.locator('#popup')).toHaveText('被爆头淘汰');
+    expect((await state(a.page)).players.find((p) => p.name === nameA)?.kills).toBe(2);
+
+    // A fully aimed sniper headshot remains lethal too.
+    await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.6, 39.6, undefined, true))).toBe(

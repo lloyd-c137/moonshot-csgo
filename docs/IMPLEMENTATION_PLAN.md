@@ -7,6 +7,10 @@
 
 ## 1. Product brief
 
+### Subsequent authorized multiplayer work
+
+The original M0 scope below is historical. Multiplayer frisbee gameplay was subsequently implemented with owner authorization. The 2026-10-16 maintenance request adds recorded round win rates, lethal headshots for all discs and blackout at three minutes remaining. See [COMBAT_AUDIT.md](COMBAT_AUDIT.md) for implementation scope, remaining combat/audio issues and verification; this does not retroactively mark the exploration gates complete.
+
 Transform the real-campus-derived FF-01 architectural GLB into a desktop-browser, first-person open-world *exploration slice* with high-quality movement, valid indoor collision, room recognition and restrained in-world UI.
 
 **Player fantasy:** Arrive in Moonshot Academy, walk around an uninterrupted, 1:1-scale first-floor campus, discover distinct interiors and explore organically. No forced quest, administrative dashboard or loading a new page on entering a room.

@@ -247,14 +247,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             roster.size
                 ? [...roster.values()].map((entry) => ({
                       name: entry.name,
-                      score: entry.score,
+                      kills: entry.kills,
                       hp: entry.hp,
                       alive: entry.alive,
                       colour: entry.colour,
                       me: entry.id === me,
                       king: !!king && entry.account && entry.name === king.name
                   }))
-                : [{ name: '你（离线练习）', score: 0, hp, alive, colour: colourFor('local'), me: true, king: false }]
+                : [{ name: '你（离线练习）', kills: 0, hp, alive, colour: colourFor('local'), me: true, king: false }]
         );
         ui.health(hp, MAX_HP);
         // The standing 淘汰王 (lifetime record holder) wears the title whenever they are online.
@@ -473,10 +473,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     kickLook(player, 16, (Math.random() - 0.5) * 10);
                     ui.popup('被狙击爆头', 'me');
                 }
-                if (head && !out) {
-                    // A head hit knocks the view upward.
+                if (head && !snipe) {
+                    // Every head hit is lethal, with explicit victim feedback.
                     kickLook(player, 9, (Math.random() - 0.5) * 4);
-                    ui.popup('被爆头', 'me');
+                    ui.popup('被爆头淘汰', 'me');
                 }
                 if (!out) {
                     // Knock-back away from the thrower (or along the disc's path).
@@ -520,7 +520,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     sound.hitConfirm(out, head);
                     ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
                     ui.popup(
-                        out ? `淘汰 ${nameOf(target)}  +1` : head ? '爆头！' : '命中！',
+                        out ? `${head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1` : '命中！',
                         out ? 'kill' : head ? 'head' : 'hit'
                     );
                     // Confirmation you can feel: a punch of the view, harder on eliminations.

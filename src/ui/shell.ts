@@ -1,5 +1,7 @@
+import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 
+import { formatWinRate } from './formatStats';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
 import type { MapMarkers } from './minimap';
@@ -15,7 +17,7 @@ const STAGES: [LoadStage, string][] = [
     ['dressing', '家具、灯光与地图']
 ];
 
-export type AccountView = { name: string; kills: number; deaths: number; hits: number; score: number };
+export type AccountView = AccountStats;
 export type KingView = { name: string; kills: number; since: number };
 export type BoardView = { king: KingView | null; top: AccountView[]; online: number };
 
@@ -49,7 +51,7 @@ const MARKUP = `
           <h1 id="title-heading">MOONSHOT<br />FRISBEE GAMES</h1>
           <dl class="match-facts">
             <div><dt>地图</dt><dd>FF-01 校园一层</dd></div>
-            <div><dt>规则</dt><dd>两次命中淘汰</dd></div>
+            <div><dt>规则</dt><dd>身体两次 · 爆头直接淘汰</dd></div>
             <div><dt>复活</dt><dd>2.5 秒 · 1.5 秒保护</dd></div>
           </dl>
           <div class="operator" id="operator" data-mode="form">
@@ -63,9 +65,9 @@ const MARKUP = `
               <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
               <dl class="operator-stats">
                 <div><dt>累计淘汰</dt><dd id="account-kills">0</dd></div>
-                <div><dt>命中</dt><dd id="account-hits">0</dd></div>
+                <div><dt>胜率</dt><dd id="account-win-rate">—</dd></div>
                 <div><dt>被淘汰</dt><dd id="account-deaths">0</dd></div>
-                <div><dt>总积分</dt><dd id="account-score">0</dd></div>
+                <div><dt>已结算局数</dt><dd id="account-rounds">0</dd></div>
               </dl>
             </div>
             <p class="operator-error" id="auth-error" role="alert" hidden></p>
@@ -73,7 +75,8 @@ const MARKUP = `
         </section>
         <section class="tab-panel" data-panel="board" hidden>
           <h2 class="panel-title">全服累计排行</h2>
-          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰</th><th>命中</th><th>积分</th></tr></thead><tbody id="board-rows"><tr><td colspan="5">加载中…</td></tr></tbody></table>
+          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜率</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
+          <p class="fine-print">胜率 = 胜场 ÷ 已结算参赛局数；从本次更新开始记录，无记录显示 —。中途离开仍计入已结算局，纯观战与中止局不计。</p>
         </section>
         <section class="tab-panel" data-panel="help" hidden>
           <h2 class="panel-title">操作说明</h2>
@@ -146,9 +149,9 @@ const MARKUP = `
       <small>金飞盘击杀</small>
       <strong><b id="gold-kill-by"></b><i aria-hidden="true"></i><b id="gold-kill-target"></b></strong>
     </div>
-    <section class="leaderboard" id="leaderboard" aria-label="实时积分">
+    <section class="leaderboard" id="leaderboard" aria-label="本局淘汰数">
       <div class="king-line" id="king-line" hidden><span class="king-crown"><svg viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-9-5 9-6-5z"/></svg></span><span>淘汰王</span><b id="king-line-name"></b><em id="king-line-kills"></em></div>
-      <header><span>本局积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
+      <header><span>本局淘汰数</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
       <ol id="leaderboard-rows"></ol>
     </section>
     <div class="scope" id="scope" aria-hidden="true" data-ready="false">
@@ -179,7 +182,7 @@ const MARKUP = `
     <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd">G</span>好像卡住了？脱离卡死</button>
     <ol class="feed" id="feed" aria-live="polite"></ol>
     <div class="scoreboard" id="scoreboard" hidden>
-      <table><thead><tr><th>玩家</th><th>击中</th><th>被击中</th></tr></thead><tbody id="scoreboard-rows"></tbody></table>
+      <table><thead><tr><th>玩家</th><th>淘汰数</th><th>被淘汰</th></tr></thead><tbody id="scoreboard-rows"></tbody></table>
     </div>
     <div class="eliminated" id="eliminated" hidden><strong id="eliminated-title"></strong><span id="eliminated-detail"></span></div>
     <div class="map-dock">
@@ -295,7 +298,7 @@ export const createUi = () => {
         const rows = board.top.map((row, index) => {
             const tr = document.createElement('tr');
             if (board.king && row.name === board.king.name) tr.dataset.king = 'true';
-            for (const value of [String(index + 1), row.name, String(row.kills), String(row.hits), String(row.score)]) {
+            for (const value of [String(index + 1), row.name, String(row.kills), formatWinRate(row)]) {
                 const td = document.createElement('td');
                 td.textContent = value;
                 tr.append(td);
@@ -305,7 +308,7 @@ export const createUi = () => {
         if (!rows.length) {
             const tr = document.createElement('tr');
             const td = document.createElement('td');
-            td.colSpan = 5;
+            td.colSpan = 4;
             td.textContent = '还没有注册玩家的战绩';
             tr.append(td);
             rows.push(tr);
@@ -563,9 +566,9 @@ export const createUi = () => {
                 $<HTMLInputElement>('#auth-password').value = '';
                 $('#account-name').textContent = account.name;
                 $('#account-kills').textContent = String(account.kills);
-                $('#account-hits').textContent = String(account.hits);
+                $('#account-win-rate').textContent = formatWinRate(account);
                 $('#account-deaths').textContent = String(account.deaths);
-                $('#account-score').textContent = String(account.score);
+                $('#account-rounds').textContent = String(account.rounds ?? 0);
             }
         },
         /** Whether account features are available (a server is configured). */
@@ -676,7 +679,7 @@ export const createUi = () => {
         leaderboard: (
             rows: {
                 name: string;
-                score: number;
+                kills: number;
                 hp: number;
                 alive: boolean;
                 colour: number;
@@ -684,7 +687,7 @@ export const createUi = () => {
                 king: boolean;
             }[]
         ) => {
-            const sorted = [...rows].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            const sorted = [...rows].sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name));
             const shown = sorted.slice(0, 5);
             const mine = sorted.findIndex((row) => row.me);
             if (mine >= 5) shown.push(sorted[mine]);
@@ -709,7 +712,7 @@ export const createUi = () => {
                     }
                     name.append(row.name);
                     const score = document.createElement('b');
-                    score.textContent = String(row.score);
+                    score.textContent = String(row.kills);
                     item.append(rank, name, score);
                     return item;
                 })

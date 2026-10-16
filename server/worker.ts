@@ -9,7 +9,7 @@ import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import { parseClientMessage, SNAPSHOT_HZ } from '../src/net/protocol.ts';
 import type { ServerMessage } from '../src/net/protocol.ts';
 
-import type { AccountDb, UserRow } from './accounts.ts';
+import { sqlAccountDb } from './accountDb.ts';
 import { Accounts } from './accounts.ts';
 import { Room } from './room.ts';
 
@@ -202,61 +202,3 @@ export class World extends DurableObject<Env> {
         }
     }
 }
-
-/** AccountDb on Durable Object SQLite. */
-const sqlAccountDb = (sql: SqlStorage): AccountDb => {
-    sql.exec(`CREATE TABLE IF NOT EXISTS users (
-        key TEXT PRIMARY KEY, name TEXT NOT NULL, salt TEXT NOT NULL, hash TEXT NOT NULL,
-        kills INTEGER NOT NULL DEFAULT 0, deaths INTEGER NOT NULL DEFAULT 0, hits INTEGER NOT NULL DEFAULT 0,
-        score INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL)`);
-    sql.exec('CREATE INDEX IF NOT EXISTS users_kills ON users (kills DESC, score DESC)');
-    sql.exec(
-        'CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, key TEXT NOT NULL, expires INTEGER NOT NULL)'
-    );
-    sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
-    const one = <T>(cursor: SqlStorageCursor<Record<string, SqlStorageValue>>) => {
-        const rows = cursor.toArray();
-        return (rows[0] as T | undefined) ?? null;
-    };
-    return {
-        findUser: (key) => one<UserRow>(sql.exec('SELECT * FROM users WHERE key = ?', key)),
-        insertUser: (row) =>
-            void sql.exec(
-                'INSERT INTO users (key, name, salt, hash, kills, deaths, hits, score, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                row.key,
-                row.name,
-                row.salt,
-                row.hash,
-                row.kills,
-                row.deaths,
-                row.hits,
-                row.score,
-                row.created
-            ),
-        addStats: (key, d) =>
-            void sql.exec(
-                'UPDATE users SET kills = kills + ?, deaths = deaths + ?, hits = hits + ?, score = score + ? WHERE key = ?',
-                d.kills,
-                d.deaths,
-                d.hits,
-                d.score,
-                key
-            ),
-        insertSession: (token, key, expires) =>
-            void sql.exec('INSERT INTO sessions (token, key, expires) VALUES (?, ?, ?)', token, key, expires),
-        findSession: (token) =>
-            one<{ key: string; expires: number }>(sql.exec('SELECT key, expires FROM sessions WHERE token = ?', token)),
-        deleteSession: (token) => void sql.exec('DELETE FROM sessions WHERE token = ?', token),
-        getMeta: (key) => one<{ value: string }>(sql.exec('SELECT value FROM meta WHERE key = ?', key))?.value ?? null,
-        setMeta: (key, value) =>
-            void sql.exec(
-                'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-                key,
-                value
-            ),
-        top: (limit) =>
-            sql
-                .exec('SELECT * FROM users ORDER BY kills DESC, score DESC LIMIT ?', limit)
-                .toArray() as unknown as UserRow[]
-    };
-};

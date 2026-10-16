@@ -8,7 +8,7 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -37,7 +37,7 @@ export const CHAT = { max: 120, burst: 4, windowSeconds: 6, history: 40 } as con
 export const HEAD_ABOVE = 0.45;
 /**
  * Sniper throws (a fully aimed charge): launched at `speed`, they fly dead straight (no drop, no lift) for
- * `straightSeconds`. A sniper disc to the head eliminates outright. The room only honours the flag at ≥ `minSpeed`.
+ * `straightSeconds`. Every disc headshot is lethal; the sniper flag adds flight/feedback only, at ≥ `minSpeed`.
  */
 export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const;
 /**
@@ -53,7 +53,7 @@ export const ROUND = {
      * With this long left the lights go out and the night guard starts his rounds: from then on an elimination (by
      * disc or by his flashlight) is final for the round, and if only one player is left standing they win at once.
      */
-    blackoutSecondsLeft: 240,
+    blackoutSecondsLeft: 180,
     /** Chance that a golden-disc throw leaves an ordinary disc where it comes down. */
     goldDropChance: 0.35,
     /** The golden disc's holder moves this much slower… */
@@ -113,7 +113,15 @@ export type PlayerSummary = {
 export type StampedPose = PlayerPose & { t: number };
 
 /** Lifetime stats of a registered account. */
-export type AccountStats = { name: string; kills: number; deaths: number; hits: number; score: number };
+export type AccountStats = {
+    name: string;
+    kills: number;
+    deaths: number;
+    hits: number;
+    score: number;
+    wins: number;
+    rounds: number;
+};
 
 /** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */
 export type King = { name: string; kills: number; since: number };

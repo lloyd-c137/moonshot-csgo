@@ -13,13 +13,18 @@ export type UserRow = {
     deaths: number;
     hits: number;
     score: number;
+    wins: number;
+    rounds: number;
     created: number;
 };
 
 export type AccountDb = {
     findUser(key: string): UserRow | null;
     insertUser(row: UserRow): void;
-    addStats(key: string, delta: { kills: number; deaths: number; hits: number; score: number }): void;
+    addStats(
+        key: string,
+        delta: { kills: number; deaths: number; hits: number; score: number; wins: number; rounds: number }
+    ): void;
     insertSession(token: string, key: string, expires: number): void;
     findSession(token: string): { key: string; expires: number } | null;
     deleteSession(token: string): void;
@@ -68,7 +73,9 @@ const statsOf = (row: UserRow): AccountStats => ({
     kills: row.kills,
     deaths: row.deaths,
     hits: row.hits,
-    score: row.score
+    score: row.score,
+    wins: row.wins,
+    rounds: row.rounds
 });
 
 export type AuthResult =
@@ -93,7 +100,19 @@ export class Accounts {
         const hash = await hashPassword(password, salt);
         // Re-check after the await: another registration may have taken the name meanwhile.
         if (this.db.findUser(key)) return { ok: false, error: '这个用户名已被注册' };
-        this.db.insertUser({ key, name, salt, hash, kills: 0, deaths: 0, hits: 0, score: 0, created: now });
+        this.db.insertUser({
+            key,
+            name,
+            salt,
+            hash,
+            kills: 0,
+            deaths: 0,
+            hits: 0,
+            score: 0,
+            wins: 0,
+            rounds: 0,
+            created: now
+        });
         return this.session(key, now);
     }
 
@@ -141,9 +160,12 @@ export class Accounts {
     }
 
     /** Adds to an account's lifetime stats; returns the new totals. */
-    record(name: string, delta: { kills?: number; deaths?: number; hits?: number; score?: number }) {
+    record(
+        name: string,
+        delta: { kills?: number; deaths?: number; hits?: number; score?: number; wins?: number; rounds?: number }
+    ) {
         const key = usernameKey(name);
-        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, ...delta });
+        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0, ...delta });
         const row = this.db.findUser(key);
         return row ? statsOf(row) : null;
     }
@@ -193,13 +215,18 @@ export class MemoryAccountDb implements AccountDb {
     insertUser(row: UserRow) {
         this.users.set(row.key, { ...row });
     }
-    addStats(key: string, delta: { kills: number; deaths: number; hits: number; score: number }) {
+    addStats(
+        key: string,
+        delta: { kills: number; deaths: number; hits: number; score: number; wins: number; rounds: number }
+    ) {
         const row = this.users.get(key);
         if (!row) return;
         row.kills += delta.kills;
         row.deaths += delta.deaths;
         row.hits += delta.hits;
         row.score += delta.score;
+        row.wins += delta.wins;
+        row.rounds += delta.rounds;
     }
     insertSession(token: string, key: string, expires: number) {
         this.sessions.set(token, { key, expires });
@@ -217,6 +244,13 @@ export class MemoryAccountDb implements AccountDb {
         this.meta.set(key, value);
     }
     top(limit: number) {
-        return [...this.users.values()].sort((a, b) => b.kills - a.kills || b.score - a.score).slice(0, limit);
+        return [...this.users.values()]
+            .sort(
+                (a, b) =>
+                    b.kills - a.kills ||
+                    b.wins / (b.rounds || 1) - a.wins / (a.rounds || 1) ||
+                    a.key.localeCompare(b.key)
+            )
+            .slice(0, limit);
     }
 }

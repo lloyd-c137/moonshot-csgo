@@ -82,6 +82,8 @@ export type Outbox = {
 export class Room {
     readonly players = new Map<string, Player>();
     private pending = new Set<string>();
+    /** Accounts that actually joined play this round; retained across disconnects, deduplicated on reconnect. */
+    private roundParticipants = new Set<string>();
     private spawnCursor = 0;
     private readonly spawnCount: number;
     private readonly out: Outbox;
@@ -128,6 +130,7 @@ export class Room {
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
             this.round = null;
+            this.roundParticipants.clear();
             this.discs = [];
             this.officeAt = null;
         }
@@ -230,7 +233,7 @@ export class Room {
             for (const other of this.players.values()) {
                 if (other.accountName === account.name) {
                     this.out.close(other.id);
-                    this.disconnect(other.id);
+                    this.disconnect(other.id, now);
                 }
             }
             name = account.name;
@@ -273,6 +276,8 @@ export class Room {
             player.alive = false;
             player.spectating = true;
         }
+        if (this.round?.phase === 'playing' && !player.spectating && player.accountName)
+            this.roundParticipants.add(player.accountName);
         this.out.to(id, {
             type: 'welcome',
             id,
@@ -330,8 +335,8 @@ export class Room {
         entry.scored = true;
         const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
         const sniper = entry.record.sniper === true;
-        // A sniper disc to the head is lethal outright; anything else takes one point of health.
-        target.hp = sniper && head ? 0 : Math.max(0, target.hp - 1);
+        // Every disc to the head is lethal outright; body hits take one point of health.
+        target.hp = head ? 0 : Math.max(0, target.hp - 1);
         target.hurtAt = now;
         player.score += POINTS.hit;
         const out = target.hp === 0;
@@ -420,7 +425,9 @@ export class Room {
     // ---------- rounds and the golden disc ----------
 
     private startRound(now: number, announce = true) {
+        this.roundParticipants.clear();
         for (const player of this.players.values()) {
+            if (player.accountName) this.roundParticipants.add(player.accountName);
             player.score = 0;
             player.kills = 0;
             player.deaths = 0;
@@ -452,6 +459,15 @@ export class Room {
     }
 
     private endRound(now: number, winner: Player | null, line: string | null) {
+        if (this.round?.phase !== 'playing') return;
+        for (const name of this.roundParticipants) {
+            const account = this.accounts?.record(name, { rounds: 1, wins: name === winner?.accountName ? 1 : 0 });
+            if (account) {
+                const connected = [...this.players.values()].find((player) => player.accountName === name);
+                if (connected) this.out.to(connected.id, { type: 'account', account });
+            }
+        }
+        this.roundParticipants.clear();
         this.round = {
             phase: 'ended',
             winner: winner?.name ?? null,

@@ -27,6 +27,7 @@ import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { browserStorage, DiscoveryLog } from './gameplay/discovery';
 import { createMatch } from './gameplay/match';
 import { StuckDetector } from './gameplay/stuck';
+import { apiBase, createAuth } from './net/auth';
 import { addCampusCollisions } from './physics/collisionWorld';
 import {
     applySettings,
@@ -178,14 +179,23 @@ const boot = async () => {
     buildSigns(app, campus.root, derivedWorld, rooms.rooms);
     const { player, camera } = createPlayer(app);
     setupAtmosphere(app, camera);
-    const match = createMatch({
-        app,
-        player,
-        camera,
-        canvas,
-        ui: shell,
-        url: multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname)
-    });
+    const serverUrl = multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
+    const auth = createAuth(apiBase(serverUrl));
+    shell.accountsAvailable(auth.available);
+    const match = createMatch({ app, player, camera, canvas, ui: shell, url: serverUrl, auth });
+    // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
+    if (auth.available) {
+        void auth.restore().then((account) => shell.account(account));
+        void auth
+            .board()
+            .then((board) => {
+                shell.king(board.king);
+                shell.titleStatus(board.online);
+            })
+            .catch(() => shell.titleStatus(null));
+    } else {
+        shell.titleStatus(null);
+    }
     const lightPool = createLightPool(app, [
         ...derivedWorld.lights,
         ...authoredScenes.flatMap((scene) => scene.lights)
@@ -226,6 +236,7 @@ const boot = async () => {
     const stuck = new StuckDetector();
     const moveKeys = new Set<string>();
     let stuckShown = false;
+    let closeChat: (() => void) | null = null;
     let stuckAt: [number, number] = [0, 0];
     const escapeStuck = () => {
         stuck.reset();
@@ -246,6 +257,7 @@ const boot = async () => {
                 )
             )
                 return;
+            if (shell.chatOpen()) return;
             if (type === 'keydown') moveKeys.add(event.code);
             else moveKeys.delete(event.code);
         });
@@ -297,6 +309,7 @@ const boot = async () => {
         }
     };
     const enter = () => {
+        match.unlockAudio();
         void canvas.requestPointerLock().catch(() => {
             shell.notify('浏览器没有允许锁定鼠标，请再点一次“进入校园”');
         });
@@ -318,6 +331,9 @@ const boot = async () => {
             shell.paused();
         }
     });
+    document.addEventListener('pointerlockchange', () => {
+        if (document.pointerLockElement !== canvas) closeChat?.();
+    });
     document.addEventListener('pointerlockerror', () => shell.notify('浏览器没有允许锁定鼠标，请再点一次'));
     const pause = () => {
         clearVelocity();
@@ -331,7 +347,23 @@ const boot = async () => {
     window.addEventListener(
         'keydown',
         (event) => {
-            if (event.code === 'Escape' && document.pointerLockElement === canvas) {
+            if (shell.chatOpen()) return; // typing in the chat box
+            if (
+                (event.code === 'Enter' || event.code === 'KeyT') &&
+                document.pointerLockElement === canvas &&
+                match.online
+            ) {
+                event.preventDefault();
+                moveKeys.clear();
+                match.setInputPaused(true);
+                closeChat = shell.openChat(
+                    (text) => match.chat(text),
+                    () => {
+                        closeChat = null;
+                        match.setInputPaused(false);
+                    }
+                );
+            } else if (event.code === 'Escape' && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 document.exitPointerLock();
             } else if (event.code === 'KeyR' && hasEntered && document.pointerLockElement === canvas) {
@@ -358,6 +390,24 @@ const boot = async () => {
             settingsChanged: (next) => {
                 applySettings(player, camera, next);
                 saveSettings(storage, next);
+            },
+            login: async (name, password) => {
+                shell.account(await auth.login(name, password));
+                match.rejoin();
+            },
+            register: async (name, password) => {
+                shell.account(await auth.register(name, password));
+                match.rejoin();
+            },
+            logout: async () => {
+                await auth.logout();
+                shell.account(null);
+                match.rejoin(shell.nickname());
+            },
+            loadBoard: async () => {
+                const board = await auth.board();
+                shell.king(board.king);
+                return board;
             }
         },
         settings

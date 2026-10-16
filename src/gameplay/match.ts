@@ -6,22 +6,32 @@ import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-contr
 
 import { PLAYER } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
+import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
-import type { PlayerPose, PlayerSummary, ThrowRecord } from '../net/protocol';
+import type { King, PlayerPose, PlayerSummary, ThrowRecord } from '../net/protocol';
 import { colourFor, MAX_HP, RESPAWN_SECONDS, SPAWN_PROTECTION, THROW_COOLDOWN } from '../net/protocol';
-import { setLook } from '../player/playerController';
+import { kickLook, setLook } from '../player/playerController';
 import type { Ui } from '../ui/shell';
 
 import { createAvatars } from './avatars';
 import { createDiscs } from './discs';
+import { createEffects } from './effects';
 import type { V3 } from './frisbee';
 import { chargeSpeed, launchNormal, THROW } from './frisbee';
 import { createSound } from './sound';
 
-type Options = { app: AppBase; player: Entity; camera: Entity; canvas: HTMLCanvasElement; ui: Ui; url: string | null };
+type Options = {
+    app: AppBase;
+    player: Entity;
+    camera: Entity;
+    canvas: HTMLCanvasElement;
+    ui: Ui;
+    url: string | null;
+    auth: Auth;
+};
 
-export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) => {
+export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
     const avatars = createAvatars(app, camera, ui.nameTagLayer());
@@ -38,6 +48,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
     let killer = '';
     let hp = MAX_HP;
     const sound = createSound();
+    const effects = createEffects(app);
+    let king: King | null = null;
+    let nickname = '';
+    let inputPaused = false;
     let poses = new Map<string, PlayerPose>();
     /** Recent eliminations per killer, for streak announcements. */
     const streaks = new Map<string, { count: number; at: number }>();
@@ -66,14 +80,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                       hp: entry.hp,
                       alive: entry.alive,
                       colour: entry.colour,
-                      me: entry.id === me
+                      me: entry.id === me,
+                      king: !!king && entry.account && entry.name === king.name
                   }))
-                : [{ name: '你（离线练习）', score: 0, hp, alive, colour: colourFor('local'), me: true }]
+                : [{ name: '你（离线练习）', score: 0, hp, alive, colour: colourFor('local'), me: true, king: false }]
         );
         ui.health(hp, MAX_HP);
-        // The leader (most points, at least one) carries the 淘汰王 title above their head too.
-        const leader = [...roster.values()].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))[0];
-        avatars.setLeader(leader && leader.score > 0 ? leader.id : null);
+        // The standing 淘汰王 (lifetime record holder) wears the title whenever they are online.
+        const holder = king
+            ? [...roster.values()].find((entry) => entry.account && entry.name === king!.name)
+            : undefined;
+        avatars.setLeader(holder?.id ?? null);
         const myHue = roster.get(me)?.colour ?? colourFor('local');
         if (myHue !== viewmodelHue) {
             viewmodelHue = myHue;
@@ -114,7 +131,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
     const setAlive = (value: boolean) => {
         alive = value;
         const script = controller();
-        if (script) script.enabled = value;
+        if (script) script.enabled = value && !inputPaused;
         if (value) hp = MAX_HP;
         if (!value) {
             player.rigidbody!.linearVelocity = Vec3.ZERO;
@@ -139,8 +156,19 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
             }
             refreshCount();
         },
-        welcome: (me, players) => {
+        welcome: (me, players, extra) => {
             roster.clear();
+            king = extra.king;
+            ui.king(king);
+            ui.chatHistory(extra.chat);
+            if (extra.account) {
+                auth.account = extra.account;
+                ui.account(extra.account);
+            } else if (auth.token) {
+                // The saved session was not accepted by the room: play as a guest.
+                auth.account = null;
+                ui.account(null);
+            }
             for (const each of players) {
                 roster.set(each.id, each);
                 if (each.id !== me.id) avatars.add(each.id, each.name, each.colour);
@@ -183,7 +211,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 local: false
             });
         },
-        struck: (target, by, targetHp, out, at, scores) => {
+        struck: (target, by, targetHp, out, head, at, scores) => {
+            effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
             for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
                 const entry = roster.get(id);
                 if (entry) Object.assign(entry, { score, kills, deaths });
@@ -197,6 +226,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 const from = positionOf(by);
                 ui.damage(bearingTo(from));
                 shake = out ? 0.12 : 0.07;
+                if (head && !out) {
+                    // A head hit knocks the view upward.
+                    kickLook(player, 9, (Math.random() - 0.5) * 4);
+                    ui.popup('被爆头', 'me');
+                }
                 if (!out) {
                     // Knock-back away from the thrower (or along the disc's path).
                     const p = player.getPosition();
@@ -216,9 +250,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                     ui.feed(`被 ${nameOf(by)} 命中 · 剩余生命 ${targetHp}`, 'me');
                 }
             } else if (by === me) {
-                sound.hitConfirm(out);
-                ui.hitMarker(out ? 'kill' : 'hit');
-                if (!out) ui.feed(`命中 ${nameOf(target)} · +1`, 'mine');
+                sound.hitConfirm(out, head);
+                ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
+                ui.popup(
+                    out ? `淘汰 ${nameOf(target)}  +3` : head ? '爆头  +1' : '命中  +1',
+                    out ? 'kill' : head ? 'head' : 'hit'
+                );
             } else {
                 sound.impact(positionOf(target) ?? at);
                 if (!out) ui.feed(`${nameOf(by)} 命中 ${nameOf(target)}`);
@@ -242,6 +279,16 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 ui.feed('生命已恢复', 'mine');
             }
             refreshBoard();
+        },
+        chat: (line) => ui.chatLine(line),
+        king: (next, isNew) => {
+            king = next;
+            ui.king(next, isNew);
+            refreshBoard();
+        },
+        account: (account) => {
+            auth.account = account;
+            ui.account(account);
         },
         respawn: (id, spawn) => {
             const entry = roster.get(id);
@@ -310,7 +357,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
 
     const locked = () => document.pointerLockElement === canvas;
     window.addEventListener('mousedown', (event) => {
-        if (event.button !== 0 || !locked() || !alive || !started) return;
+        if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
         chargingSince = performance.now();
     });
     window.addEventListener('mouseup', (event) => {
@@ -370,6 +417,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
         start(name: string) {
             if (started) return;
             started = true;
+            nickname = name;
             sound.unlock();
             viewmodel.enabled = true;
             // Warm-up: create (and soon remove) one disc body so the first real throw does not pay for the physics
@@ -385,7 +433,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 local: false
             });
             refreshBoard();
-            net.connect(name);
+            net.connect(name, auth.token);
             refreshCount();
         },
         update(deltaTime: number) {
@@ -399,6 +447,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
             poses = net.poses();
             avatars.update(poses, now);
             animateFeel(deltaTime, now);
+            effects.update(deltaTime);
             targets.clear();
             for (const [id, each] of poses) targets.set(id, each.p);
             discs.update(
@@ -416,6 +465,27 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
         get alive() {
             return alive;
         },
+        get online() {
+            return net.state === 'online';
+        },
+        /** Call from a user gesture (a click or key) so the browser lets audio start. */
+        unlockAudio: () => sound.unlock(),
+        /** Joins again with the current account (after signing in or out from the pause screen). */
+        rejoin(name?: string) {
+            if (name !== undefined) nickname = name;
+            if (started) net.rejoin(nickname, auth.token);
+        },
+        chat: (text: string) => net.chat(text),
+        /** Freezes movement and throwing while the chat box is open. */
+        setInputPaused(paused: boolean) {
+            inputPaused = paused;
+            const script = controller();
+            if (script) script.enabled = alive && !paused;
+            if (paused) {
+                chargingSince = null;
+                ui.charge(null);
+            }
+        },
         debug: {
             state: () => ({
                 net: net.state,
@@ -427,6 +497,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 throws,
                 hitsClaimed
             }),
+            chat: (text: string) => net.chat(text),
             throwAt: (x: number, y: number, z: number, speed: number = THROW.maxSpeed) => {
                 const eye = camera.getPosition();
                 const dx = x - eye.x;

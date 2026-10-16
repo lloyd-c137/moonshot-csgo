@@ -1,6 +1,7 @@
 // Pure game-room logic for the shared campus world (no Cloudflare APIs, so node tests drive it directly).
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import type {
+    ChatLine,
     ClientMessage,
     PlayerPose,
     PlayerSummary,
@@ -11,8 +12,11 @@ import type {
     Vec3Tuple
 } from '../src/net/protocol.ts';
 import {
+    CHAT,
+    cleanChat,
     cleanName,
     colourFor,
+    HEAD_ABOVE,
     HEAL_SECONDS,
     MAX_HP,
     MAX_PLAYERS,
@@ -26,18 +30,23 @@ import {
     THROW_COOLDOWN
 } from '../src/net/protocol.ts';
 
+import type { Accounts } from './accounts.ts';
+
 /** Campus bounds (m) a reported pose must lie inside; anything else is ignored. */
 const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
 /** Slack (m) on the reach check: disc radius + capsule radius + latency/interpolation error. */
 const HIT_SLACK = 3.5;
 
-type Player = PlayerSummary & {
+type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
     poseAt: number;
     lastThrowAt: number;
     respawnAt: number;
     hurtAt: number;
     spawnedAt: number;
+    /** Registered username when signed in; lifetime stats are recorded under it. */
+    accountName: string | null;
+    chatTimes: number[];
     throws: Map<number, { record: ThrowRecord; at: number; scored: boolean }>;
 };
 
@@ -56,10 +65,18 @@ export class Room {
     private spawnCursor = 0;
     private readonly spawnCount: number;
     private readonly out: Outbox;
+    private readonly accounts: Accounts | null;
+    private readonly chatLog: ChatLine[] = [];
+    private chatId = 0;
 
-    constructor(out: Outbox, spawnCount: number) {
+    constructor(out: Outbox, spawnCount: number, accounts: Accounts | null = null) {
         this.out = out;
         this.spawnCount = spawnCount;
+        this.accounts = accounts;
+    }
+
+    get online() {
+        return this.players.size;
     }
 
     /** A socket connected; it becomes a player once it says hello. */
@@ -80,7 +97,7 @@ export class Room {
             }
             return;
         }
-        if (message.type === 'hello') return this.hello(id, message.version, message.name, now);
+        if (message.type === 'hello') return this.hello(id, message.version, message.name, message.token, now);
         const player = this.players.get(id);
         if (!player) return;
         switch (message.type) {
@@ -98,6 +115,8 @@ export class Room {
                 return this.throw(player, message.throw, now);
             case 'hit':
                 return this.hit(player, message.throwId, message.target, message.at, now);
+            case 'chat':
+                return this.chat(player, message.text, now);
         }
     }
 
@@ -128,7 +147,7 @@ export class Room {
         return [...this.players.values()].map((player) => summary(player));
     }
 
-    private hello(id: string, version: number, rawName: string, now: number) {
+    private hello(id: string, version: number, rawName: string, token: string | undefined, now: number) {
         if (!this.pending.has(id)) return;
         this.pending.delete(id);
         if (version !== PROTOCOL_VERSION) {
@@ -139,9 +158,24 @@ export class Room {
             this.out.to(id, { type: 'rejected', reason: 'full' });
             return this.out.close(id);
         }
-        const taken = new Set([...this.players.values()].map((player) => player.name));
-        let name = cleanName(rawName) || randomName();
-        for (let suffix = 2; taken.has(name); suffix++) name = `${cleanName(rawName) || '飞盘手'}${suffix}`;
+        const account = this.accounts?.resolve(token, now) ?? null;
+        let name: string;
+        if (account) {
+            // One connection per account: a new sign-in replaces an older one.
+            for (const other of this.players.values()) {
+                if (other.accountName === account.name) {
+                    this.out.close(other.id);
+                    this.disconnect(other.id);
+                }
+            }
+            name = account.name;
+        } else {
+            const taken = new Set([...this.players.values()].map((player) => player.name));
+            const base = cleanName(rawName) || randomName();
+            // Guests cannot appear under a registered username.
+            name = this.accounts?.isRegistered(base) ? `${base}·游客` : base;
+            for (let suffix = 2; taken.has(name); suffix++) name = `${base}·${suffix}`;
+        }
         const player: Player = {
             id,
             name,
@@ -157,10 +191,20 @@ export class Room {
             respawnAt: 0,
             hurtAt: 0,
             spawnedAt: now,
+            accountName: account?.name ?? null,
+            chatTimes: [],
             throws: new Map()
         };
         this.players.set(id, player);
-        this.out.to(id, { type: 'welcome', id, name, players: this.summaries() });
+        this.out.to(id, {
+            type: 'welcome',
+            id,
+            name,
+            players: this.summaries(),
+            account,
+            king: this.accounts?.king() ?? null,
+            chat: this.chatLog.slice(-20)
+        });
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
 
@@ -191,6 +235,7 @@ export class Room {
         target.hurtAt = now;
         player.score += POINTS.hit;
         const out = target.hp === 0;
+        const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
         if (out) {
             player.kills++;
             player.score += POINTS.elimination;
@@ -200,7 +245,53 @@ export class Room {
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
-        this.out.all({ type: 'struck', target: target.id, by: player.id, hp: target.hp, out, at, scores });
+        this.out.all({ type: 'struck', target: target.id, by: player.id, hp: target.hp, out, head, at, scores });
+        this.persist(player, target, out, now);
+    }
+
+    /** Lifetime stats for signed-in players, and the standing 淘汰王. */
+    private persist(attacker: Player, target: Player, out: boolean, now: number) {
+        if (!this.accounts) return;
+        if (attacker.accountName) {
+            const stats = this.accounts.record(attacker.accountName, {
+                hits: 1,
+                kills: out ? 1 : 0,
+                score: POINTS.hit + (out ? POINTS.elimination : 0)
+            });
+            if (stats) {
+                this.out.to(attacker.id, { type: 'account', account: stats });
+                const crowned = out ? this.accounts.challenge(stats, now) : null;
+                if (crowned) {
+                    this.out.all({ type: 'king', king: crowned.king, isNew: crowned.isNew });
+                    if (crowned.isNew)
+                        this.system(`新的淘汰王诞生：${crowned.king.name}（累计淘汰 ${crowned.king.kills}）`, now);
+                }
+            }
+        }
+        if (out && target.accountName) {
+            const stats = this.accounts.record(target.accountName, { deaths: 1 });
+            if (stats) this.out.to(target.id, { type: 'account', account: stats });
+        }
+    }
+
+    private chat(player: Player, raw: string, now: number) {
+        const text = cleanChat(raw);
+        if (!text) return;
+        player.chatTimes = player.chatTimes.filter((t) => now - t < CHAT.windowSeconds * 1000);
+        if (player.chatTimes.length >= CHAT.burst) return;
+        player.chatTimes.push(now);
+        this.pushChat({ id: ++this.chatId, t: now, name: player.name, colour: player.colour, text });
+    }
+
+    /** A system line in the world chat. */
+    system(text: string, now: number) {
+        this.pushChat({ id: ++this.chatId, t: now, name: '系统', colour: 45, text, system: true });
+    }
+
+    private pushChat(line: ChatLine) {
+        this.chatLog.push(line);
+        while (this.chatLog.length > CHAT.history) this.chatLog.shift();
+        this.out.all({ type: 'chat', line });
     }
 
     /** The hue (30° steps) furthest from every hue already in use, so players stay easy to tell apart. */
@@ -230,9 +321,10 @@ const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[
 const inBounds = ({ p: [x, y, z] }: PlayerPose) =>
     x >= BOUNDS.x0 && x <= BOUNDS.x1 && y >= BOUNDS.y0 && y <= BOUNDS.y1 && z >= BOUNDS.z0 && z <= BOUNDS.z1;
 
-const summary = ({ id, name, colour, alive, hp, score, kills, deaths }: Player): PlayerSummary => ({
+const summary = ({ id, name, accountName, colour, alive, hp, score, kills, deaths }: Player): PlayerSummary => ({
     id,
     name,
+    account: accountName !== null,
     colour,
     alive,
     hp,

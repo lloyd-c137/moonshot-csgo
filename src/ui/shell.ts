@@ -14,8 +14,16 @@ const STAGES: [LoadStage, string][] = [
     ['dressing', '家具、灯光与地图']
 ];
 
+export type AccountView = { name: string; kills: number; deaths: number; hits: number; score: number };
+export type KingView = { name: string; kills: number; since: number };
+export type BoardView = { king: KingView | null; top: AccountView[]; online: number };
+
 type Actions = {
     enter: () => void;
+    login: (name: string, password: string) => Promise<void>;
+    register: (name: string, password: string) => Promise<void>;
+    logout: () => Promise<void>;
+    loadBoard: () => Promise<BoardView>;
     recover: () => void;
     settingsChanged: (settings: Settings) => void;
 };
@@ -25,40 +33,91 @@ const MARKUP = `
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
     <div class="title-shade" aria-hidden="true"></div>
+    <div class="scanlines" aria-hidden="true"></div>
     <header class="title-top">
-      <span class="brand-mark">FF-01</span>
-      <span class="brand-name">MOONSHOT ACADEMY · 校园一层</span>
-      <span class="title-mode"><i aria-hidden="true"></i>多人在线 · 全服同一张地图</span>
+      <div class="brand"><span class="brand-mark">FF-01</span><b>MOONSHOT</b><span>OPEN WORLD</span></div>
+      <nav class="title-tabs" role="tablist" aria-label="菜单">
+        <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
+        <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
+        <button type="button" role="tab" data-tab="help" aria-selected="false">操作说明</button>
+      </nav>
+      <div class="title-status" id="title-status" data-state="offline"><i aria-hidden="true"></i><span id="title-online">离线练习</span></div>
     </header>
-    <div class="title-main">
-      <p class="eyebrow">开放世界 · 飞盘大乱斗</p>
-      <h1 id="title-heading">Moonshot<br />Open World</h1>
-      <p class="tagline">走遍校园一层的每一个房间，拿起飞盘和在线的所有人同场对战：两次命中即淘汰。</p>
-      <div class="start-card">
-        <div class="loading-strip">
-          <ol class="stages" aria-label="加载进度"></ol>
-          <span class="stage-label" id="stage-label">正在准备…</span>
-        </div>
-        <div class="start-row">
-          <label class="nickname" for="nickname"><span>昵称</span><input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
-          <button class="primary" id="enter-button" type="button" disabled>正在加载</button>
-        </div>
-        <p class="load-error" id="load-error" role="alert" hidden></p>
-        <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
+    <div class="title-body">
+      <div class="title-left">
+        <section class="tab-panel" data-panel="play">
+          <p class="mode-tag"><span>模式</span>飞盘大乱斗 · 全服同图</p>
+          <h1 id="title-heading">MOONSHOT<br />OPEN WORLD</h1>
+          <dl class="match-facts">
+            <div><dt>地图</dt><dd>FF-01 校园一层</dd></div>
+            <div><dt>规则</dt><dd>两次命中淘汰</dd></div>
+            <div><dt>复活</dt><dd>2.5 秒 · 1.5 秒保护</dd></div>
+          </dl>
+          <div class="operator" id="operator" data-mode="guest">
+            <div class="operator-tabs" role="tablist" aria-label="身份">
+              <button type="button" data-mode="guest" aria-selected="true">游客</button>
+              <button type="button" data-mode="login" aria-selected="false">登录</button>
+              <button type="button" data-mode="register" aria-selected="false">注册</button>
+            </div>
+            <div class="operator-guest">
+              <label class="field" for="nickname"><span>昵称</span><input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
+              <p class="operator-hint">游客的战绩不会保存。注册后累计淘汰会一直记录，并有机会成为淘汰王。</p>
+            </div>
+            <form class="operator-auth" id="auth-form" novalidate>
+              <label class="field" for="auth-name"><span>用户名</span><input id="auth-name" type="text" maxlength="16" autocomplete="username" spellcheck="false" placeholder="2–16 个字符" /></label>
+              <label class="field" for="auth-password"><span>密码</span><input id="auth-password" type="password" maxlength="64" autocomplete="current-password" placeholder="至少 6 位" /></label>
+              <button class="secondary auth-submit" id="auth-submit" type="submit">登录</button>
+            </form>
+            <div class="operator-signed">
+              <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
+              <dl class="operator-stats">
+                <div><dt>累计淘汰</dt><dd id="account-kills">0</dd></div>
+                <div><dt>命中</dt><dd id="account-hits">0</dd></div>
+                <div><dt>被淘汰</dt><dd id="account-deaths">0</dd></div>
+                <div><dt>总积分</dt><dd id="account-score">0</dd></div>
+              </dl>
+            </div>
+            <p class="operator-error" id="auth-error" role="alert" hidden></p>
+          </div>
+        </section>
+        <section class="tab-panel" data-panel="board" hidden>
+          <h2 class="panel-title">全服累计排行</h2>
+          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰</th><th>命中</th><th>积分</th></tr></thead><tbody id="board-rows"><tr><td colspan="5">加载中…</td></tr></tbody></table>
+        </section>
+        <section class="tab-panel" data-panel="help" hidden>
+          <h2 class="panel-title">操作说明</h2>
+          <dl class="controls">
+            <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
+            <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
+            <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
+            <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd">Enter</span></dt><dd>世界聊天</dd></div>
+            <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
+            <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
+            <div><dt><span class="kbd">G</span></dt><dd>脱离卡死（出现提示时）</dd></div>
+            <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
+            <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>
+          </dl>
+        </section>
       </div>
+      <aside class="title-right">
+        <div class="king-card" id="king-card" data-empty="true">
+          <span class="king-crown"><svg viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-9-5 9-6-5z"/></svg></span>
+          <span class="king-label">当前淘汰王</span>
+          <b class="king-name" id="king-name">虚位以待</b>
+          <span class="king-kills" id="king-kills">注册并淘汰对手，成为第一位淘汰王</span>
+        </div>
+      </aside>
     </div>
     <footer class="title-bottom">
-      <dl class="controls">
-        <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
-        <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
-        <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
-        <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷</dd></div>
-        <div><dt><span class="kbd">Tab</span></dt><dd>排行榜</dd></div>
-        <div><dt><span class="kbd">M</span></dt><dd>地图</dd></div>
-        <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
-        <div><dt><span class="kbd">Esc</span></dt><dd>暂停</dd></div>
-      </dl>
-      <p class="fine-print">只显示你填写的昵称，无需登录，不保存个人信息 · 场景由 FF-01 平面图推导，墙高、门、家具与灯光为游戏补充，并非实地测量</p>
+      <div class="loading-strip">
+        <ol class="stages" aria-label="加载进度"></ol>
+        <span class="stage-label" id="stage-label">正在准备…</span>
+      </div>
+      <p class="load-error" id="load-error" role="alert" hidden></p>
+      <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
+      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">ENTER THE ARENA</small></button>
+      <p class="fine-print">账号只保存用户名、加密后的密码和战绩，不收集其他个人信息 · 场景由 FF-01 平面图推导，并非实地测量</p>
     </footer>
   </section>
 
@@ -70,12 +129,19 @@ const MARKUP = `
       <span class="location-kind" id="location-kind"></span>
     </div>
     <section class="leaderboard" id="leaderboard" aria-label="实时积分">
-      <header><span>积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
+      <div class="king-line" id="king-line" hidden><span class="king-crown"><svg viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-9-5 9-6-5z"/></svg></span><span>淘汰王</span><b id="king-line-name"></b><em id="king-line-kills"></em></div>
+      <header><span>本局积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
       <ol id="leaderboard-rows"></ol>
     </section>
     <span class="crosshair" aria-hidden="true"></span>
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
+    <span class="popup" id="popup" aria-hidden="true"></span>
+    <div class="chat" id="chat" data-open="false">
+      <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+      <form class="chat-form" id="chat-form" hidden><span>全服</span><input id="chat-input" type="text" maxlength="120" autocomplete="off" placeholder="输入消息，Enter 发送，Esc 取消" /></form>
+      <p class="chat-hint" id="chat-hint"><span class="kbd">Enter</span> 聊天</p>
+    </div>
     <div class="damage" id="damage" aria-hidden="true"></div>
     <span class="damage-dir" id="damage-dir" aria-hidden="true"></span>
     <div class="name-tags" id="name-tags" aria-hidden="true"></div>
@@ -89,7 +155,6 @@ const MARKUP = `
     <div class="eliminated" id="eliminated" hidden><strong id="eliminated-title"></strong><span id="eliminated-detail"></span></div>
     <div class="map-dock">
       <canvas id="minimap" width="150" height="150" aria-label="小地图，北方朝上"></canvas>
-      <span class="tally" id="tally"></span>
     </div>
     <div class="hints" aria-hidden="true">
       <span><span class="kbd">左键</span>飞盘</span>
@@ -99,7 +164,7 @@ const MARKUP = `
     </div>
     <p class="toast" id="toast" role="status" hidden></p>
     <div class="full-map" aria-label="全屏地图">
-      <div><canvas id="full-map"></canvas><p>按 M 关闭地图。斜线覆盖的房间还没去过。</p></div>
+      <div><canvas id="full-map"></canvas><p>按 M 关闭地图</p></div>
     </div>
   </section>
 
@@ -172,13 +237,110 @@ export const createUi = (locations: CampusRoom[]) => {
     }
     const enterButton = $<HTMLButtonElement>('#enter-button');
     const toast = $<HTMLParagraphElement>('#toast');
-    const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'), locations);
+    const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'));
     const byId = new Map(locations.map((location) => [location.id, location]));
     let toastTimer = 0;
     let broadcastTimer = 0;
     let discoveredIds: readonly string[] = [];
 
     const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
+
+    // ---------- title: tabs, identity, board ----------
+    let authMode: 'guest' | 'login' | 'register' = 'guest';
+    let signedIn = false;
+    const setAuthMode = (mode: 'guest' | 'login' | 'register') => {
+        authMode = mode;
+        const operator = $('#operator');
+        operator.dataset.mode = signedIn ? 'signed' : mode;
+        for (const button of operator.querySelectorAll<HTMLButtonElement>('.operator-tabs button')) {
+            button.setAttribute('aria-selected', String(button.dataset.mode === mode));
+        }
+        $('#auth-submit').textContent = mode === 'register' ? '注册并登录' : '登录';
+        $<HTMLInputElement>('#auth-password').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+        $('#auth-error').hidden = true;
+    };
+    const authError = (message: string) => {
+        const error = $('#auth-error');
+        error.textContent = message;
+        error.hidden = false;
+    };
+    const renderBoard = (board: BoardView) => {
+        const rows = board.top.map((row, index) => {
+            const tr = document.createElement('tr');
+            if (board.king && row.name === board.king.name) tr.dataset.king = 'true';
+            for (const value of [String(index + 1), row.name, String(row.kills), String(row.hits), String(row.score)]) {
+                const td = document.createElement('td');
+                td.textContent = value;
+                tr.append(td);
+            }
+            return tr;
+        });
+        if (!rows.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 5;
+            td.textContent = '还没有注册玩家的战绩';
+            tr.append(td);
+            rows.push(tr);
+        }
+        $('#board-rows').replaceChildren(...rows);
+    };
+    const bindTitle = (actions: Actions) => {
+        for (const tab of document.querySelectorAll<HTMLButtonElement>('.title-tabs button')) {
+            tab.addEventListener('click', () => {
+                for (const other of document.querySelectorAll<HTMLButtonElement>('.title-tabs button')) {
+                    other.setAttribute('aria-selected', String(other === tab));
+                }
+                for (const panel of document.querySelectorAll<HTMLElement>('.tab-panel')) {
+                    panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+                }
+                if (tab.dataset.tab === 'board') {
+                    actions
+                        .loadBoard()
+                        .then(renderBoard)
+                        .catch((error: Error) => {
+                            const tr = document.createElement('tr');
+                            const td = document.createElement('td');
+                            td.colSpan = 5;
+                            td.textContent = error.message;
+                            tr.append(td);
+                            $('#board-rows').replaceChildren(tr);
+                        });
+                }
+            });
+        }
+        for (const button of document.querySelectorAll<HTMLButtonElement>('.operator-tabs button')) {
+            button.addEventListener('click', () => setAuthMode(button.dataset.mode as typeof authMode));
+        }
+        $<HTMLFormElement>('#auth-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const name = $<HTMLInputElement>('#auth-name').value.trim();
+            const password = $<HTMLInputElement>('#auth-password').value;
+            const submit = $<HTMLButtonElement>('#auth-submit');
+            submit.disabled = true;
+            (authMode === 'register' ? actions.register(name, password) : actions.login(name, password))
+                .then(() => ($<HTMLInputElement>('#auth-password').value = ''))
+                .catch((error: Error) => authError(error.message))
+                .finally(() => (submit.disabled = false));
+        });
+        $('#logout-button').addEventListener('click', () => void actions.logout());
+    };
+
+    // ---------- HUD: world chat ----------
+    const chatLog = $<HTMLOListElement>('#chat-log');
+    const appendChat = (line: { name: string; colour: number; text: string; system?: true }) => {
+        const item = document.createElement('li');
+        if (line.system) item.dataset.system = 'true';
+        const who = document.createElement('b');
+        who.textContent = line.system ? '系统' : line.name;
+        who.style.setProperty('--player-colour', `hsl(${line.colour} 75% 60%)`);
+        item.append(who, document.createTextNode(line.text));
+        chatLog.append(item);
+        while (chatLog.children.length > 40) chatLog.firstElementChild!.remove();
+        chatLog.scrollTop = chatLog.scrollHeight;
+        // Fresh lines show briefly during play; the full log shows while typing.
+        window.setTimeout(() => (item.dataset.old = 'true'), 9000);
+    };
 
     const showToast = (message: string, tone: 'info' | 'discovery' = 'info', duration = 3600) => {
         toast.textContent = message;
@@ -190,7 +352,6 @@ export const createUi = (locations: CampusRoom[]) => {
 
     const renderProgress = (total: number) => {
         const count = discoveredIds.length;
-        $('#tally').innerHTML = `已发现 <strong>${count}</strong> / ${total}`;
         $('#progress-label').textContent = `已发现 ${count} / ${total} 处地点`;
         $('#progress-fill').style.width = `${(count / Math.max(1, total)) * 100}%`;
         const recent = $('#recent');
@@ -238,8 +399,9 @@ export const createUi = (locations: CampusRoom[]) => {
             for (const item of stagesList.querySelectorAll<HTMLElement>('li')) item.dataset.state = 'done';
             $('#stage-label').textContent = '准备就绪';
             enterButton.disabled = false;
-            enterButton.textContent = '进入校园';
+            $('#enter-label').textContent = '进入校园';
             enterButton.addEventListener('click', actions.enter);
+            bindTitle(actions);
             $('#resume-button').addEventListener('click', actions.enter);
             $('#recover-button').addEventListener('click', actions.recover);
             const current = { ...settings };
@@ -301,7 +463,6 @@ export const createUi = (locations: CampusRoom[]) => {
         },
         setDiscovered: (ids: readonly string[], total: number) => {
             discoveredIds = ids;
-            map.setDiscovered(ids);
             renderProgress(total);
         },
         discovered: (location: CampusRoom, count: number, total: number) =>
@@ -324,6 +485,93 @@ export const createUi = (locations: CampusRoom[]) => {
             return value;
         },
         nameTagLayer: () => $('#name-tags'),
+        /** Title status line before joining (online count from the server, or offline). */
+        titleStatus: (online: number | null) => {
+            const title = $('#title-status');
+            title.dataset.state = online === null ? 'offline' : 'online';
+            $('#title-online').textContent = online === null ? '离线练习' : `服务器在线 · ${online} 人`;
+        },
+        /** Signed-in account (title card), or null for guest. */
+        account: (account: AccountView | null) => {
+            signedIn = !!account;
+            if (account) {
+                $('#account-name').textContent = account.name;
+                $('#account-kills').textContent = String(account.kills);
+                $('#account-hits').textContent = String(account.hits);
+                $('#account-deaths').textContent = String(account.deaths);
+                $('#account-score').textContent = String(account.score);
+            }
+            setAuthMode(authMode);
+        },
+        /** Whether account features are available (a server is configured). */
+        accountsAvailable: (available: boolean) => {
+            $('#operator').dataset.accounts = String(available);
+        },
+        /** The standing 淘汰王 (title card and HUD), shown whether or not they are online. */
+        king: (king: KingView | null, isNew = false) => {
+            const card = $('#king-card');
+            card.dataset.empty = String(!king);
+            $('#king-name').textContent = king ? king.name : '虚位以待';
+            $('#king-kills').textContent = king
+                ? `累计淘汰 ${king.kills} · ${new Date(king.since).toLocaleDateString('zh-CN')} 登基`
+                : '注册并淘汰对手，成为第一位淘汰王';
+            const line = $('#king-line');
+            line.hidden = !king;
+            if (king) {
+                $('#king-line-name').textContent = king.name;
+                $('#king-line-kills').textContent = `${king.kills} 淘汰`;
+                if (isNew) {
+                    line.classList.remove('new');
+                    void line.offsetWidth;
+                    line.classList.add('new');
+                }
+            }
+        },
+        chatHistory: (lines: { name: string; colour: number; text: string; system?: true }[]) => {
+            chatLog.replaceChildren();
+            for (const line of lines) appendChat(line);
+            for (const item of chatLog.querySelectorAll<HTMLElement>('li')) item.dataset.old = 'true';
+        },
+        chatLine: appendChat,
+        /** Opens the chat input; `send` receives the text on Enter. Returns false when chat is unavailable. */
+        openChat: (send: (text: string) => void, onClose: () => void) => {
+            const chat = $('#chat');
+            const form = $<HTMLFormElement>('#chat-form');
+            const input = $<HTMLInputElement>('#chat-input');
+            chat.dataset.open = 'true';
+            form.hidden = false;
+            input.value = '';
+            input.focus();
+            const close = () => {
+                chat.dataset.open = 'false';
+                form.hidden = true;
+                input.blur();
+                form.onsubmit = null;
+                input.onkeydown = null;
+                onClose();
+            };
+            form.onsubmit = (event) => {
+                event.preventDefault();
+                const text = input.value.trim();
+                if (text) send(text);
+                close();
+            };
+            input.onkeydown = (event) => {
+                event.stopPropagation();
+                if (event.key === 'Escape') close();
+            };
+            return close;
+        },
+        chatOpen: () => $('#chat').dataset.open === 'true',
+        /** Short text by the crosshair: hit, head hit, elimination, or being head-hit. */
+        popup: (text: string, kind: 'hit' | 'head' | 'kill' | 'me') => {
+            const popup = $('#popup');
+            popup.textContent = text;
+            popup.dataset.kind = kind;
+            popup.classList.remove('show');
+            void popup.offsetWidth;
+            popup.classList.add('show');
+        },
         /**
          * Offers a reload for a newer version. Shown as a dialog; during play (mouse captured) it waits on the
          * pause screen and a light notice says so.
@@ -347,6 +595,10 @@ export const createUi = (locations: CampusRoom[]) => {
             button.hidden = !show;
         },
         net: (state: 'offline' | 'connecting' | 'online' | 'rejected', players: number) => {
+            const title = $('#title-status');
+            title.dataset.state = state;
+            $('#title-online').textContent =
+                state === 'online' ? `在线 ${players} 人` : state === 'connecting' ? '连接中…' : '离线';
             const status = $('#net-status');
             status.dataset.state = state;
             status.textContent =
@@ -360,7 +612,15 @@ export const createUi = (locations: CampusRoom[]) => {
         },
         /** Live score list (top left): the top five, plus your own row when you are further down. */
         leaderboard: (
-            rows: { name: string; score: number; hp: number; alive: boolean; colour: number; me: boolean }[]
+            rows: {
+                name: string;
+                score: number;
+                hp: number;
+                alive: boolean;
+                colour: number;
+                me: boolean;
+                king: boolean;
+            }[]
         ) => {
             const sorted = [...rows].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
             const shown = sorted.slice(0, 5);
@@ -377,8 +637,8 @@ export const createUi = (locations: CampusRoom[]) => {
                     rank.textContent = String(sorted.indexOf(row) + 1);
                     const name = document.createElement('span');
                     name.className = 'who';
-                    // The leader (first place with points) carries the 淘汰王 title.
-                    if (sorted[0] === row && row.score > 0) {
+                    // The standing 淘汰王 (all-time record holder, not this round's leader) carries the title.
+                    if (row.king) {
                         item.dataset.leader = 'true';
                         const title = document.createElement('b');
                         title.className = 'title';
@@ -404,7 +664,7 @@ export const createUi = (locations: CampusRoom[]) => {
             );
             health.dataset.low = String(hp <= 1);
         },
-        hitMarker: (kind: 'hit' | 'kill') => {
+        hitMarker: (kind: 'hit' | 'head' | 'kill') => {
             const marker = $('#hitmarker');
             marker.dataset.kind = kind;
             marker.classList.remove('show');

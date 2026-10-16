@@ -8,7 +8,7 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -31,6 +31,10 @@ export const POINTS = { hit: 1, elimination: 2 } as const;
 /** Fastest launch speed a client may claim (m/s), plus the thrower's own velocity allowance. */
 export const MAX_THROW_SPEED = 26;
 export const NAME_MAX = 16;
+/** World chat: longest message, and at most `burst` messages per `windowSeconds`. */
+export const CHAT = { max: 120, burst: 4, windowSeconds: 6, history: 40 } as const;
+/** A hit this far above the capsule centre (m) is a head hit. */
+export const HEAD_ABOVE = 0.45;
 
 export type Vec3Tuple = [number, number, number];
 
@@ -45,6 +49,8 @@ export type PlayerPose = {
 export type PlayerSummary = {
     id: string;
     name: string;
+    /** Signed in with a registered account (stats are kept). */
+    account: boolean;
     colour: number;
     alive: boolean;
     hp: number;
@@ -55,6 +61,14 @@ export type PlayerSummary = {
 
 /** A pose stamped with the room's receive time (ms, server clock). */
 export type StampedPose = PlayerPose & { t: number };
+
+/** Lifetime stats of a registered account. */
+export type AccountStats = { name: string; kills: number; deaths: number; hits: number; score: number };
+
+/** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */
+export type King = { name: string; kills: number; since: number };
+
+export type ChatLine = { id: number; t: number; name: string; colour: number; text: string; system?: true };
 
 /** Per-player [score, eliminations, times eliminated]. */
 export type Scores = Record<string, [number, number, number]>;
@@ -69,20 +83,41 @@ export type ThrowRecord = {
 };
 
 export type ClientMessage =
-    | { type: 'hello'; version: number; name: string }
+    | { type: 'hello'; version: number; name: string; token?: string }
+    | { type: 'chat'; text: string }
     | { type: 'pose'; pose: PlayerPose }
     | { type: 'throw'; throw: ThrowRecord }
     | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
     | { type: 'respawned'; pose: PlayerPose };
 
 export type ServerMessage =
-    | { type: 'welcome'; id: string; name: string; players: PlayerSummary[] }
+    | {
+          type: 'welcome';
+          id: string;
+          name: string;
+          players: PlayerSummary[];
+          account: AccountStats | null;
+          king: King | null;
+          chat: ChatLine[];
+      }
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' }
     | { type: 'joined'; player: PlayerSummary }
     | { type: 'left'; id: string }
     | { type: 'snapshot'; t: number; poses: Record<string, StampedPose> }
     | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
-    | { type: 'struck'; target: string; by: string; hp: number; out: boolean; at: Vec3Tuple; scores: Scores }
+    | {
+          type: 'struck';
+          target: string;
+          by: string;
+          hp: number;
+          out: boolean;
+          head: boolean;
+          at: Vec3Tuple;
+          scores: Scores;
+      }
+    | { type: 'chat'; line: ChatLine }
+    | { type: 'king'; king: King; isNew: boolean }
+    | { type: 'account'; account: AccountStats }
     | { type: 'healed'; id: string; hp: number }
     | { type: 'respawn'; id: string; spawn: number };
 
@@ -127,7 +162,13 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
     if (!value || typeof value !== 'object') return null;
     switch (value.type) {
         case 'hello':
-            return isNumber(value.version) && typeof value.name === 'string' ? (value as ClientMessage) : null;
+            return isNumber(value.version) &&
+                typeof value.name === 'string' &&
+                (value.token === undefined || typeof value.token === 'string')
+                ? (value as ClientMessage)
+                : null;
+        case 'chat':
+            return typeof value.text === 'string' ? (value as ClientMessage) : null;
         case 'pose':
         case 'respawned':
             return isPose(value.pose) ? (value as ClientMessage) : null;
@@ -144,4 +185,15 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         default:
             return null;
     }
+};
+
+/** Cleans a chat message: no control/format characters, collapsed spaces, capped length. Empty means drop. */
+export const cleanChat = (raw: unknown) => {
+    if (typeof raw !== 'string') return '';
+    const cleaned = raw
+        .normalize('NFKC')
+        .replace(/[\p{C}]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return [...cleaned].slice(0, CHAT.max).join('');
 };

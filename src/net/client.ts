@@ -1,19 +1,44 @@
 // Browser side of the shared-world connection: one WebSocket to the room, typed events, pose interpolation.
 // Without a configured or reachable server the game stays fully playable offline (frisbee practice).
 import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
-import type { PlayerPose, PlayerSummary, Scores, ServerMessage, ThrowRecord, Vec3Tuple } from './protocol';
+import type {
+    AccountStats,
+    ChatLine,
+    King,
+    PlayerPose,
+    PlayerSummary,
+    Scores,
+    ServerMessage,
+    ThrowRecord,
+    Vec3Tuple
+} from './protocol';
 import { POSE_HZ, PROTOCOL_VERSION } from './protocol';
 
 export type NetState = 'offline' | 'connecting' | 'online' | 'rejected';
 
 type Handlers = {
     state: (state: NetState, detail?: string) => void;
-    welcome: (me: PlayerSummary, players: PlayerSummary[]) => void;
+    welcome: (
+        me: PlayerSummary,
+        players: PlayerSummary[],
+        extra: { account: AccountStats | null; king: King | null; chat: ChatLine[] }
+    ) => void;
     joined: (player: PlayerSummary) => void;
     left: (id: string) => void;
     /** `ageMs`: how long ago (server clock) the throw happened, for latency compensation. */
     thrown: (from: string, record: ThrowRecord, ageMs: number) => void;
-    struck: (target: string, by: string, hp: number, out: boolean, at: Vec3Tuple, scores: Scores) => void;
+    struck: (
+        target: string,
+        by: string,
+        hp: number,
+        out: boolean,
+        head: boolean,
+        at: Vec3Tuple,
+        scores: Scores
+    ) => void;
+    chat: (line: ChatLine) => void;
+    king: (king: King, isNew: boolean) => void;
+    account: (account: AccountStats) => void;
     healed: (id: string, hp: number) => void;
     respawn: (id: string, spawn: number) => void;
 };
@@ -24,6 +49,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let me: string | null = null;
     let retry = 0;
     let wantName = '';
+    let wantToken: string | null = null;
     let lastPoseAt = 0;
     const history = new Map<string, PoseBuffer>();
     const clock = new ServerClock();
@@ -43,7 +69,11 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 retry = 0;
                 setState('online');
                 const self = message.players.find((player) => player.id === message.id)!;
-                handlers.welcome(self, message.players);
+                handlers.welcome(self, message.players, {
+                    account: message.account,
+                    king: message.king,
+                    chat: message.chat
+                });
                 break;
             }
             case 'rejected':
@@ -80,7 +110,24 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'struck':
                 if (message.out) history.delete(message.target);
-                handlers.struck(message.target, message.by, message.hp, message.out, message.at, message.scores);
+                handlers.struck(
+                    message.target,
+                    message.by,
+                    message.hp,
+                    message.out,
+                    message.head,
+                    message.at,
+                    message.scores
+                );
+                break;
+            case 'chat':
+                handlers.chat(message.line);
+                break;
+            case 'king':
+                handlers.king(message.king, message.isNew);
+                break;
+            case 'account':
+                handlers.account(message.account);
                 break;
             case 'healed':
                 handlers.healed(message.id, message.hp);
@@ -101,7 +148,14 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         }
         const current = socket;
         current.addEventListener('open', () =>
-            current.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: wantName }))
+            current.send(
+                JSON.stringify({
+                    type: 'hello',
+                    version: PROTOCOL_VERSION,
+                    name: wantName,
+                    ...(wantToken ? { token: wantToken } : {})
+                })
+            )
         );
         current.addEventListener('message', (event) => {
             try {
@@ -130,9 +184,20 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         get id() {
             return me;
         },
-        connect(name: string) {
+        connect(name: string, token: string | null = null) {
             wantName = name;
+            wantToken = token;
             if (!socket && state !== 'online') open();
+        },
+        /** Re-joins with a new identity (after signing in or out). */
+        rejoin(name: string, token: string | null) {
+            wantName = name;
+            wantToken = token;
+            if (socket) socket.close();
+            else open();
+        },
+        chat(text: string) {
+            send({ type: 'chat', text });
         },
         /** Sends the local pose at most POSE_HZ times a second. */
         pose(pose: PlayerPose, force = false) {

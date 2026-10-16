@@ -48,9 +48,23 @@ export const createSound = () => {
             void loadClip(ctx, 'defeat', '/assets/audio/defeat.mp3');
             void loadClip(ctx, 'kill', '/assets/audio/kill.mp3');
         }
-        if (ctx.state === 'suspended') void ctx.resume();
+        if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
         return ctx;
     };
+
+    // Browsers only let audio start (or restart after the tab was hidden, the device changed or Safari
+    // "interrupted" it) inside a user gesture. Resume on every gesture and when the page comes back, so sounds
+    // never stay silent after the first one was blocked.
+    const wake = () => {
+        if (ctx && ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+    };
+    for (const type of ['pointerdown', 'keydown', 'mousedown', 'touchstart'] as const) {
+        window.addEventListener(type, wake, { capture: true, passive: true });
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) wake();
+    });
+    window.addEventListener('focus', wake);
 
     /** Output node: centred, or a panner at a world position. */
     const output = (audio: AudioContext, at?: V3) => {
@@ -61,9 +75,17 @@ export const createSound = () => {
         panner.refDistance = 2;
         panner.maxDistance = 60;
         panner.rolloffFactor = 1.1;
-        panner.positionX.value = at[0];
-        panner.positionY.value = at[1];
-        panner.positionZ.value = at[2];
+        if (panner.positionX) {
+            panner.positionX.value = at[0];
+            panner.positionY.value = at[1];
+            panner.positionZ.value = at[2];
+        } else {
+            (panner as unknown as { setPosition(x: number, y: number, z: number): void }).setPosition(
+                at[0],
+                at[1],
+                at[2]
+            );
+        }
         panner.connect(master!);
         return panner;
     };
@@ -129,7 +151,18 @@ export const createSound = () => {
         listener(position: V3, forward: V3) {
             if (!ctx) return;
             const l = ctx.listener;
-            if (l.positionX) {
+            if (!l.positionX) {
+                // Firefox and older Safari: the deprecated setters (otherwise positioned sounds stay at the origin
+                // and fall silent when you are far from it).
+                const legacy = l as unknown as {
+                    setPosition?: (x: number, y: number, z: number) => void;
+                    setOrientation?: (x: number, y: number, z: number, ux: number, uy: number, uz: number) => void;
+                };
+                legacy.setPosition?.(position[0], position[1], position[2]);
+                legacy.setOrientation?.(forward[0], forward[1], forward[2], 0, 1, 0);
+                return;
+            }
+            {
                 l.positionX.value = position[0];
                 l.positionY.value = position[1];
                 l.positionZ.value = position[2];
@@ -155,10 +188,12 @@ export const createSound = () => {
                 tone(audio, out, 'square', 320, 180, now, 0.05, Math.min(0.12, 0.03 + strength * 0.01));
             }),
         /** Your disc hit someone: a crisp confirmation; the "kill" clip when it eliminates. */
-        hitConfirm: (eliminated: boolean) =>
+        hitConfirm: (eliminated: boolean, head = false) =>
             play((audio, now) => {
                 tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
                 tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
+                // Head hits ring higher and longer.
+                if (head) tone(audio, master!, 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
                 if (eliminated && !playClip(audio, 'kill', 1.1)) {
                     tone(audio, master!, 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
                     tone(audio, master!, 'triangle', 990, 990, now + 0.24, 0.26, 0.28);

@@ -76,7 +76,11 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         app.root.addChild(root);
         const tag = document.createElement('span');
         tag.className = 'name-tag';
-        tag.textContent = name;
+        const badge = document.createElement('b');
+        badge.className = 'title';
+        badge.textContent = '淘汰王';
+        badge.hidden = true;
+        tag.append(badge, document.createTextNode(name));
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
@@ -123,10 +127,19 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         }
     };
 
+    /** Marks the current leader (title shown before the name tag), or nobody with null. */
+    const setLeader = (leader: string | null) => {
+        for (const [id, avatar] of avatars) {
+            const badge = avatar.tag.querySelector<HTMLElement>('.title');
+            if (badge) badge.hidden = id !== leader;
+        }
+    };
+
     return {
         add,
         remove,
         update,
+        setLeader,
         has: (id: string) => avatars.has(id),
         clear: () => {
             for (const id of [...avatars.keys()]) remove(id);

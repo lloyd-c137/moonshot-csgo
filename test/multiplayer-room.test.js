@@ -103,12 +103,12 @@ test('a damaged player heals to full after a quiet spell', () => {
     join('b', 'B');
     pose('a', [0, 0.9, 0], 0);
     pose('b', [6, 0.9, 0], 0);
-    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 1000);
-    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [6, 1, 0] }, 1400);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 3000);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [6, 1, 0] }, 3400);
     assert.equal(room.players.get('b').hp, MAX_HP - 1);
-    room.tick(1400 + (HEAL_SECONDS - 1) * 1000);
+    room.tick(3400 + (HEAL_SECONDS - 1) * 1000);
     assert.equal(room.players.get('b').hp, MAX_HP - 1);
-    room.tick(1400 + (HEAL_SECONDS + 1) * 1000);
+    room.tick(3400 + (HEAL_SECONDS + 1) * 1000);
     assert.equal(room.players.get('b').hp, MAX_HP);
     assert.ok(inbox.get('b').some((message) => message.type === 'healed' && message.id === 'b'));
 });
@@ -158,4 +158,23 @@ test('players get clearly different colours', () => {
             assert.ok(Math.min(gap, 360 - gap) >= 60, `${hues}`);
         }
     }
+});
+
+test('players cannot be hit during spawn protection, and snapshots carry server receive times', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A', 0);
+    join('b', 'B', 10_000); // b just (re)spawned at t = 10 s
+    pose('a', [0, 0.9, 0], 10_000);
+    pose('b', [6, 0.9, 0], 10_100);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 10_200);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [6, 1, 0] }, 10_600);
+    assert.equal(room.players.get('b').hp, MAX_HP, 'protected');
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 12_000);
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [6, 1, 0] }, 12_400);
+    assert.equal(room.players.get('b').hp, MAX_HP - 1, 'protection over');
+    room.tick(12_500);
+    const snapshot = inbox.get('a').findLast((message) => message.type === 'snapshot');
+    assert.equal(snapshot.poses.b.t, 10_100);
+    const thrown = inbox.get('b').find((message) => message.type === 'thrown');
+    assert.equal(thrown.t, 10_200);
 });

@@ -32,11 +32,14 @@ test('two players share the campus; a frisbee hit eliminates and the server resp
     // Stand 6 m apart in the straight corridor north of M104.
     await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
-    await a.page.waitForTimeout(800);
+    // Past the joiner's spawn protection, and long enough for A to see B's new position.
+    await a.page.waitForTimeout(1_800);
 
     // First hit: damaged, not out.
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.3, 39.6))).toBe(true);
-    await expect.poll(async () => (await state(b.page)).hp, { timeout: 5_000 }).toBe(1);
+    await expect
+        .poll(async () => [(await state(b.page)).hp, (await state(a.page)).hitsClaimed], { timeout: 5_000 })
+        .toEqual([1, 1]);
     expect((await state(b.page)).alive).toBe(true);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
     // Second hit (after the throw cooldown): eliminated and broadcast to everyone.
@@ -52,6 +55,8 @@ test('two players share the campus; a frisbee hit eliminates and the server resp
     expect(scores.find((p) => p.name === '甲')).toMatchObject({ score: 4, kills: 1, deaths: 0 });
     expect(scores.find((p) => p.id === idB)).toMatchObject({ score: 0, kills: 0, deaths: 1 });
     await expect(a.page.locator('#leaderboard-rows li').first()).toContainText('甲');
+    // The leader carries the 淘汰王 title on the board.
+    await expect(a.page.locator('#leaderboard-rows li').first().locator('.title')).toHaveText('淘汰王');
 
     // Respawned by the server after the timeout, somewhere else, and visible again to the thrower.
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);

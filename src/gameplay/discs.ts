@@ -31,10 +31,14 @@ type Disc = {
     live: boolean;
     spin: number;
     last: V3;
+    settledFor: number;
 };
 
-const MAX_DISCS = 48;
-const DISC_REMOVE_SECONDS = 9;
+/** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
+const MAX_DISCS = 24;
+const DISC_REMOVE_SECONDS = 8;
+/** A disc lying still on the floor is cleared after this long. */
+const SETTLED_REMOVE_SECONDS = 2.5;
 
 export const hueColour = (hue: number): [number, number, number] => {
     // HSL(hue, 75%, 52%) → RGB
@@ -159,7 +163,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 age: 0,
                 live: true,
                 spin: 0,
-                last: options.origin
+                last: options.origin,
+                settledFor: 0
             });
         },
         /**
@@ -169,7 +174,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
         update(
             deltaTime: number,
             targets: Map<string, V3>,
-            onHit: (throwId: number, target: string, at: V3) => void,
+            onHit: (throwId: number, target: string, at: V3, velocity: V3) => void,
             onBounce?: (at: V3, speed: number) => void
         ) {
             bounceHandler = onBounce ?? null;
@@ -195,7 +200,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                         if (id === disc.owner) continue;
                         if (discHitsPlayer(disc.last, position, centre)) {
                             disc.live = false;
-                            onHit(disc.throwId, id, position);
+                            onHit(disc.throwId, id, position, velocity);
                             break;
                         }
                     }
@@ -207,9 +212,13 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     disc.live = false;
                 }
                 disc.last = position;
-                if (disc.age > DISC_REMOVE_SECONDS || p.y < -5) remove(disc);
+                disc.settledFor = !disc.live && speed < 0.4 ? disc.settledFor + deltaTime : 0;
+                if (disc.age > DISC_REMOVE_SECONDS || disc.settledFor > SETTLED_REMOVE_SECONDS || p.y < -5)
+                    remove(disc);
             }
         },
+        /** Shared first-person/remote disc material, for the in-hand viewmodel. */
+        meshInstances: (hue: number) => meshFor(hue),
         clear() {
             for (const disc of [...discs]) remove(disc);
         }

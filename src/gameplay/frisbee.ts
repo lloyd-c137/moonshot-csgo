@@ -22,9 +22,10 @@ export const DISC = {
 
 /** Throw tuning: launch speed grows with how long the button was held. */
 export const THROW = {
-    minSpeed: 11,
-    maxSpeed: 22,
-    chargeSeconds: 0.7,
+    /** A quick tap is already a usable flick; holding builds to a long, fast throw. */
+    minSpeed: 14,
+    maxSpeed: 24,
+    chargeSeconds: 0.55,
     /** Disc plane pitched this much above the launch direction (positive angle of attack). */
     noseUp: (4 * Math.PI) / 180,
     maxElevation: (40 * Math.PI) / 180,
@@ -126,8 +127,8 @@ export const segmentDistance = (p0: V3, p1: V3, q0: V3, q1: V3) => {
     return length(sub(add(p0, scale(d1, s)), add(q0, scale(d2, t))));
 };
 
-/** Player hit volume: capsule centre `c` (as reported in poses), radius and half-height of its core segment. */
-export const PLAYER_HIT = { radius: 0.32, halfCore: 0.62 } as const;
+/** Player hit volume (slightly generous, favouring the thrower): capsule centre `c`, radius, core half-height. */
+export const PLAYER_HIT = { radius: 0.36, halfCore: 0.64 } as const;
 
 /** Whether the disc moving from `a` to `b` touches a player capsule centred at `c`. */
 export const discHitsPlayer = (a: V3, b: V3, c: V3) =>

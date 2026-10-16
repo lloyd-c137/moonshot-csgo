@@ -10,12 +10,14 @@
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_PLAYERS = 32;
-export const SNAPSHOT_HZ = 15;
-export const POSE_HZ = 15;
+export const SNAPSHOT_HZ = 20;
+export const POSE_HZ = 20;
 /** Seconds a player stays out after a hit before respawning. */
 export const RESPAWN_SECONDS = 2.5;
 /** Minimum seconds between two throws by the same player. */
-export const THROW_COOLDOWN = 0.55;
+export const THROW_COOLDOWN = 0.45;
+/** Seconds after (re)spawning during which a player cannot be hit. */
+export const SPAWN_PROTECTION = 1.5;
 /** A disc can score for this long after release (client side). */
 export const THROW_LIFETIME = 4;
 /** The room accepts hit claims for this long after a throw (slack for slow clients and latency). */
@@ -51,6 +53,9 @@ export type PlayerSummary = {
     deaths: number;
 };
 
+/** A pose stamped with the room's receive time (ms, server clock). */
+export type StampedPose = PlayerPose & { t: number };
+
 /** Per-player [score, eliminations, times eliminated]. */
 export type Scores = Record<string, [number, number, number]>;
 
@@ -75,8 +80,8 @@ export type ServerMessage =
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' }
     | { type: 'joined'; player: PlayerSummary }
     | { type: 'left'; id: string }
-    | { type: 'snapshot'; t: number; poses: Record<string, PlayerPose> }
-    | { type: 'thrown'; from: string; throw: ThrowRecord }
+    | { type: 'snapshot'; t: number; poses: Record<string, StampedPose> }
+    | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
     | { type: 'struck'; target: string; by: string; hp: number; out: boolean; at: Vec3Tuple; scores: Scores }
     | { type: 'healed'; id: string; hp: number }
     | { type: 'respawn'; id: string; spawn: number };

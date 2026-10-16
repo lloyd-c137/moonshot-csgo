@@ -1,5 +1,6 @@
 // Browser side of the shared-world connection: one WebSocket to the room, typed events, pose interpolation.
 // Without a configured or reachable server the game stays fully playable offline (frisbee practice).
+import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
 import type { PlayerPose, PlayerSummary, Scores, ServerMessage, ThrowRecord, Vec3Tuple } from './protocol';
 import { POSE_HZ, PROTOCOL_VERSION } from './protocol';
 
@@ -10,15 +11,12 @@ type Handlers = {
     welcome: (me: PlayerSummary, players: PlayerSummary[]) => void;
     joined: (player: PlayerSummary) => void;
     left: (id: string) => void;
-    thrown: (from: string, record: ThrowRecord) => void;
+    /** `ageMs`: how long ago (server clock) the throw happened, for latency compensation. */
+    thrown: (from: string, record: ThrowRecord, ageMs: number) => void;
     struck: (target: string, by: string, hp: number, out: boolean, at: Vec3Tuple, scores: Scores) => void;
     healed: (id: string, hp: number) => void;
     respawn: (id: string, spawn: number) => void;
 };
-
-type Sample = { at: number; pose: PlayerPose };
-/** Remote poses are drawn this far in the past so there are always two samples to blend between. */
-const INTERPOLATION_DELAY = 140;
 
 export const createNetClient = (url: string | null, handlers: Handlers) => {
     let socket: WebSocket | null = null;
@@ -27,7 +25,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let retry = 0;
     let wantName = '';
     let lastPoseAt = 0;
-    const history = new Map<string, Sample[]>();
+    const history = new Map<string, PoseBuffer>();
+    const clock = new ServerClock();
 
     const setState = (next: NetState, detail?: string) => {
         state = next;
@@ -59,19 +58,25 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 handlers.left(message.id);
                 break;
             case 'snapshot': {
-                const now = performance.now();
+                clock.observe(message.t, performance.now());
                 for (const [id, pose] of Object.entries(message.poses)) {
                     if (id === me) continue;
-                    const samples = history.get(id) ?? [];
-                    samples.push({ at: now, pose });
-                    while (samples.length > 8) samples.shift();
-                    history.set(id, samples);
+                    let buffer = history.get(id);
+                    if (!buffer) history.set(id, (buffer = new PoseBuffer()));
+                    // A room still running the previous version sends no receive stamp: fall back to the snapshot time.
+                    buffer.push(Number.isFinite(pose.t) ? pose.t : message.t, pose);
                 }
                 for (const id of history.keys()) if (!(id in message.poses)) history.delete(id);
                 break;
             }
             case 'thrown':
-                handlers.thrown(message.from, message.throw);
+                handlers.thrown(
+                    message.from,
+                    message.throw,
+                    Number.isFinite(message.t)
+                        ? Math.max(0, Math.min(250, (clock.toServer(performance.now()) ?? message.t) - message.t))
+                        : 0
+                );
                 break;
             case 'struck':
                 if (message.out) history.delete(message.target);
@@ -145,26 +150,14 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         hit(throwId: number, target: string, at: Vec3Tuple) {
             send({ type: 'hit', throwId, target, at });
         },
-        /** Interpolated remote poses for drawing, keyed by player id. */
+        /** Interpolated remote poses for drawing, keyed by player id (call once per frame). */
         poses(): Map<string, PlayerPose> {
-            const renderAt = performance.now() - INTERPOLATION_DELAY;
             const out = new Map<string, PlayerPose>();
-            for (const [id, samples] of history) {
-                if (!samples.length) continue;
-                let i = samples.length - 1;
-                while (i > 0 && samples[i - 1].at > renderAt) i--;
-                const b = samples[i];
-                const a = samples[Math.max(0, i - 1)];
-                const span = b.at - a.at;
-                const t = span > 0 ? Math.min(1, Math.max(0, (renderAt - a.at) / span)) : 1;
-                const lerp = (x: number, y: number) => x + (y - x) * t;
-                let dyaw = b.pose.yaw - a.pose.yaw;
-                dyaw -= Math.round(dyaw / 360) * 360;
-                out.set(id, {
-                    p: [lerp(a.pose.p[0], b.pose.p[0]), lerp(a.pose.p[1], b.pose.p[1]), lerp(a.pose.p[2], b.pose.p[2])],
-                    yaw: a.pose.yaw + dyaw * t,
-                    pitch: lerp(a.pose.pitch, b.pose.pitch)
-                });
+            const serverNow = clock.toServer(performance.now());
+            if (serverNow === null) return out;
+            for (const [id, buffer] of history) {
+                const pose = buffer.sample(serverNow - RENDER_DELAY);
+                if (pose) out.set(id, pose);
             }
             return out;
         }

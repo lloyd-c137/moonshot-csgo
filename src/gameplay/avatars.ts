@@ -80,7 +80,7 @@ export const createAvatars = (
 
     const add = (id: string, name: string, hue: number) => {
         if (avatars.has(id)) return;
-        const character = characters.create({ name: `avatar-${id}-rig`, colour: hueColour(hue) });
+        const character = characters.create({ name: `avatar-${id}-rig`, colour: hueColour(hue), gripRightHand: true });
         const root = new Entity(`avatar-${id}`);
         root.addChild(character.root);
         // The capsule uses centre origin. Offset the model down so scaled feet still meet the floor.

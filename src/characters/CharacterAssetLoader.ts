@@ -49,6 +49,7 @@ export class CharacterAssetLoader {
         colour: [number, number, number];
         materialColours?: Partial<Record<'M_Main' | 'M_Joints' | 'M_Head', [number, number, number]>>;
         castShadows?: boolean;
+        gripRightHand?: boolean;
     }) {
         const modelRoot = this.resource.instantiateRenderEntity({ castShadows: options.castShadows ?? false });
         const root = new Entity(options.name);
@@ -83,6 +84,15 @@ export class CharacterAssetLoader {
         const armature = (modelRoot.findByName('Armature') as Entity | null) ?? modelRoot;
         modelRoot.addComponent('anim', { activate: true, rootBone: armature });
         const stateNames = [...this.tracks.keys()];
+        const gripBones = ['thumb_01_r', 'index_01_r', 'middle_01_r', 'ring_01_r', 'pinky_01_r']
+            .map((name) => modelRoot.findByName(name) as Entity | null)
+            .filter((bone): bone is Entity => bone !== null);
+        const gripMask = Object.fromEntries(
+            gripBones.map((bone) => {
+                const relativePath = bone.getPath().slice(armature.getPath().length + 1);
+                return [`${armature.name}/${relativePath}`, { children: true }];
+            })
+        );
         modelRoot.anim!.loadStateGraph(
             new AnimStateGraph({
                 layers: [
@@ -100,7 +110,10 @@ export class CharacterAssetLoader {
                         transitions: [
                             { from: 'START', to: 'Idle_Loop' },
                             ...stateNames
-                                .filter((name) => name !== 'Idle_Loop' && !name.endsWith('_Loop') && !name.includes('_Loop_'))
+                                .filter(
+                                    (name) =>
+                                        name !== 'Idle_Loop' && !name.endsWith('_Loop') && !name.includes('_Loop_')
+                                )
                                 .map((name) => ({
                                     from: name,
                                     to: 'Idle_Loop',
@@ -108,13 +121,34 @@ export class CharacterAssetLoader {
                                     exitTime: 0.98
                                 }))
                         ]
-                    }
+                    },
+                    ...(options.gripRightHand && this.tracks.has('Pistol_Idle_Loop') && gripBones.length === 5
+                        ? [
+                              {
+                                  name: 'RightHandGrip',
+                                  mask: gripMask,
+                                  states: [
+                                      { name: 'START', speed: 1 },
+                                      { name: 'Pistol_Idle_Loop', speed: 1, loop: true, defaultState: true }
+                                  ],
+                                  transitions: [{ from: 'START', to: 'Pistol_Idle_Loop' }]
+                              }
+                          ]
+                        : [])
                 ],
                 parameters: {}
             })
         );
         for (const [name, track] of this.tracks)
             modelRoot.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
+        if (options.gripRightHand && this.tracks.has('Pistol_Idle_Loop') && gripBones.length === 5)
+            modelRoot.anim!.assignAnimation(
+                'Pistol_Idle_Loop',
+                this.tracks.get('Pistol_Idle_Loop')!,
+                'RightHandGrip',
+                1,
+                true
+            );
         const tracks = this.tracks;
         let visualScale = CHARACTER_VISUAL_SCALE;
         return {

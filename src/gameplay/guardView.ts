@@ -27,7 +27,8 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
     const character = characters.create({
         name: 'guard',
         colour: [0, 0, 0],
-        materialColours: { M_Main: [0, 0, 0], M_Joints: [0, 0, 0], M_Head: [0, 0, 0] }
+        materialColours: { M_Main: [0, 0, 0], M_Joints: [0, 0, 0], M_Head: [0, 0, 0] },
+        gripRightHand: true
     });
     const root = new Entity('guard-world-root');
     root.addChild(character.root);

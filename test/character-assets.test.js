@@ -135,3 +135,13 @@ test('runtime clips contain locomotion, jump, hit and death actions without root
     }
     assert.equal(rootTranslationClips, gltf.animations.length);
 });
+
+test('right-hand grip animation covers every finger used by held props', () => {
+    const { gltf } = readGlb(bytes);
+    const grip = gltf.animations.find((animation) => animation.name.endsWith('Pistol_Idle_Loop'));
+    assert.ok(grip, 'has the source hand-held grip pose');
+    const nodes = new Set(grip.channels.map((channel) => gltf.nodes[channel.target.node].name));
+    for (const name of ['thumb_01_r', 'index_01_r', 'middle_01_r', 'ring_01_r', 'pinky_01_r']) {
+        assert.ok(nodes.has(name), `grip pose animates ${name}`);
+    }
+});

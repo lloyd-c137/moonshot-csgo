@@ -1,7 +1,7 @@
 // Other players in the shared world: a simple coloured figure per player (body, head, visor showing facing, a disc
 // in hand) and a name tag drawn in the DOM. Tags hide when a wall is between the camera and the player.
 import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'playcanvas';
-import { Color, CULLFACE_BACK, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
+import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
@@ -15,6 +15,8 @@ type Avatar = {
     name: string;
     visible: boolean;
     checkedAt: number;
+    /** Scope glint shown while the player aims a sniper throw. */
+    glint: EntityType;
     /** Last written name-tag styles. */
     transform: string;
     opacity: string;
@@ -26,6 +28,9 @@ const meshOf = (app: AppBase, shape: Shape) => {
     mesh.setNormals(shape.normals);
     mesh.setIndices(shape.indices);
     mesh.update();
+    // Shared by every avatar: hold a reference of our own, or destroying the last avatar (a player leaving) would
+    // destroy the mesh and every later avatar would render invisible.
+    mesh.incRefCount();
     return mesh;
 };
 
@@ -62,6 +67,19 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         return materials.get(hue)!;
     };
 
+    // Scope glint: a bright four-point star in front of an aiming player's visor, so snipers can be spotted.
+    const glintMesh = meshOf(
+        app,
+        merge([box(0.5, 0.035, 0.002), box(0.035, 0.5, 0.002), place(box(0.12, 0.12, 0.002), { roll: Math.PI / 4 })])
+    );
+    const glintMaterial = new StandardMaterial();
+    glintMaterial.useLighting = false;
+    glintMaterial.diffuse = new Color(0, 0, 0);
+    // Opaque warm gold rather than additive white: it has to read against the pale campus walls too.
+    glintMaterial.emissive = new Color(1, 0.78, 0.25);
+    glintMaterial.cull = CULLFACE_NONE;
+    glintMaterial.update();
+
     const avatars = new Map<string, Avatar>();
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const screen = new Vec3();
@@ -83,6 +101,13 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         });
         root.enabled = false;
         app.root.addChild(root);
+        const glint = new Entity('glint');
+        glint.addComponent('render', {
+            meshInstances: [new MeshInstance(glintMesh, glintMaterial)],
+            castShadows: false
+        });
+        glint.enabled = false;
+        app.root.addChild(glint);
         const tag = document.createElement('span');
         tag.className = 'name-tag';
         const badge = document.createElement('b');
@@ -93,13 +118,14 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
-        avatars.set(id, { root, tag, name, visible: false, checkedAt: 0, transform: '', opacity: '' });
+        avatars.set(id, { root, tag, name, visible: false, checkedAt: 0, glint, transform: '', opacity: '' });
     };
 
     const remove = (id: string) => {
         const avatar = avatars.get(id);
         if (!avatar) return;
         avatar.root.destroy();
+        avatar.glint.destroy();
         avatar.tag.remove();
         avatars.delete(id);
     };
@@ -112,8 +138,26 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
             const pose = poses.get(id);
             if (!pose) {
                 avatar.root.enabled = false;
+                avatar.glint.enabled = false;
                 avatar.tag.hidden = true;
                 continue;
+            }
+            // Glint: grows with the aim, flickers, always faces the camera, sits just in front of the visor.
+            const aim = pose.aim ?? 0;
+            avatar.glint.enabled = aim > 0.3;
+            if (avatar.glint.enabled) {
+                const yaw = (pose.yaw * Math.PI) / 180;
+                avatar.glint.setPosition(
+                    pose.p[0] - Math.sin(yaw) * 0.25,
+                    pose.p[1] + 0.66,
+                    pose.p[2] - Math.cos(yaw) * 0.25
+                );
+                avatar.glint.lookAt(eye);
+                // Bigger with distance so a far sniper still shows a visible point of light.
+                const far = Math.max(1, Math.hypot(pose.p[0] - eye.x, pose.p[2] - eye.z) / 12);
+                const size = (aim - 0.3) * 1.6 * (1.1 + Math.sin(now / 45) * 0.25) * far;
+                avatar.glint.setLocalScale(size, size, size);
+                avatar.glint.rotateLocal(0, 0, now / 20);
             }
             avatar.root.enabled = true;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);

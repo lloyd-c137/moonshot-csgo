@@ -15,6 +15,7 @@ import {
     Vec3
 } from 'playcanvas';
 
+import { SNIPER } from '../net/protocol';
 import { cylinder, merge, place, torus } from '../render/shapes';
 
 import type { V3 } from './frisbee';
@@ -32,6 +33,9 @@ type Disc = {
     spin: number;
     last: V3;
     settledFor: number;
+    /** Sniper disc: flies dead straight (no drop or lift) for SNIPER.straightSeconds, with a tracer. */
+    sniper: boolean;
+    hue: number;
 };
 
 /** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
@@ -62,6 +66,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
     mesh.setNormals(shape.normals);
     mesh.setIndices(shape.indices);
     mesh.update();
+    // Shared by every disc: keep our own reference so removing the last disc never destroys the mesh.
+    mesh.incRefCount();
     const materials = new Map<number, StandardMaterial>();
     const meshFor = (hue: number) => {
         let material = materials.get(hue);
@@ -103,6 +109,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             velocity: V3;
             normal: V3;
             local: boolean;
+            sniper?: boolean;
         }) {
             if (discs.length >= MAX_DISCS) remove(discs[0]);
             const entity = new Entity(`disc-${options.owner}-${options.throwId}`);
@@ -164,7 +171,9 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 live: true,
                 spin: 0,
                 last: options.origin,
-                settledFor: 0
+                settledFor: 0,
+                sniper: options.sniper === true,
+                hue: options.hue
             });
         },
         /**
@@ -175,7 +184,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             deltaTime: number,
             targets: Map<string, V3>,
             onHit: (throwId: number, target: string, at: V3, velocity: V3) => void,
-            onBounce?: (at: V3, speed: number) => void
+            onBounce?: (at: V3, speed: number) => void,
+            onTracer?: (at: V3, hue: number) => void
         ) {
             bounceHandler = onBounce ?? null;
             // Backwards, so removing a disc does not skip the next one (and no per-frame array copy).
@@ -189,7 +199,13 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 const position: V3 = [p.x, p.y, p.z];
                 const speed = Math.hypot(...velocity);
                 // Aerodynamics only while flying; once it skids along the floor it is just a sliding body.
-                if (disc.live || p.y > 0.25) {
+                const straight = disc.sniper && disc.live && disc.age < SNIPER.straightSeconds;
+                if (straight) {
+                    // Sniper disc: cancel gravity exactly, no aerodynamics — it goes where it was aimed.
+                    force.set(0, Math.abs(worldGravity) * DISC.mass, 0);
+                    body.applyForce(force);
+                    onTracer?.(position, disc.hue);
+                } else if (disc.live || p.y > 0.25) {
                     const a = discAcceleration(velocity, disc.normal, worldGravity);
                     force.set(a[0] * DISC.mass, a[1] * DISC.mass, a[2] * DISC.mass);
                     body.applyForce(force);

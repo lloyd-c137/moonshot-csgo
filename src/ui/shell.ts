@@ -124,6 +124,17 @@ const MARKUP = `
       <header><span>本局积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
       <ol id="leaderboard-rows"></ol>
     </section>
+    <div class="scope" id="scope" aria-hidden="true" data-ready="false">
+      <div class="scope-vignette"></div>
+      <svg class="scope-reticle" viewBox="-100 -100 200 200">
+        <circle class="scope-ring" r="62" pathLength="100" />
+        <circle class="scope-progress" r="62" pathLength="100" />
+        <path class="scope-cross" d="M-96 0H-14M14 0H96M0 -96V-14M0 14V96" />
+        <path class="scope-ticks" d="M-50 -4V4M-34 -3V3M50 -4V4M34 -3V3M-4 34H4M-3 50H3" />
+        <circle class="scope-dot" r="2.2" />
+      </svg>
+      <p class="scope-label"><span class="scope-state" id="scope-state">瞄准中</span><small>右键取消</small></p>
+    </div>
     <span class="crosshair" aria-hidden="true"></span>
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
@@ -246,6 +257,7 @@ export const createUi = () => {
 
     // ---------- title: tabs, identity, board ----------
     let signedIn = false;
+    const scopeShown = { aim: -1, ready: false };
     const authError = (message: string) => {
         const error = $('#auth-error');
         error.textContent = message;
@@ -520,7 +532,7 @@ export const createUi = () => {
         },
         chatOpen: () => $('#chat').dataset.open === 'true',
         /** Short text by the crosshair: hit, head hit, elimination, or being head-hit. */
-        popup: (text: string, kind: 'hit' | 'head' | 'kill' | 'me') => {
+        popup: (text: string, kind: 'hit' | 'head' | 'kill' | 'snipe' | 'me') => {
             const popup = $('#popup');
             popup.textContent = text;
             popup.dataset.kind = kind;
@@ -618,7 +630,7 @@ export const createUi = () => {
             );
             health.dataset.low = String(hp <= 1);
         },
-        hitMarker: (kind: 'hit' | 'head' | 'kill') => {
+        hitMarker: (kind: 'hit' | 'head' | 'kill' | 'snipe') => {
             const marker = $('#hitmarker');
             marker.dataset.kind = kind;
             replay(marker, 'show');
@@ -633,14 +645,15 @@ export const createUi = () => {
             replay(arc, 'show');
         },
         /** Elimination broadcast across the upper centre of the screen. */
-        broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me', streak = 1) => {
+        broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me', streak = 1, snipe = false) => {
             const banner = $('#broadcast');
             banner.dataset.tone = tone;
+            banner.dataset.snipe = String(snipe);
             const a = document.createElement('b');
             a.textContent = killer;
             const b = document.createElement('b');
             b.textContent = victim;
-            banner.replaceChildren(a, document.createTextNode(' 淘汰了 '), b);
+            banner.replaceChildren(a, document.createTextNode(snipe ? ' 狙击爆头 ' : ' 淘汰了 '), b);
             if (streak > 1) {
                 const tag = document.createElement('span');
                 tag.className = 'streak';
@@ -651,6 +664,18 @@ export const createUi = () => {
             replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
             broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
+        },
+        /** Sniper scope overlay: aim progress 0–1 (0 hides it) and whether the next release is a sniper throw. */
+        scope: (aim: number, ready: boolean) => {
+            const value = Math.round(aim * 100) / 100;
+            if (value === scopeShown.aim && ready === scopeShown.ready) return;
+            scopeShown.aim = value;
+            scopeShown.ready = ready;
+            const scope = $('#scope');
+            scope.style.setProperty('--aim', String(value));
+            scope.dataset.ready = String(ready);
+            root.dataset.aiming = String(value > 0.05);
+            $('#scope-state').textContent = ready ? '狙击就绪 · 爆头一击必杀' : '瞄准中';
         },
         /** Throw charge 0..1 around the crosshair, or null to hide. */
         charge: (fraction: number | null) => {

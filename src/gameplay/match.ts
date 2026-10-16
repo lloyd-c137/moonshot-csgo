@@ -10,7 +10,7 @@ import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
 import type { King, PlayerPose, PlayerSummary, ThrowRecord } from '../net/protocol';
-import { colourFor, MAX_HP, RESPAWN_SECONDS, SPAWN_PROTECTION, THROW_COOLDOWN } from '../net/protocol';
+import { colourFor, MAX_HP, RESPAWN_SECONDS, SNIPER, SPAWN_PROTECTION, THROW_COOLDOWN } from '../net/protocol';
 import { kickLook, setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
 import type { Ui } from '../ui/shell';
@@ -21,6 +21,7 @@ import { createEffects } from './effects';
 import type { V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { airborne, CATCH_AT, INSPECT_SECONDS, inspectPose, TOSS_AT } from './inspect';
+import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
 import { createSound } from './sound';
 
 type Options = {
@@ -42,10 +43,20 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let alive = true;
     let deadUntil = 0;
     let chargingSince: number | null = null;
+    /** Current sniper aim (0–1): follows the held charge, falls back quickly on release or cancel. */
+    let aim = 0;
+    let aimSoundPlayed = false;
+    let aimReadyPlayed = false;
+    /** Normal view settings (the scope scales these), set from the player's settings. */
+    let viewFov = camera.camera!.fov;
+    let viewSens = 0.08;
+    let walkSpeed: number | null = null;
     /** When the current weapon inspect started (performance.now ms), or null. */
     let inspectSince: number | null = null;
     /** Debug only: holds the inspect at a fixed progress (0–1) for screenshots. */
     let inspectHold: number | null = null;
+    /** Debug only: holds the sniper aim at a fixed level for screenshots. */
+    let aimHold: number | null = null;
     let lastThrowAt = -Infinity;
     let throwCounter = 0;
     let started = false;
@@ -64,7 +75,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     // Feel: FOV punch on release, camera shake when hit, in-hand disc that winds up and snaps forward.
     let punch = 0;
     let shake = 0;
-    let baseFov = camera.camera!.fov;
     const eyeOffset = camera.getLocalPosition().clone();
     const viewmodel = new Entity('viewmodel-disc');
     viewmodel.addComponent('render', { meshInstances: discs.meshInstances(colourFor('local')), castShadows: false });
@@ -169,11 +179,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     const pose = (): PlayerPose => {
         const p = player.getPosition();
         const f = camera.forward;
-        return {
+        const result: PlayerPose = {
             p: [round(p.x), round(p.y), round(p.z)],
             yaw: round((Math.atan2(-f.x, -f.z) * 180) / Math.PI),
             pitch: round((Math.asin(Math.max(-1, Math.min(1, f.y))) * 180) / Math.PI)
         };
+        if (aim > 0.01) result.aim = Math.round(aim * 100) / 100;
+        return result;
     };
 
     const respawnAt = (index: number) => {
@@ -251,7 +263,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         thrown: (from, record, ageMs) => {
             const thrower = roster.get(from);
-            sound.throw(record.o);
+            if (record.sniper) sound.sniperThrow(record.o);
+            else sound.throw(record.o);
             // Latency compensation: start the replayed disc where it is by now, not where it was released.
             const lead = Math.min(ageMs, 200) / 1000;
             discs.launch({
@@ -265,11 +278,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 ],
                 velocity: record.v,
                 normal: launchNormal(record.v, record.tilt),
-                local: false
+                local: false,
+                sniper: record.sniper === true
             });
         },
-        struck: (target, by, targetHp, out, head, at, scores) => {
+        struck: (target, by, targetHp, out, head, at, scores, sniper) => {
+            const snipe = sniper && head && out;
             effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
+            if (snipe) effects.snipe(at);
             for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
                 const entry = roster.get(id);
                 if (entry) Object.assign(entry, { score, kills, deaths });
@@ -282,7 +298,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 sound.hurt(out);
                 const from = positionOf(by);
                 ui.damage(bearingTo(from));
-                shake = out ? 0.12 : 0.07;
+                shake = snipe ? 0.16 : out ? 0.12 : 0.07;
+                if (snipe) {
+                    // Taken out by a sniper headshot: the view is thrown back hard.
+                    kickLook(player, 16, (Math.random() - 0.5) * 10);
+                    ui.popup('被狙击爆头', 'me');
+                }
                 if (head && !out) {
                     // A head hit knocks the view upward.
                     kickLook(player, 9, (Math.random() - 0.5) * 4);
@@ -307,12 +328,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                     ui.feed(`被 ${nameOf(by)} 命中 · 剩余生命 ${targetHp}`, 'me');
                 }
             } else if (by === me) {
-                sound.hitConfirm(out, head);
-                ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
-                ui.popup(
-                    out ? `淘汰 ${nameOf(target)}  +3` : head ? '爆头  +1' : '命中  +1',
-                    out ? 'kill' : head ? 'head' : 'hit'
-                );
+                if (snipe) {
+                    sound.snipeConfirm();
+                    ui.hitMarker('snipe');
+                    ui.popup(`狙击爆头 · ${nameOf(target)}  +3`, 'snipe');
+                } else {
+                    sound.hitConfirm(out, head);
+                    ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
+                    ui.popup(
+                        out ? `淘汰 ${nameOf(target)}  +3` : head ? '爆头  +1' : '命中  +1',
+                        out ? 'kill' : head ? 'head' : 'hit'
+                    );
+                }
             } else {
                 sound.impact(positionOf(target) ?? at);
                 if (!out) ui.feed(`${nameOf(by)} 命中 ${nameOf(target)}`);
@@ -323,7 +350,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 const streak = previous && now - previous.at < 12_000 ? previous.count + 1 : 1;
                 streaks.set(by, { count: streak, at: now });
                 streaks.delete(target);
-                ui.broadcast(nameOf(by), nameOf(target), target === me ? 'me' : by === me ? 'mine' : 'neutral', streak);
+                ui.broadcast(
+                    nameOf(by),
+                    nameOf(target),
+                    target === me ? 'me' : by === me ? 'mine' : 'neutral',
+                    streak,
+                    snipe
+                );
                 if (target !== me && by !== me) sound.announce();
             }
             refreshBoard();
@@ -364,7 +397,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     const forward = new Vec3();
     const right = new Vec3();
     const origin = new Vec3();
-    const throwDisc = (speed: number) => {
+    const throwDisc = (speed: number, sniper = false) => {
         const now = performance.now();
         if (!alive || now - lastThrowAt < THROW_COOLDOWN * 1000) return false;
         lastThrowAt = now;
@@ -379,11 +412,16 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             (forward.z / heading) * Math.cos(elevation)
         );
         right.cross(forward, Vec3.UP).normalize();
-        origin.copy(eye).add(new Vec3().copy(forward).mulScalar(0.5)).add(new Vec3().copy(right).mulScalar(0.18));
-        origin.y -= 0.15;
+        if (sniper) {
+            // Sniper: released on the line of sight, so the disc goes exactly where the crosshair is.
+            origin.copy(eye).add(new Vec3().copy(forward).mulScalar(0.45));
+        } else {
+            origin.copy(eye).add(new Vec3().copy(forward).mulScalar(0.5)).add(new Vec3().copy(right).mulScalar(0.18));
+            origin.y -= 0.15;
+        }
         // Never launch from inside a wall right in front of the camera.
         if (rigidbody.raycastFirst(eye, origin)) origin.copy(eye).add(new Vec3().copy(forward).mulScalar(0.12));
-        const v = player.rigidbody!.linearVelocity;
+        const v = sniper ? Vec3.ZERO : player.rigidbody!.linearVelocity;
         const velocity: V3 = [
             forward.x * speed + v.x * 0.5,
             forward.y * speed + v.y * 0.3,
@@ -393,7 +431,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             id: ++throwCounter,
             o: [round(origin.x), round(origin.y), round(origin.z)],
             v: velocity.map(round) as V3,
-            tilt: 0
+            tilt: 0,
+            ...(sniper ? { sniper: true } : {})
         };
         discs.launch({
             owner: selfId(),
@@ -402,10 +441,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             origin: record.o,
             velocity: record.v,
             normal: launchNormal(record.v, record.tilt),
-            local: true
+            local: true,
+            sniper
         });
-        sound.throw();
-        punch = 1;
+        if (sniper) {
+            sound.sniperThrow();
+            punch = 1.6;
+            shake = Math.max(shake, 0.05);
+            kickLook(player, 1.8, (Math.random() - 0.5) * 0.8); // recoil
+        } else {
+            sound.throw();
+            punch = 1;
+        }
         net.pose(pose(), true);
         net.throw(record);
         throws++;
@@ -413,17 +460,32 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     };
 
     const locked = () => document.pointerLockElement === canvas;
+    const cancelCharge = () => {
+        chargingSince = null;
+        aimSoundPlayed = false;
+        aimReadyPlayed = false;
+        ui.charge(null);
+    };
     window.addEventListener('mousedown', (event) => {
+        // Right button while charging or aiming: stand down without throwing.
+        if (event.button === 2 && chargingSince !== null) return cancelCharge();
         if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
         chargingSince = performance.now();
+        aimSoundPlayed = false;
+        aimReadyPlayed = false;
         inspectSince = null; // attacking cancels an inspect
+    });
+    window.addEventListener('contextmenu', (event) => {
+        if (locked()) event.preventDefault();
     });
     window.addEventListener('mouseup', (event) => {
         if (event.button !== 0 || chargingSince === null) return;
         const held = (performance.now() - chargingSince) / 1000;
-        chargingSince = null;
-        ui.charge(null);
-        if (locked()) throwDisc(chargeSpeed(held));
+        cancelCharge();
+        if (!locked()) return;
+        // Fully aimed: a sniper throw; otherwise the usual charged throw.
+        if (aimReady(held)) throwDisc(SNIPER.speed, true);
+        else throwDisc(chargeSpeed(held));
     });
     const startInspect = () => {
         if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
@@ -456,9 +518,29 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
 
     const animateFeel = (deltaTime: number, now: number) => {
         const cam = camera.camera!;
-        if (punch <= 0.001) baseFov = cam.fov;
         punch = Math.max(0, punch - deltaTime * 6);
-        cam.fov = baseFov + punch * 2.5;
+        // Sniper aim: the whole view zooms in gradually; sensitivity and walking speed follow the zoom.
+        const held = chargingSince === null ? 0 : (now - chargingSince) / 1000;
+        const target = chargingSince === null ? 0 : aimProgress(held);
+        aim = target >= aim ? target : Math.max(target, aim - deltaTime * 5);
+        if (aimHold !== null) aim = aimHold;
+        if (chargingSince !== null && target > 0 && !aimSoundPlayed) {
+            aimSoundPlayed = true;
+            sound.scopeIn();
+        }
+        const ready = chargingSince !== null && aimReady(held);
+        if (ready && !aimReadyPlayed) {
+            aimReadyPlayed = true;
+            sound.scopeReady();
+        }
+        cam.fov = viewFov * fovFactor(aim) + punch * 2.5;
+        const script = controller() as unknown as { lookSens?: number; speedGround?: number } | null;
+        if (script) {
+            script.lookSens = viewSens * sensitivityFactor(viewFov, aim);
+            if (walkSpeed === null) walkSpeed = script.speedGround ?? 40;
+            script.speedGround = walkSpeed * (1 - (1 - SCOPE.moveScale) * aim);
+        }
+        ui.scope(aim, ready);
         shake = Math.max(0, shake - deltaTime * 0.35);
         const jitter = shake * shake * 4;
         camera.setLocalPosition(
@@ -468,7 +550,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         );
         // In-hand disc: visible when ready, pulled back while charging, gone during the cooldown after a throw.
         const sinceThrow = (now - lastThrowAt) / 1000;
-        const ready = Math.min(1, Math.max(0, (sinceThrow - THROW_COOLDOWN * 0.5) / (THROW_COOLDOWN * 0.5)));
+        const inHand = Math.min(1, Math.max(0, (sinceThrow - THROW_COOLDOWN * 0.5) / (THROW_COOLDOWN * 0.5)));
         const charge = chargingSince === null ? 0 : Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds);
         viewmodel.enabled = started && alive;
         if (!alive) inspectSince = null;
@@ -496,13 +578,20 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             }
             return;
         }
-        const bob = Math.sin(now / 260) * 0.004;
+        const bob = Math.sin(now / 260) * 0.004 * (1 - aim);
+        // While aiming the disc is brought in under the eye and drops out of the scoped view (the narrow field of
+        // view magnifies it, so it sinks well below the frame and is hidden once the scope is mostly up).
+        viewmodel.enabled = viewmodel.enabled && aim < 0.7;
         viewmodel.setLocalPosition(
-            0.3 + charge * 0.09,
-            -0.31 - (1 - ready) * 0.25 + charge * 0.05 + bob,
-            -0.66 + charge * 0.16
+            0.3 + charge * 0.09 - aim * 0.3,
+            -0.31 - (1 - inHand) * 0.25 + charge * 0.05 + bob - aim * 0.5,
+            -0.66 + charge * 0.16 + aim * 0.1
         );
-        viewmodel.setLocalEulerAngles(18 - charge * 25, -12 - charge * 30, -8 - charge * 10);
+        viewmodel.setLocalEulerAngles(
+            18 - charge * 25 + aim * 50,
+            -12 - charge * 30 + aim * 42,
+            -8 - charge * 10 + aim * 18
+        );
     };
 
     const targets = new Map<string, V3>();
@@ -525,8 +614,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             });
             effects.burst(at, colourFor('local'), 'out');
             effects.burst(at, colourFor('local'), 'head');
+            effects.snipe(at);
+            effects.tracer(at, colourFor('local'));
             avatars.add('prewarm', '', colourFor('local'));
-            avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0 }]]), 0);
+            avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0, aim: 1 }]]), 0);
             discs.launch({
                 owner: 'warm-up',
                 throwId: 0,
@@ -556,7 +647,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         update(deltaTime: number) {
             const now = performance.now();
-            if (chargingSince !== null) ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
+            // The charge ring fills for quick throws; once aiming starts the scope takes over.
+            if (chargingSince !== null && aim < 0.02) {
+                ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
+            } else if (chargingSince !== null) ui.charge(null);
             if (!alive) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
             if (net.state === 'online' && alive) net.pose(pose());
             const eye = camera.getPosition();
@@ -577,7 +671,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                     hitsClaimed++;
                     net.hit(throwId, target, at.map(round) as V3);
                 },
-                (at, speed) => sound.bounce(at, speed)
+                (at, speed) => sound.bounce(at, speed),
+                (at, hue) => effects.tracer(at, hue)
             );
         },
         get alive() {
@@ -585,6 +680,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         get online() {
             return net.state === 'online';
+        },
+        /** The player's normal field of view and mouse sensitivity (the sniper scope scales from these). */
+        setView(fov: number, lookSensitivity: number) {
+            viewFov = fov;
+            viewSens = lookSensitivity;
         },
         /** Call from a user gesture (a click or key) so the browser lets audio start. */
         unlockAudio: () => sound.unlock(),
@@ -614,12 +714,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 discs: discs.count,
                 throws,
                 hitsClaimed,
-                inspecting: inspectSince !== null
+                inspecting: inspectSince !== null,
+                aim
             }),
             inspect: startInspect,
             holdInspect: (u: number | null) => (inspectHold = u),
+            holdAim: (value: number | null) => (aimHold = value),
             chat: (text: string) => net.chat(text),
-            throwAt: (x: number, y: number, z: number, speed: number = THROW.maxSpeed) => {
+            throwAt: (x: number, y: number, z: number, speed: number = THROW.maxSpeed, sniper = false) => {
                 const eye = camera.getPosition();
                 const dx = x - eye.x;
                 const dy = y - eye.y;
@@ -628,7 +730,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 const pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI;
                 setLook(player, pitch, yaw);
                 camera.setEulerAngles(pitch, yaw, 0);
-                return throwDisc(speed);
+                return sniper ? throwDisc(SNIPER.speed, true) : throwDisc(speed);
             }
         }
     };

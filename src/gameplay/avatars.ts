@@ -15,6 +15,7 @@ type Avatar = {
     name: string;
     visible: boolean;
     checkedAt: number;
+    hue: number;
     /** Scope glint shown while the player aims a sniper throw. */
     glint: EntityType;
     /** Last written name-tag styles. */
@@ -81,6 +82,19 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
     glintMaterial.update();
 
     const avatars = new Map<string, Avatar>();
+    let goldHolder: string | null = null;
+    let goldMaterial: StandardMaterial | null = null;
+    /** Hit flash per hue material: until (ms). */
+    const flashes = new Map<number, number>();
+    /** The golden disc replaces the in-hand disc of whoever holds it. */
+    const setGold = (holder: string | null) => {
+        goldHolder = holder;
+        for (const [id, avatar] of avatars) {
+            const instances = avatar.root.render!.meshInstances;
+            const wanted = id === holder && goldMaterial ? goldMaterial : colourMaterial(avatar.hue);
+            if (instances[3] && instances[3].material !== wanted) instances[3].material = wanted;
+        }
+    };
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const screen = new Vec3();
     const head = new Vec3();
@@ -118,7 +132,8 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
-        avatars.set(id, { root, tag, name, visible: false, checkedAt: 0, glint, transform: '', opacity: '' });
+        avatars.set(id, { root, tag, name, hue, visible: false, checkedAt: 0, glint, transform: '', opacity: '' });
+        if (goldHolder === id) setGold(id);
     };
 
     const remove = (id: string) => {
@@ -132,6 +147,14 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
 
     /** Places every avatar from the interpolated poses; players without a pose (eliminated) are hidden. */
     const update = (poses: Map<string, PlayerPose>, now: number) => {
+        // Hit flash: the struck player's colour burns white and fades.
+        for (const [hue, until] of flashes) {
+            const m = colourMaterial(hue);
+            const left = Math.max(0, until - now) / 220;
+            m.emissive.set(left, left, left);
+            m.update();
+            if (left <= 0) flashes.delete(hue);
+        }
         const cameraComponent = camera.camera!;
         eye.copy(camera.getPosition());
         for (const [id, avatar] of avatars) {
@@ -203,6 +226,17 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         remove,
         update,
         setLeader,
+        setGold,
+        /** Material used for the golden disc in a holder's hand. */
+        set goldMaterial(material: StandardMaterial) {
+            goldMaterial = material;
+            setGold(goldHolder);
+        },
+        /** Flashes a struck player white. */
+        flash(id: string, now: number) {
+            const avatar = avatars.get(id);
+            if (avatar) flashes.set(avatar.hue, now + 220);
+        },
         has: (id: string) => avatars.has(id),
         clear: () => {
             for (const id of [...avatars.keys()]) remove(id);

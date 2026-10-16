@@ -70,6 +70,22 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
         .toEqual([nameA, nameB].sort());
     const idB = (await state(b.page)).id;
 
+    // A round is running: the clock counts down from 10:00 and the golden disc lies at a spawn point, shown to all.
+    const round = (await state(a.page)).round!;
+    expect(round.phase).toBe('playing');
+    await expect(a.page.locator('#round-clock')).toHaveText(/^(10:00|09:[0-5]\d)$/);
+    await expect(b.page.locator('#round-gold')).toContainText('无人持有');
+    await expect(a.page.locator('#latency')).toHaveText(/^\d+ ms$/);
+    // A walks onto it: taken, equipped, and everyone sees who holds it.
+    const gold = (await state(a.page)).gold!;
+    expect(gold.holder).toBeNull();
+    await a.page.evaluate(([x, z]) => window.__MOONSHOT__!.teleport(x + 0.5, 0.92, z), [gold.at[0], gold.at[2]]);
+    await expect
+        .poll(async () => (await state(b.page)).gold?.holder, { timeout: 5_000 })
+        .toBe((await state(a.page)).id);
+    await expect(b.page.locator('#round-gold')).toContainText(`${nameA} 持有金飞盘`);
+    await expect(a.page.locator('#round-gold')).toContainText('你持有金飞盘');
+
     // World chat reaches everyone in real time.
     await a.page.evaluate(() => window.__MOONSHOT__!.match.chat('大家好'));
     await expect(b.page.locator('#chat-log')).toContainText('大家好');
@@ -99,7 +115,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect(a.page.locator('#broadcast')).toContainText(`${nameA} 淘汰了 ${nameB}`);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
     const scores = (await state(a.page)).players;
-    expect(scores.find((p) => p.name === nameA)).toMatchObject({ score: 4, kills: 1, deaths: 0 });
+    expect(scores.find((p) => p.name === nameA)).toMatchObject({ score: 1, kills: 1, deaths: 0 });
     expect(scores.find((p) => p.id === idB)).toMatchObject({ score: 0, kills: 0, deaths: 1 });
     await expect(a.page.locator('#leaderboard-rows li').first()).toContainText(nameA);
 

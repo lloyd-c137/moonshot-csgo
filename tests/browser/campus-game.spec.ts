@@ -60,6 +60,34 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(await fov()).toBeCloseTo(normalFov, 0);
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).throws).toBe(throwsBefore);
 
+    // 纪老师: throwing inside his view means standing still for 4 s, with a warning.
+    const teacher = await page.evaluate(() => window.__MOONSHOT__!.match.teacher());
+    const facing = (teacher.yaw * Math.PI) / 180;
+    await page.evaluate(
+        ([x, z, yaw]) => {
+            window.__MOONSHOT__!.teleport(x, 0.92, z);
+            window.__MOONSHOT__!.setLook(0, yaw);
+        },
+        [teacher.x - Math.sin(facing) * 3, teacher.z - Math.cos(facing) * 3, teacher.yaw + 180]
+    );
+    await advance(page, 300);
+    expect(await page.evaluate(([x, z]) => window.__MOONSHOT__!.match.throwAt(x, 1.3, z), [teacher.x, teacher.z])).toBe(
+        true
+    );
+    expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).detained).toBe(true);
+    await advance(page, 100);
+    await expect(page.locator('#detention')).toBeVisible();
+    await expect(page.locator('#detention')).toContainText('室内不准打飞盘');
+    const caughtAt = await position(page);
+    await hold(page, ['KeyW'], 1500);
+    expect(horizontal(await position(page), caughtAt)).toBeLessThan(0.2);
+    await advance(page, 2900);
+    await expect(page.locator('#detention')).toBeHidden();
+    await hold(page, ['KeyW'], 600);
+    expect(horizontal(await position(page), caughtAt)).toBeGreaterThan(0.5);
+    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.7, 0.92, 46.3));
+    await advance(page, 300);
+
     await page.keyboard.press('m');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'open');
     await page.keyboard.press('m');

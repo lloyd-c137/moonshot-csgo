@@ -230,6 +230,65 @@ export const createSound = () => {
                 tone(audio, master!, 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
                 hiss(audio, master!, now, 0.12, 0.3, 6000, 2000, 0.7);
             }),
+        /** The golden disc appears (or is dropped): a shimmering rising chime. */
+        goldChime: (at?: V3) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                [1046, 1318, 1568, 2093].forEach((f, i) =>
+                    tone(audio, out, 'triangle', f, f, now + i * 0.07, 0.6, 0.12)
+                );
+                hiss(audio, out, now, 0.9, 0.06, 5000, 9000, 3);
+            }),
+        /** You took the golden disc: a short brass-like fanfare over a shimmer. */
+        goldTaken: () =>
+            play((audio, now) => {
+                const out = master!;
+                [523, 659, 784, 1046].forEach((f, i) => {
+                    tone(audio, out, 'sawtooth', f, f, now + i * 0.09, 0.22, 0.09);
+                    tone(audio, out, 'triangle', f * 2, f * 2, now + i * 0.09, 0.3, 0.06);
+                });
+                tone(audio, out, 'sawtooth', 1046, 1046, now + 0.36, 0.7, 0.1);
+                hiss(audio, out, now + 0.3, 1, 0.07, 6000, 10000, 3);
+            }),
+        /** Someone else took the golden disc: a low warning swell. */
+        goldLost: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'sawtooth', 220, 165, now, 0.5, 0.12);
+                tone(audio, master!, 'sawtooth', 277, 207, now + 0.05, 0.5, 0.08);
+            }),
+        /** Golden disc inspect: a rising shimmer while it spins, then the bright catch. */
+        goldInspect: (seconds: number, tossAt: number, catchAt: number) =>
+            play((audio, now) => {
+                const out = master!;
+                tone(audio, out, 'sine', 440, 1760, now + 0.1 * seconds, 0.28 * seconds, 0.07);
+                hiss(audio, out, now + 0.1 * seconds, 0.28 * seconds, 0.06, 3000, 12000, 4);
+                hiss(audio, out, now + tossAt * seconds - 0.05, 0.25, 0.18, 1200, 5000, 1.6);
+                [1568, 2093, 2637].forEach((f, i) =>
+                    tone(audio, out, 'triangle', f, f, now + catchAt * seconds + i * 0.04, 0.5, 0.1)
+                );
+                tone(audio, out, 'sine', 140, 60, now + catchAt * seconds, 0.3, 0.4);
+            }),
+        /** 纪老师's whistle: two sharp blasts. */
+        whistle: () =>
+            play((audio, now) => {
+                for (const start of [0, 0.32]) {
+                    tone(audio, master!, 'square', 2900, 2850, now + start, 0.24, 0.09);
+                    tone(audio, master!, 'sine', 3100, 3050, now + start, 0.24, 0.06);
+                    hiss(audio, master!, now + start, 0.24, 0.05, 3000, 3200, 8);
+                }
+            }),
+        /** Round over: a triumphant chord if you won, a falling one otherwise. */
+        roundEnd: (won: boolean) =>
+            play((audio, now) => {
+                const notes = won ? [523, 659, 784, 1046, 1318] : [392, 349, 311, 262];
+                notes.forEach((f, i) => tone(audio, master!, 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
+            }),
+        /** A new round starts. */
+        roundStart: () =>
+            play((audio, now) => {
+                [0, 0.5, 1].forEach((t) => tone(audio, master!, 'square', 880, 880, now + t, 0.12, 0.06));
+                tone(audio, master!, 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
+            }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {

@@ -112,7 +112,7 @@ test('only signed-in players may join; they play under their username, keep stat
             [0, true, true]
         ]
     );
-    assert.deepEqual(accounts.resolve(token, 6000), { name: '甲同学', kills: 1, deaths: 0, hits: 2, score: 4 });
+    assert.deepEqual(accounts.resolve(token, 6000), { name: '甲同学', kills: 1, deaths: 0, hits: 2, score: 1 });
     assert.deepEqual(inbox.get('b').find((message) => message.type === 'king').king.name, '甲同学');
     assert.ok(inbox.get('b').some((message) => message.type === 'chat' && message.line.system));
     // Signing in again elsewhere replaces the old connection.

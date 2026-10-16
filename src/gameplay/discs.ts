@@ -36,6 +36,7 @@ type Disc = {
     /** Sniper disc: flies dead straight (no drop or lift) for SNIPER.straightSeconds, with a tracer. */
     sniper: boolean;
     hue: number;
+    gold: boolean;
 };
 
 /** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
@@ -85,6 +86,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
         return [new MeshInstance(mesh, material)];
     };
 
+    let goldMaterial: StandardMaterial | null = null;
     const orientation = new Quat();
     const up = new Vec3(0, 1, 0);
     const normalVec = new Vec3();
@@ -110,12 +112,18 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             normal: V3;
             local: boolean;
             sniper?: boolean;
+            /** Thrown by the golden disc's holder: drawn in gold. */
+            gold?: boolean;
         }) {
             if (discs.length >= MAX_DISCS) remove(discs[0]);
             const entity = new Entity(`disc-${options.owner}-${options.throwId}`);
             // The body keeps the disc's flight attitude; a child carries the mesh and spins for show.
             const visual = new Entity('disc-visual');
-            visual.addComponent('render', { meshInstances: meshFor(options.hue), castShadows: false });
+            visual.addComponent('render', {
+                meshInstances:
+                    options.gold && goldMaterial ? [new MeshInstance(mesh, goldMaterial)] : meshFor(options.hue),
+                castShadows: false
+            });
             visual.setLocalPosition(0, -0.008, 0);
             entity.addChild(visual);
             entity.addComponent('collision', {
@@ -173,7 +181,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 last: options.origin,
                 settledFor: 0,
                 sniper: options.sniper === true,
-                hue: options.hue
+                hue: options.hue,
+                gold: options.gold === true
             });
         },
         /**
@@ -206,6 +215,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     body.applyForce(force);
                     onTracer?.(position, disc.hue);
                 } else if (disc.live || p.y > 0.25) {
+                    if (disc.gold && disc.live) onTracer?.(position, -1);
                     const a = discAcceleration(velocity, disc.normal, worldGravity);
                     force.set(a[0] * DISC.mass, a[1] * DISC.mass, a[2] * DISC.mass);
                     body.applyForce(force);
@@ -235,6 +245,12 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     remove(disc);
             }
         },
+        /** The golden disc's material, for discs its holder throws. */
+        set goldMaterial(material: StandardMaterial) {
+            goldMaterial = material;
+        },
+        /** The shared disc mesh. */
+        mesh,
         /** Shared first-person/remote disc material, for the in-hand viewmodel. */
         meshInstances: (hue: number) => meshFor(hue),
         clear() {

@@ -1,8 +1,12 @@
 // Pure game-room logic for the shared campus world (no Cloudflare APIs, so node tests drive it directly).
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
+import { SPAWN_POINTS } from '../src/config/spawns.ts';
+import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
     ChatLine,
     ClientMessage,
+    GoldState,
+    RoundState,
     PlayerPose,
     PlayerSummary,
     Scores,
@@ -25,6 +29,7 @@ import {
     PROTOCOL_VERSION,
     randomName,
     RESPAWN_SECONDS,
+    ROUND,
     SNIPER,
     SPAWN_PROTECTION,
     THROW_CLAIM_WINDOW,
@@ -72,9 +77,15 @@ export class Room {
     private readonly accounts: Accounts | null;
     private readonly chatLog: ChatLine[] = [];
     private chatId = 0;
+    /** The current round and the golden disc (null while the room is empty). */
+    round: RoundState | null = null;
+    gold: GoldState = { holder: null, at: [0, 0.92, 0] };
+    private goldDroppedAt = 0;
+    private readonly random: () => number;
 
-    constructor(out: Outbox, spawnCount: number, accounts: Accounts | null = null) {
+    constructor(out: Outbox, spawnCount: number, accounts: Accounts | null = null, random = Math.random) {
         this.out = out;
+        this.random = random;
         this.spawnCount = spawnCount;
         this.accounts = accounts;
     }
@@ -88,9 +99,16 @@ export class Room {
         this.pending.add(id);
     }
 
-    disconnect(id: string) {
+    disconnect(id: string, now = Date.now()) {
         this.pending.delete(id);
-        if (this.players.delete(id)) this.out.all({ type: 'left', id });
+        const player = this.players.get(id);
+        if (!player) return;
+        // Leaving with the golden disc drops it where they stood.
+        if (this.gold.holder === id) this.dropGold(player, now);
+        this.players.delete(id);
+        this.out.all({ type: 'left', id });
+        // An empty room forgets its round; the next arrival starts a fresh one.
+        if (!this.players.size) this.round = null;
     }
 
     message(id: string, message: ClientMessage | null, now: number) {
@@ -114,6 +132,7 @@ export class Room {
                 }
                 player.pose = message.pose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
+                this.tryPickup(player, now);
                 return;
             case 'throw':
                 return this.throw(player, message.throw, now);
@@ -121,11 +140,16 @@ export class Room {
                 return this.hit(player, message.throwId, message.target, message.at, now);
             case 'chat':
                 return this.chat(player, message.text, now);
+            case 'caught':
+                return this.caught(player, now);
+            case 'ping':
+                return this.out.to(player.id, { type: 'pong', c: message.c });
         }
     }
 
     /** Periodic work: respawns that are due, and the pose snapshot. */
     tick(now: number) {
+        this.advanceRound(now);
         for (const player of this.players.values()) {
             if (!player.alive && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
@@ -207,6 +231,7 @@ export class Room {
             throws: new Map()
         };
         this.players.set(id, player);
+        if (!this.round) this.startRound(now, false);
         this.out.to(id, {
             type: 'welcome',
             id,
@@ -214,7 +239,10 @@ export class Room {
             players: this.summaries(),
             account,
             king: this.accounts?.king() ?? null,
-            chat: this.chatLog.slice(-20)
+            chat: this.chatLog.slice(-20),
+            round: this.round!,
+            gold: this.gold,
+            t: now
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
@@ -272,6 +300,73 @@ export class Room {
             scores
         });
         this.persist(player, target, out, now);
+        // An eliminated holder drops the golden disc where they fell.
+        if (out && this.gold.holder === target.id) this.dropGold(target, now);
+    }
+
+    // ---------- rounds and the golden disc ----------
+
+    private startRound(now: number, announce = true) {
+        for (const player of this.players.values()) {
+            player.score = 0;
+            player.kills = 0;
+            player.deaths = 0;
+        }
+        this.round = { phase: 'playing', endsAt: now + ROUND.roundSeconds * 1000 };
+        const [x, z] = SPAWN_POINTS[Math.floor(this.random() * SPAWN_POINTS.length) % SPAWN_POINTS.length];
+        this.gold = { holder: null, at: [x, 0.92, z] };
+        this.goldDroppedAt = now;
+        if (!announce) return; // the first arrival learns both from its welcome
+        this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        this.out.all({ type: 'gold', gold: this.gold, event: 'spawned' });
+    }
+
+    private advanceRound(now: number) {
+        if (!this.round || !this.players.size) return;
+        if (this.round.phase === 'playing' && now >= this.round.endsAt) {
+            const holder = this.gold.holder ? this.players.get(this.gold.holder) : undefined;
+            this.round = {
+                phase: 'ended',
+                winner: holder?.name ?? null,
+                winnerId: holder?.id ?? null,
+                nextAt: now + ROUND.intermissionSeconds * 1000
+            };
+            this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+            this.system(holder ? `${holder.name} 守住了金飞盘，赢得本局！` : '本局结束：金飞盘无人持有，没有胜者', now);
+        } else if (this.round.phase === 'ended' && now >= this.round.nextAt) {
+            this.startRound(now);
+        }
+    }
+
+    private tryPickup(player: Player, now: number) {
+        if (this.gold.holder || !player.alive || !player.pose || this.round?.phase !== 'playing') return;
+        if (now - this.goldDroppedAt < ROUND.pickupDelay * 1000) return;
+        const [x, y, z] = player.pose.p;
+        const [gx, gy, gz] = this.gold.at;
+        if (Math.hypot(x - gx, z - gz) > ROUND.pickupRadius || Math.abs(y - gy) > 1.6) return;
+        this.gold = { holder: player.id, at: [x, y, z] };
+        this.out.all({ type: 'gold', gold: this.gold, event: 'taken' });
+    }
+
+    private dropGold(holder: Player, now: number) {
+        const at: Vec3Tuple = holder.pose ? [holder.pose.p[0], 0.92, holder.pose.p[2]] : this.gold.at;
+        this.gold = { holder: null, at };
+        this.goldDroppedAt = now;
+        this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });
+    }
+
+    /** A player threw inside 纪老师's view (checked on the client against walls); the room checks he is near. */
+    private caught(player: Player, now: number) {
+        if (!player.pose) return;
+        const teacher = teacherAt(now);
+        if (Math.hypot(player.pose.p[0] - teacher.x, player.pose.p[2] - teacher.z) > 20) return;
+        this.out.all({ type: 'caught', id: player.id });
+    }
+
+    private scores(): Scores {
+        const scores: Scores = {};
+        for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
+        return scores;
     }
 
     /** Lifetime stats for signed-in players, and the standing 淘汰王. */

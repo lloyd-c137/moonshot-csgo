@@ -77,3 +77,74 @@ export const inspectPose = (u: number): Pose => {
     if (t < 0.88) return blend(RECOIL, SHOW, smooth(span(t, 0.76, 0.88)));
     return blend(SHOW, END, smooth(span(t, 0.88, 1)));
 };
+
+// ---------- golden disc inspect ----------
+// Held up to the eye, it levitates off the fingertips and spins itself into a blur while gold sparks spiral up;
+// then a flick sends it high over the view, tumbling, and it is snatched back out of the air with a gold shockwave.
+
+export const GOLD_INSPECT_SECONDS = 3.2;
+export const GOLD_TOSS_AT = 0.5;
+export const GOLD_CATCH_AT = 0.8;
+
+const G_PRESENT: Pose = [
+    [0.05, -0.16, -0.48],
+    [78, -4, 10]
+];
+const G_LEVITATE: Pose = [
+    [0.04, -0.09, -0.5],
+    [84, 0, 10 + 1440]
+];
+const G_COCK: Pose = [
+    [0.12, -0.27, -0.55],
+    [30, -14, 10 + 1440 + 30]
+];
+const G_RELEASE: Pose = [
+    [0.1, -0.16, -0.6],
+    [6, -6, 10 + 1440 + 20]
+];
+const G_TUMBLE = 720;
+const G_SPIN = 1080;
+const G_APEX = 0.4;
+const G_CATCH: Pose = [
+    [0.1, -0.19, -0.54],
+    [G_RELEASE[1][0] + G_TUMBLE, 4, G_RELEASE[1][2] + G_SPIN]
+];
+const G_RECOIL: Pose = [
+    [0.12, -0.25, -0.57],
+    [G_CATCH[1][0] - 10, 10, G_CATCH[1][2] + 6]
+];
+const G_END: Pose = [REST[0], [REST[1][0] + 720, REST[1][1], REST[1][2] + 2880]];
+
+/** True while the golden disc is in the air during its inspect. */
+export const goldAirborne = (u: number) => u > GOLD_TOSS_AT && u < GOLD_CATCH_AT;
+
+/** Viewmodel pose at progress `u` (0–1) of the golden disc inspect. */
+export const goldInspectPose = (u: number): Pose => {
+    const t = Math.min(1, Math.max(0, u));
+    if (t < 0.1) return blend(REST, G_PRESENT, smooth(span(t, 0, 0.1)));
+    if (t < 0.38) {
+        // Levitate: rises a few centimetres and spins up (ease in), bobbing slightly.
+        const s = span(t, 0.1, 0.38);
+        const [p, e] = blend(G_PRESENT, G_LEVITATE, s * s);
+        p[1] += Math.sin(s * Math.PI * 3) * 0.008;
+        e[0] = G_PRESENT[1][0] + (G_LEVITATE[1][0] - G_PRESENT[1][0]) * smooth(s);
+        return [p, e];
+    }
+    if (t < 0.44) return blend(G_LEVITATE, G_COCK, smooth(span(t, 0.38, 0.44)));
+    if (t < GOLD_TOSS_AT) return blend(G_COCK, G_RELEASE, easeIn(span(t, 0.44, GOLD_TOSS_AT)));
+    if (t < GOLD_CATCH_AT) {
+        const s = span(t, GOLD_TOSS_AT, GOLD_CATCH_AT);
+        const lift = 4 * s * (1 - s);
+        const [x, y, z] = mix(G_RELEASE[0], G_CATCH[0], s);
+        return [
+            [x + 0.05 * lift, y + G_APEX * lift, z - 0.14 * lift],
+            [
+                G_RELEASE[1][0] + G_TUMBLE * s,
+                G_RELEASE[1][1] + (G_CATCH[1][1] - G_RELEASE[1][1]) * s + Math.sin(s * Math.PI * 4) * 12,
+                G_RELEASE[1][2] + G_SPIN * s
+            ]
+        ];
+    }
+    if (t < 0.86) return blend(G_CATCH, G_RECOIL, smooth(span(t, GOLD_CATCH_AT, 0.86)));
+    return blend(G_RECOIL, G_END, smooth(span(t, 0.86, 1)));
+};

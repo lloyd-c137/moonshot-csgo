@@ -60,7 +60,9 @@ export const ROUND = {
     goldSpeedFactor: 0.7,
     /** …and after every `goldBurst` throws must wait `goldCooldown` seconds. */
     goldBurst: 5,
-    goldCooldown: 3
+    goldCooldown: 3,
+    /** With this long left everyone still in the game is brought to the 莲花球场 for the final showdown. */
+    finalSecondsLeft: 60
 } as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).

@@ -58,9 +58,11 @@ type Options = {
     ui: Ui;
     url: string | null;
     auth: Auth;
+    /** Middle of the 莲花球场 (X/Z): the final showdown is fought there. */
+    arenaCenter: [number, number];
 };
 
-export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Options) => {
+export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaCenter }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
     const avatars = createAvatars(app, camera, ui.nameTagLayer());
@@ -118,6 +120,33 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let lastGoldMine = false;
     const guard = createGuard(app, camera, ui.nameTagLayer());
     let teacherGraceUntil = 0;
+    // Final showdown floodlights over the 莲花球场, and a light that follows the golden disc in the dark.
+    const floodlights = [0, 1, 2, 3, 4, 5].map((i) => {
+        const light = new Entity('arena-floodlight');
+        light.addComponent('light', {
+            type: 'omni',
+            color: new Color(1, 0.97, 0.9),
+            intensity: 0,
+            range: 22,
+            castShadows: false
+        });
+        const a = (i / 6) * Math.PI * 2;
+        light.setPosition(arenaCenter[0] + Math.cos(a) * 9, 9, arenaCenter[1] + Math.sin(a) * 9);
+        app.root.addChild(light);
+        return light;
+    });
+    const goldLight = new Entity('gold-light');
+    goldLight.addComponent('light', {
+        type: 'omni',
+        color: new Color(1, 0.8, 0.35),
+        intensity: 0,
+        range: 9,
+        castShadows: false
+    });
+    app.root.addChild(goldLight);
+    let finalDone = false;
+    let finalShown = false;
+    let groundCap = 0;
     let goldThrowCount = 0;
     let goldCooldownUntil = 0;
     let dark = false;
@@ -1001,6 +1030,54 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         }
         // Watching: the camera follows someone still in the game.
         if (spectating) spectate(now);
+        // In the dark the golden disc (and whoever carries it) is lit up for everyone to find.
+        const goldAt = goldPosition();
+        goldLight.light!.intensity = dark && goldAt ? 2.6 : 0;
+        if (goldAt) goldLight.setPosition(goldAt[0], goldAt[1] + 1.6, goldAt[2]);
+        // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
+        const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
+        const finalNow = net.state === 'online' && finalAt !== null && roomNow() >= finalAt;
+        if (finalNow !== finalShown) {
+            finalShown = finalNow;
+            for (const light of floodlights) light.light!.intensity = finalNow ? 2.4 : 0;
+            if (finalNow) {
+                ui.broadcastText('最终对决！所有存活玩家传送到莲花球场');
+                sound.roundStart();
+            }
+        }
+        if (!finalNow) finalDone = false;
+        if (finalNow && !finalDone && alive && !spectating && started) {
+            finalDone = true;
+            // Spread out round the middle of the court (a fixed spot per player, so nobody lands on anyone).
+            const id = selfId();
+            let hash = 0;
+            for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+            const a = ((hash % 360) * Math.PI) / 180;
+            const r = 5 + (hash % 5);
+            player.rigidbody!.teleport(
+                arenaCenter[0] + Math.cos(a) * r,
+                0.92,
+                arenaCenter[1] + Math.sin(a) * r,
+                0,
+                0,
+                0
+            );
+            player.rigidbody!.linearVelocity = Vec3.ZERO;
+            setLook(player, 0, (Math.atan2(Math.cos(a), Math.sin(a)) * 180) / Math.PI);
+            net.pose(pose(), true);
+        }
+        // Carrying the golden disc: no faster in the air than on the ground (jumping must not dodge the slowdown).
+        const body = player.rigidbody;
+        const controllerState = controller() as unknown as { _grounded?: boolean } | null;
+        if (body && holdingGold() && controllerState) {
+            const v = body.linearVelocity;
+            const horizontal = Math.hypot(v.x, v.z);
+            if (controllerState._grounded) groundCap = Math.max(horizontal, groundCap * 0.98, 0.5);
+            else if (horizontal > groundCap && groundCap > 0) {
+                const k = groundCap / horizontal;
+                body.linearVelocity = new Vec3(v.x * k, v.y, v.z * k);
+            }
+        }
         // Monitoring room radar countdown.
         if (now < radarUntil) {
             radarShown = true;

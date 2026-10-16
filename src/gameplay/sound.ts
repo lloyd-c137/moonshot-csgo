@@ -4,7 +4,7 @@
 // play centred. The context starts on the first user gesture.
 
 type V3 = [number, number, number];
-export type TestSoundCue = 'hit' | 'head' | 'bounce';
+export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce';
 
 export const createSound = () => {
     let ctx: AudioContext | null = null;
@@ -374,7 +374,7 @@ export const createSound = () => {
         /** Your disc hit someone: a crisp confirmation; the "kill" clip when it eliminates. */
         hitConfirm: (eliminated: boolean, head = false) =>
             play((audio, now) => {
-                if (playTestClip(audio, head ? 'head' : 'hit')) return;
+                if (playTestClip(audio, head ? 'head' : eliminated ? 'kill' : 'hit')) return;
                 tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
                 tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
                 // Head hits ring higher and longer.

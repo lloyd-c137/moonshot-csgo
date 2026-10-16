@@ -9,16 +9,17 @@ type Options = { sound: Sound; canvas: HTMLCanvasElement; range: () => void; pos
 export const mountAudioLab = async ({ sound, canvas, range, position }: Options) => {
     const host = document.createElement('div');
     host.innerHTML = `
-      <button class="audio-lab-toggle" type="button">音效测试 · F8</button>
+      <button class="audio-lab-toggle" type="button">音效配置 · P</button>
       <dialog class="audio-lab" aria-labelledby="audio-lab-title">
         <header><div><small>MOONSHOT · LOCAL AUDIO LAB</small><h2 id="audio-lab-title">拆分音效 · 游戏内对比</h2></div><button data-action="close" type="button">关闭</button></header>
-        <p>每段视频音效都是独立选项。分别替换命中、爆头、碰撞声；选“原有音效”即可对比。按 F8 暂停并切换，完成后继续游戏。</p>
+        <p>每段视频音效都是独立选项。分别替换命中、击杀、爆头、碰撞声；选“原有音效”即可对比。按 P 暂停并切换，完成后继续游戏。</p>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
         <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
-        <p class="audio-lab-note">试音靶可重复命中，不记录战绩。正对靶的头部或身体投掷，向附近墙面投掷测试碰撞。原视频有混合声音；长片段可用起止时间继续截取。本地素材未上传。</p>
-      </dialog>`;
+        <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰，死亡后 2.5 秒在原位置复活，不记录战绩。向附近墙面投掷测试碰撞。原视频有混合声音；可调起止点。本地素材未上传。</p>
+      </dialog>
+      <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 2/2 · 死亡后原地复活</span></div>`;
     document.body.append(host);
     const dialog = host.querySelector('dialog')!;
     const status = host.querySelector<HTMLElement>('[role="status"]')!;
@@ -38,7 +39,10 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
     window.addEventListener(
         'keydown',
         (event) => {
-            if (event.code !== 'F8' || event.repeat) return;
+            if (!['KeyP', 'F8'].includes(event.code) || event.repeat) return;
+            const element = event.target as HTMLElement | null;
+            if (event.code === 'KeyP' && (element?.isContentEditable || element?.closest('input, textarea, select')))
+                return;
             event.preventDefault();
             event.stopImmediatePropagation();
             toggle();
@@ -93,6 +97,7 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
         const resets: (() => void)[] = [];
         for (const [cue, label] of [
             ['hit', '身体命中'],
+            ['kill', '击杀确认'],
             ['head', '爆头确认'],
             ['bounce', '飞盘碰撞']
         ] as const) {
@@ -146,7 +151,7 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
                 stop();
                 if (!(await apply())) return;
                 if (cue === 'bounce') sound.bounce(position(), 10);
-                else sound.hitConfirm(cue === 'head', cue === 'head');
+                else sound.hitConfirm(cue === 'head' || cue === 'kill', cue === 'head');
                 if (loop.checked && dialog.open)
                     timer = window.setTimeout(
                         () => {
@@ -170,11 +175,23 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
             stop();
             resets.forEach((reset) => reset());
         });
-        status.textContent = `已载入 ${clips.length} 个独立片段。先选择片段，再进入靶场；F8 随时切换。`;
+        status.textContent = `已载入 ${clips.length} 个独立片段。人偶在出生点正前方；P 随时切换音效。`;
     } catch (error) {
         status.textContent = `${(error as Error).message}。请在本机提供 .audio-lab-local/manifest.json 和 clips/。`;
     }
-    return (head: boolean) => {
-        status.textContent = `实际投掷已触发${head ? '爆头' : '身体命中'}音效；按 F8 切换后可继续对比。`;
+    const dummyState = host.querySelector<HTMLElement>('[data-dummy-state]')!;
+    const dummyHud = host.querySelector<HTMLElement>('.audio-lab-dummy')!;
+    return {
+        hit(head: boolean, eliminated: boolean) {
+            status.textContent = `实际投掷已触发${head ? '爆头' : eliminated ? '击杀' : '身体命中'}音效；按 P 切换后可继续对比。`;
+        },
+        dummy(hp: number, respawnSeconds: number) {
+            const text =
+                hp > 0 ? `生命 ${hp}/2 · 死亡后原地复活` : `已淘汰 · ${respawnSeconds.toFixed(1)} 秒后原地复活`;
+            if (dummyState.textContent !== text) dummyState.textContent = text;
+            if (dummyHud.dataset.hp !== String(hp)) dummyHud.dataset.hp = String(hp);
+        }
     };
 };
+
+export type AudioLabUi = Awaited<ReturnType<typeof mountAudioLab>>;

@@ -4,7 +4,7 @@ import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
 import { BLEND_NORMAL, Color, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
-import { PLAYER } from '../config/gameplay';
+import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
@@ -24,6 +24,7 @@ import {
 } from '../net/protocol';
 import { kickLook, setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
+import type { AudioLabUi } from '../ui/audioLab';
 import type { Ui } from '../ui/shell';
 
 import { createAvatars } from './avatars';
@@ -95,15 +96,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let hp = MAX_HP;
     const sound = createSound();
     const effects = createEffects(app);
-    // GAMEPLAY_AUTHORED local test target in the existing, browser-tested M104 corridor.
+    // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     const labTargetId = 'audio-lab-target';
-    const labTargetPose: PlayerPose = { p: [-40.3, 0.92, 39.6], yaw: 90, pitch: 0 };
-    let labHit: ((head: boolean) => void) | undefined;
+    const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 180, pitch: 0 };
+    let labHp: number = MAX_HP;
+    let labRespawnAt = 0;
+    let labUi: AudioLabUi | undefined;
     if (audioLab) {
-        avatars.add(labTargetId, '音效试音靶', colourFor(labTargetId));
+        avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
-            labHit = await mountAudioLab({
+            labUi = await mountAudioLab({
                 sound,
                 canvas,
                 position: () => {
@@ -111,11 +114,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     return [p.x, p.y, p.z];
                 },
                 range: () => {
-                    player.rigidbody!.teleport(-46.3, 0.92, 39.6);
+                    player.rigidbody!.teleport(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z);
                     player.rigidbody!.linearVelocity = Vec3.ZERO;
                     player.rigidbody!.angularVelocity = Vec3.ZERO;
-                    setLook(player, 0, -90);
-                    ui.notify('前方 6 米是可重复命中的试音靶；F8 切换音效，向墙面投掷测试碰撞。');
+                    setLook(player, 0, 0);
+                    ui.notify('出生点正前方 4 米是固定人偶；身体两次或爆头一次淘汰，2.5 秒后原地复活。P 切换音效。');
                 }
             });
         });
@@ -1294,7 +1297,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
             poses = net.poses();
-            if (audioLab) poses.set(labTargetId, labTargetPose);
+            if (audioLab) {
+                if (labHp === 0 && now >= labRespawnAt) labHp = MAX_HP;
+                if (labHp > 0) poses.set(labTargetId, labTargetPose);
+                else poses.delete(labTargetId);
+                labUi?.dummy(labHp, Math.max(0, (labRespawnAt - now) / 1000));
+            }
             avatars.update(poses, now);
             animateFeel(deltaTime, now);
             updateRound(now);
@@ -1306,13 +1314,23 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 targets,
                 (throwId, target, at) => {
                     if (audioLab && target === labTargetId) {
+                        if (labHp === 0) return;
                         const head = at[1] - labTargetPose.p[1] > HEAD_ABOVE;
-                        sound.hitConfirm(head, head);
-                        effects.burst(at, colourFor(labTargetId), head ? 'out' : 'hit');
+                        labHp = head ? 0 : Math.max(0, labHp - 1);
+                        const out = labHp === 0;
+                        if (out) {
+                            labRespawnAt = now + RESPAWN_SECONDS * 1000;
+                            targets.delete(labTargetId);
+                        }
+                        sound.hitConfirm(out, head);
+                        effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
                         avatars.flash(target, performance.now());
-                        ui.hitMarker(head ? 'kill' : 'hit');
-                        ui.popup(head ? '试音靶 · 爆头' : '试音靶 · 身体命中', head ? 'kill' : 'hit');
-                        labHit?.(head);
+                        ui.hitMarker(out ? 'kill' : 'hit');
+                        ui.popup(
+                            head ? '人偶 · 爆头淘汰' : out ? '人偶 · 击杀' : '人偶 · 身体命中（1/2）',
+                            out ? 'kill' : 'hit'
+                        );
+                        labUi?.hit(head, out);
                         hitsClaimed++;
                         return;
                     }
@@ -1400,6 +1418,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 discs: discs.count,
                 throws,
                 hitsClaimed,
+                practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
                 inspecting: inspectSince !== null,
                 aim,
                 gold: goldView.state,

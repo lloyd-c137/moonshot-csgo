@@ -12,7 +12,7 @@
 }
 .audio-lab {
     box-sizing: border-box;
-    width: min(880px, 94vw);
+    width: min(1100px, 94vw);
     max-height: 90vh;
     padding: 26px;
     background: #151c19;
@@ -52,7 +52,7 @@
 }
 .audio-lab-rows {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px;
     margin: 20px 0;
 }
@@ -106,6 +106,34 @@
 }
 .audio-lab-note {
     font-size: 12px;
+}
+.audio-lab-dummy {
+    position: fixed;
+    top: 68px;
+    right: 18px;
+    z-index: 900;
+    padding: 12px 16px;
+    background: #17271ee8;
+    color: #dcefd7;
+    border: 1px solid #627a63;
+    border-radius: 8px;
+    pointer-events: none;
+    font:
+        13px/1.6 system-ui,
+        sans-serif;
+}
+.audio-lab-dummy strong,
+.audio-lab-dummy span {
+    display: block;
+}
+.audio-lab-dummy[data-hp='0'] {
+    color: #f9c3a5;
+    border-color: #a2755b;
+}
+@media (max-width: 1000px) {
+    .audio-lab-rows {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 @media (max-width: 700px) {
     .audio-lab-rows {

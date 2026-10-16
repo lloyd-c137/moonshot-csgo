@@ -81,6 +81,7 @@ const MARKUP = `
             <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
             <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
             <div><dt><span class="kbd">Enter</span></dt><dd>世界聊天</dd></div>
             <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
             <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
@@ -148,6 +149,7 @@ const MARKUP = `
     </div>
     <div class="hints" aria-hidden="true">
       <span><span class="kbd">左键</span>飞盘</span>
+      <span><span class="kbd">F</span>检视</span>
       <span><span class="kbd">Tab</span>排行</span>
       <span><span class="kbd">M</span>地图</span>
       <span><span class="kbd">Esc</span>暂停</span>

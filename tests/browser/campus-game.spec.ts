@@ -78,6 +78,8 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     const caughtAt = await position(page);
     await hold(page, ['KeyW'], 1500);
     expect(horizontal(await position(page), caughtAt)).toBeLessThan(0.2);
+    expect(await page.evaluate(() => window.__MOONSHOT__!.stuckShown())).toBe(false);
+    await expect(page.locator('#unstuck')).toBeHidden();
     await advance(page, 2900);
     await expect(page.locator('#detention')).toBeHidden();
     await hold(page, ['KeyW'], 600);

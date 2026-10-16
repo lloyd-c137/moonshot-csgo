@@ -8,10 +8,11 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
+import type { Execution } from '../gameplay/execution.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -157,6 +158,7 @@ export type ClientMessage =
     /** The sender was caught in the night guard's flashlight. */
     | { type: 'spotted' }
     | { type: 'pullBreaker' }
+    | { type: 'execute'; target: string }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
@@ -174,6 +176,7 @@ export type ServerMessage =
           chat: ChatLine[];
           round: RoundState;
           power: PowerState;
+          executions: Execution[];
           gold: GoldState;
           ammo: number;
           discs: GroundDisc[];
@@ -198,6 +201,7 @@ export type ServerMessage =
           gold: boolean;
           /** Out for the rest of the round (after the lights went out): no respawn, watch instead. */
           final?: boolean;
+          execution?: boolean;
           at: Vec3Tuple;
           scores: Scores;
       }
@@ -214,7 +218,10 @@ export type ServerMessage =
     /** Discs lying around changed (`added`: a fresh one appeared, e.g. at the PE office). */
     | { type: 'discs'; discs: GroundDisc[]; added?: { id: number; office: boolean } }
     | { type: 'pong'; c: number }
-    | { type: 'power'; power: PowerState };
+    | { type: 'power'; power: PowerState }
+    | { type: 'executionStarted'; execution: Execution }
+    | { type: 'executionEnded'; id: string; completed: boolean; reason: string }
+    | { type: 'executionDenied'; reason: string };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
 export const cleanName = (raw: unknown) => {
@@ -277,6 +284,8 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'spotted':
         case 'pullBreaker':
             return value as ClientMessage;
+        case 'execute':
+            return typeof value.target === 'string' && value.target.length <= 64 ? (value as ClientMessage) : null;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':

@@ -273,6 +273,7 @@ const boot = async () => {
     let closeChat: (() => void) | null = null;
     let stuckAt: [number, number] = [0, 0];
     const escapeStuck = () => {
+        if (match.executing || match.detained) return;
         stuck.reset();
         stuckShown = false;
         shell.stuck(false);
@@ -309,7 +310,13 @@ const boot = async () => {
             return;
         }
         roomTracker.update([position.x, position.z], deltaTime);
-        if (document.pointerLockElement === canvas && match.alive) {
+        if (match.detained) {
+            stuck.reset();
+            if (stuckShown) {
+                stuckShown = false;
+                shell.stuck(false);
+            }
+        } else if (document.pointerLockElement === canvas && match.alive) {
             const isStuck = stuck.update(
                 deltaTime,
                 performance.now() / 1000,
@@ -382,6 +389,10 @@ const boot = async () => {
     let recoverAt = -Infinity;
     const RECOVER_COOLDOWN = 180_000;
     const recover = () => {
+        if (match.executing) {
+            shell.notify('处决动画期间无法传送');
+            return;
+        }
         const wait = recoverAt + RECOVER_COOLDOWN - performance.now();
         if (wait > 0) {
             const seconds = Math.ceil(wait / 1000);

@@ -24,7 +24,7 @@ export const mountAudioLab = async ({ sound, canvas, range, position, setGolden 
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
         <label class="audio-lab-loop"><input data-golden type="checkbox">金飞盘试音：人偶淘汰时使用“金飞盘击杀”候选</label>
         <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
-        <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰，2.5 秒原地复活，不记录战绩。新候选保留视频中的背景混音，未做声源分离，可调起止点；仅供本地评估。生产默认的 10／12／16 不受候选库精简影响。</p>
+        <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰；从背后靠近后按 V 或点处决按钮，双方播放处决动作，完成后 2.5 秒原地复活，不记录战绩。新候选保留视频中的背景混音，未做声源分离，可调起止点；仅供本地评估。生产默认的 10／12／16 不受候选库精简影响。</p>
       </dialog>
       <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 2/2 · 死亡后原地复活</span></div>`;
     document.body.append(host);

@@ -1,5 +1,7 @@
 // Browser side of the shared-world connection: one WebSocket to the room, typed events, pose interpolation.
 // Without a configured or reachable server the game stays fully playable offline (frisbee practice).
+import type { Execution } from '../gameplay/execution';
+
 import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
 import type {
     AccountStats,
@@ -31,6 +33,7 @@ type Handlers = {
             chat: ChatLine[];
             round: RoundState;
             power: PowerState;
+            executions: Execution[];
             gold: GoldState;
             ammo: number;
             discs: GroundDisc[];
@@ -50,7 +53,8 @@ type Handlers = {
         scores: Scores,
         sniper: boolean,
         gold: boolean,
-        final: boolean
+        final: boolean,
+        execution: boolean
     ) => void;
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
@@ -60,6 +64,9 @@ type Handlers = {
     gold: (gold: GoldState, event: 'spawned' | 'taken' | 'dropped') => void;
     round: (round: RoundState, scores: Scores) => void;
     power: (power: PowerState) => void;
+    executionStarted: (execution: Execution) => void;
+    executionEnded: (id: string, completed: boolean, reason: string) => void;
+    executionDenied: (reason: string) => void;
     caught: (id: string) => void;
     ammo: (ammo: number) => void;
     discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
@@ -106,6 +113,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     chat: message.chat,
                     round: message.round,
                     power: message.power,
+                    executions: message.executions,
                     gold: message.gold,
                     ammo: message.ammo,
                     discs: message.discs
@@ -156,7 +164,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.scores,
                     message.sniper === true,
                     message.gold === true,
-                    message.final === true
+                    message.final === true,
+                    message.execution === true
                 );
                 break;
             case 'chat':
@@ -194,6 +203,15 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             }
             case 'power':
                 handlers.power(message.power);
+                break;
+            case 'executionStarted':
+                handlers.executionStarted(message.execution);
+                break;
+            case 'executionEnded':
+                handlers.executionEnded(message.id, message.completed, message.reason);
+                break;
+            case 'executionDenied':
+                handlers.executionDenied(message.reason);
                 break;
             case 'respawn':
                 handlers.respawn(message.id, message.spawn);
@@ -296,6 +314,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         pullBreaker() {
             send({ type: 'pullBreaker' });
+        },
+        execute(target: string) {
+            send({ type: 'execute', target });
         },
         /** Estimated room clock (ms), or null before the first message. */
         serverNow() {

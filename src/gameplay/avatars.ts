@@ -146,7 +146,7 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
     };
 
     /** Places every avatar from the interpolated poses; players without a pose (eliminated) are hidden. */
-    const update = (poses: Map<string, PlayerPose>, now: number) => {
+    const update = (poses: Map<string, PlayerPose>, now: number, hiddenIds: ReadonlySet<string> = new Set()) => {
         // Hit flash: the struck player's colour burns white and fades.
         for (const [hue, until] of flashes) {
             const m = colourMaterial(hue);
@@ -159,7 +159,7 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         eye.copy(camera.getPosition());
         for (const [id, avatar] of avatars) {
             const pose = poses.get(id);
-            if (!pose) {
+            if (!pose || hiddenIds.has(id)) {
                 avatar.root.enabled = false;
                 avatar.glint.enabled = false;
                 avatar.tag.hidden = true;

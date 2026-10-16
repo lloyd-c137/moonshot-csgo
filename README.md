@@ -48,7 +48,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>), wait for the four loading stages to finish, then click **进入校园**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, M for the full-floor map, Escape to pause, and R to return to the south entrance, the spawn (position and heading). Leaving the level (falling below Y = −3 m) returns the player there automatically. If movement keys are held for 2 s without progress (or the player sinks into the floor), a **脱离卡死** offer appears: press G (or click it when paused) to return to the spawn. A production build polls `/version.json` (written at build time with the Pages commit) every minute and offers a reload when a newer version is deployed; a room that rejects an outdated client does the same.
+Open the URL printed by Vite (normally <http://localhost:5173>), wait for the four loading stages to finish, then click **进入校园**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, V to execute an eligible opponent from behind, M for the full-floor map, Escape to pause, and R to return to the south entrance, the spawn (position and heading). Leaving the level (falling below Y = −3 m) returns the player there automatically. If movement keys are held for 2 s without progress (or the player sinks into the floor), a **脱离卡死** offer appears: press G (or click it when paused) to return to the spawn. The detector is suspended during 纪老师's detention. A production build polls `/version.json` (written at build time with the Pages commit) every minute and offers a reload when a newer version is deployed; a room that rejects an outdated client does the same.
 
 The top plate names the current location (room number, name, kind colour). There is no exploration log. Mouse sensitivity and field of view (pause menu) and the sign-in session are saved in the browser's local storage only.
 
@@ -112,6 +112,7 @@ Scaffolded in a temporary directory with the official `create-playcanvas@0.10.1`
 - PASS: browser test walks the capsule through each of the 14 authored doorways in both directions.
 - PASS: browser raycasts confirm the presented walls collide at 3.3 m (above the 2.8 m source height) and not at 3.75 m, and the arena perimeter wall collides at 8 m. The 2,749 derived furniture items (906 colliding) and the 26 M104 authored colliders leave every room reachable.
 - PASS: browser tests cover the new UI flow (staged loading, 进入校园, location plate, M map toggle, pause menu, recovery toast, weapon inspect).
+- PASS: execution unit tests and browser routes verify the fixed audio-lab dummy, synchronized two-client action/camera, target spectating after elimination, mannequin respawn, and no stuck offer during 纪老师 detention. See [docs/EXECUTION.md](docs/EXECUTION.md).
 - PASS (visual, software WebGL screenshots only): ceilings indoors, sky above the arena and courtyards, 10 m arena wall, doors, furnished classrooms/labs/dining/library, UI screens at desktop and 390 px width. Real-GPU appearance and frame rate are NOT RUN.
 - NOT RUN: glass blocking probe, corridor route to Lotus Arena, manual playtest, representative desktop performance benchmark.
 - History: before these fixes the GitHub Actions browser job failed on every push from `feat: add FF01 exploration controls` onwards; the earlier S308/S309 PASS was observed only on a local GPU.

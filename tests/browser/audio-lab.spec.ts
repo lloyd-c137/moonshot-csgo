@@ -83,6 +83,34 @@ test('offline target stays visible after entry, uses selected defaults and respa
     expect(errors).toEqual([]);
 });
 
+test('practice dummy can be executed from behind and respawns at its fixed position', async ({ page }) => {
+    await page.goto('/?audioLab=1&offline=1');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await page.keyboard.press('p');
+    await page.locator('[data-action="range"]').click();
+
+    const button = page.locator('#execute-button');
+    await expect(button).toBeVisible();
+    await expect(button).toContainText('固定测试人偶');
+    const initial = await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy);
+    await page.keyboard.press('v');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions.length)).toBe(1);
+    const paired = await page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]);
+    expect(paired.role).toBe('attacker');
+    expect(paired.camera).toBe(true);
+    expect(paired.actorsVisible).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
+    await expect(page.locator('#popup')).toContainText('处决淘汰');
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp))
+        .toBe(2, {
+            timeout: 6000
+        });
+    expect((await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy))?.position).toEqual(
+        initial?.position
+    );
+});
+
 test('gold-kill and whoosh candidates preview and follow real practice throws', async ({ page }) => {
     // CI has no private video files. Authorized production WAVs stand in for two local candidates here.
     await page.route('**/.audio-lab-local/manifest.json', (route) =>

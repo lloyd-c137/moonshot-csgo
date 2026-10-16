@@ -31,6 +31,8 @@ type Actions = {
 
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
+  <button id="execute-button" class="execute-button" type="button" hidden><span class="kbd">V</span> 处决 <b id="execute-target"></b></button>
+  <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>双方动作同步 · 动画完成后淘汰并进入观战</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
     <div class="title-shade" aria-hidden="true"></div>
@@ -87,6 +89,7 @@ const MARKUP = `
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
             <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
             <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
+            <div><dt><span class="kbd">V</span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
             <div><dt><span class="kbd">Enter</span></dt><dd>世界聊天</dd></div>
             <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
             <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
@@ -270,6 +273,9 @@ const replay = (element: HTMLElement, className: string) => {
 export const createUi = () => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
+    let executeAction: (() => void) | null = null;
+    $('#execute-button').addEventListener('click', () => executeAction?.());
+    $('#execute-button').addEventListener('mousedown', (event) => event.stopPropagation());
     const root = $('#app-ui');
     const stagesList = $<HTMLOListElement>('.stages');
     for (const [stage, label] of STAGES) {
@@ -740,6 +746,19 @@ export const createUi = () => {
             const prompt = $('#interaction');
             prompt.hidden = text === null;
             if (text !== null && prompt.textContent !== text) prompt.textContent = text;
+        },
+        onExecute: (action: () => void) => {
+            executeAction = action;
+        },
+        executionPrompt: (name: string | null) => {
+            $('#execute-button').hidden = name === null;
+            if (name !== null && $('#execute-target').textContent !== name) $('#execute-target').textContent = name;
+        },
+        executionState: (text: string | null, progress: number) => {
+            $('#app-ui').dataset.executing = String(text !== null);
+            $('#execution-banner').hidden = text === null;
+            if (text !== null && $('#execution-label').textContent !== text) $('#execution-label').textContent = text;
+            $('#execution-progress').style.transform = `scaleX(${Math.max(0, Math.min(1, progress))})`;
         },
         /** Red flash, plus an arc around the crosshair pointing toward the thrower (degrees, 0 = ahead, clockwise). */
         damage: (fromAngle: number | null = null) => {

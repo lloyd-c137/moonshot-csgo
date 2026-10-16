@@ -2,6 +2,8 @@
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
+import { canExecute, EXECUTION } from '../src/gameplay/execution.ts';
+import type { Execution } from '../src/gameplay/execution.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
 import { nearBreaker } from '../src/gameplay/power.ts';
 import type { PowerState } from '../src/gameplay/power.ts';
@@ -95,6 +97,9 @@ export class Room {
     /** The current round and the golden disc (null while the room is empty). */
     round: RoundState | null = null;
     power: PowerState = { pulledAt: null };
+    readonly executions = new Map<string, Execution>();
+    private executionCounter = 0;
+    private executedAccounts = new Set<string>();
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
     /** Discs a newcomer carries (tests raise it to throw repeatedly). */
@@ -125,6 +130,7 @@ export class Room {
         this.pending.delete(id);
         const player = this.players.get(id);
         if (!player) return;
+        this.cancelExecutionFor(id, '玩家离开');
         // Leaving with the golden disc drops it where they stood.
         if (this.gold.holder === id) this.dropGold(player, now);
         this.players.delete(id);
@@ -133,6 +139,7 @@ export class Room {
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
             this.round = null;
+            this.executedAccounts.clear();
             this.power = { pulledAt: null };
             this.roundParticipants.clear();
             this.discs = [];
@@ -154,6 +161,7 @@ export class Room {
         switch (message.type) {
             case 'pose':
             case 'respawned':
+                if (player.spectating || this.executionFor(id)) return;
                 if (!inBounds(message.pose)) return;
                 if (message.type === 'respawned' && !player.alive && now >= player.respawnAt) {
                     player.alive = true;
@@ -182,6 +190,7 @@ export class Room {
                     this.blackout(now) ||
                     this.power.pulledAt !== null ||
                     !player.alive ||
+                    !!this.executionFor(id) ||
                     player.spectating ||
                     !player.pose ||
                     now - player.poseAt > 1000 ||
@@ -192,6 +201,8 @@ export class Room {
                 this.out.all({ type: 'power', power: this.power });
                 this.system(`${player.name} 拉下了配电室总闸，保安正在前往恢复供电`, now);
                 return;
+            case 'execute':
+                return this.startExecution(player, message.target, now);
             case 'ping':
                 return this.out.to(player.id, { type: 'pong', c: message.c });
         }
@@ -200,6 +211,8 @@ export class Room {
     /** Periodic work: respawns that are due, and the pose snapshot. */
     tick(now: number) {
         this.advanceRound(now);
+        for (const execution of [...this.executions.values()])
+            if (now >= execution.endsAt) this.finishExecution(execution, now);
         this.officeTick(now);
         for (const player of this.players.values()) {
             if (!player.alive && !player.spectating && player.respawnAt > 0 && now >= player.respawnAt) {
@@ -292,7 +305,7 @@ export class Room {
         this.players.set(id, player);
         if (!this.round) this.startRound(now, false);
         // Arriving after the lights went out: watch until the next round.
-        if (this.blackout(now)) {
+        if (this.blackout(now) || (account && this.executedAccounts.has(account.name))) {
             player.alive = false;
             player.spectating = true;
         }
@@ -308,6 +321,7 @@ export class Room {
             chat: this.chatLog.slice(-20),
             round: this.round!,
             power: this.power,
+            executions: [...this.executions.values()],
             gold: this.gold,
             ammo: player.ammo,
             discs: this.discs,
@@ -316,7 +330,102 @@ export class Room {
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
 
+    private executionFor(id: string) {
+        return [...this.executions.values()].find((entry) => entry.attacker.id === id || entry.target.id === id);
+    }
+
+    private cancelExecutionFor(id: string, reason: string) {
+        const entry = this.executionFor(id);
+        if (!entry) return;
+        this.executions.delete(entry.id);
+        this.out.all({ type: 'executionEnded', id: entry.id, completed: false, reason });
+    }
+
+    private cancelAllExecutions(reason: string) {
+        for (const entry of [...this.executions.values()]) this.cancelExecutionFor(entry.attacker.id, reason);
+    }
+
+    private startExecution(attacker: Player, targetId: string, now: number) {
+        const target = this.players.get(targetId);
+        if (
+            this.round?.phase !== 'playing' ||
+            !attacker.alive ||
+            attacker.spectating ||
+            !target ||
+            target === attacker ||
+            !target.alive ||
+            target.spectating ||
+            !attacker.pose ||
+            !target.pose ||
+            now - attacker.poseAt > 1000 ||
+            now - target.poseAt > 1000 ||
+            now - attacker.spawnedAt < SPAWN_PROTECTION * 1000 ||
+            now - target.spawnedAt < SPAWN_PROTECTION * 1000 ||
+            this.executionFor(attacker.id) ||
+            this.executionFor(target.id) ||
+            !canExecute(attacker.pose, target.pose)
+        ) {
+            this.out.to(attacker.id, {
+                type: 'executionDenied',
+                reason: '目标不满足处决条件：需要靠近背后、无遮挡，且双方未受出生保护或参与其他处决'
+            });
+            return;
+        }
+        const actor = (entry: Player) => ({
+            id: entry.id,
+            name: entry.name,
+            colour: entry.colour,
+            pose: { ...entry.pose!, p: [...entry.pose!.p] as Vec3Tuple }
+        });
+        const startsAt = now + EXECUTION.startDelayMs;
+        const execution: Execution = {
+            id: `${now}-${++this.executionCounter}`,
+            attacker: actor(attacker),
+            target: actor(target),
+            startsAt,
+            endsAt: startsAt + EXECUTION.durationMs
+        };
+        this.executions.set(execution.id, execution);
+        this.out.all({ type: 'executionStarted', execution });
+    }
+
+    private finishExecution(execution: Execution, now: number) {
+        const attacker = this.players.get(execution.attacker.id),
+            target = this.players.get(execution.target.id);
+        if (!attacker?.alive || !target?.alive || this.round?.phase !== 'playing') {
+            this.cancelExecutionFor(execution.attacker.id, '处决已中断');
+            return;
+        }
+        this.executions.delete(execution.id);
+        target.hp = 0;
+        target.alive = false;
+        target.spectating = true;
+        target.respawnAt = 0;
+        target.deaths++;
+        if (target.accountName) this.executedAccounts.add(target.accountName);
+        attacker.kills++;
+        attacker.score += POINTS.elimination;
+        this.out.all({ type: 'executionEnded', id: execution.id, completed: true, reason: '处决完成' });
+        this.out.all({
+            type: 'struck',
+            target: target.id,
+            by: attacker.id,
+            hp: 0,
+            out: true,
+            head: false,
+            sniper: false,
+            gold: false,
+            final: true,
+            execution: true,
+            at: [...target.pose!.p],
+            scores: this.scores()
+        });
+        this.persist(attacker, target, true, now, false);
+        this.fallen(target, now);
+    }
+
     private throw(player: Player, record: ThrowRecord, now: number) {
+        if (this.executionFor(player.id)) return;
         if (!player.alive || now - player.lastThrowAt < THROW_COOLDOWN * 1000 * 0.8) return;
         const speed = Math.hypot(...record.v);
         if (speed > MAX_THROW_SPEED + 12 || player.throws.has(record.id)) return;
@@ -354,6 +463,7 @@ export class Room {
         const reach = Math.hypot(...entry.record.v) * (elapsed + 0.35) + HIT_SLACK;
         if (distance(entry.record.o, target.pose.p) > reach || distance(at, target.pose.p) > HIT_SLACK) return;
         entry.scored = true;
+        this.cancelExecutionFor(target.id, '被飞盘命中');
         const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
         const sniper = entry.record.sniper === true;
         // Every disc to the head is lethal outright; body hits take one point of health.
@@ -414,6 +524,7 @@ export class Room {
         if (!player.alive || !player.pose || !this.blackout(now)) return;
         const guard = guardAt(now, this.blackoutAt(), this.power);
         if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
+        this.cancelExecutionFor(player.id, '被保安淘汰');
         player.hp = 0;
         player.alive = false;
         player.deaths++;
@@ -446,6 +557,8 @@ export class Room {
     // ---------- rounds and the golden disc ----------
 
     private startRound(now: number, announce = true) {
+        this.cancelAllExecutions('新一局开始');
+        this.executedAccounts.clear();
         this.power = { pulledAt: null };
         this.roundParticipants.clear();
         for (const player of this.players.values()) {
@@ -483,6 +596,7 @@ export class Room {
 
     private endRound(now: number, winner: Player | null, line: string | null) {
         if (this.round?.phase !== 'playing') return;
+        this.cancelAllExecutions('本局结束');
         for (const name of this.roundParticipants) {
             const account = this.accounts?.record(name, { rounds: 1, wins: name === winner?.accountName ? 1 : 0 });
             if (account) {
@@ -567,6 +681,7 @@ export class Room {
 
     /** A player threw inside 纪老师's view (checked on the client against walls); the room checks he is near. */
     private caught(player: Player, now: number) {
+        if (this.executionFor(player.id)) return;
         if (!player.pose) return;
         const teacher = teacherAt(now);
         if (Math.hypot(player.pose.p[0] - teacher.x, player.pose.p[2] - teacher.z) > 20) return;
@@ -580,11 +695,11 @@ export class Room {
     }
 
     /** Lifetime stats for signed-in players, and the standing 淘汰王. */
-    private persist(attacker: Player, target: Player, out: boolean, now: number) {
+    private persist(attacker: Player, target: Player, out: boolean, now: number, discHit = true) {
         if (!this.accounts) return;
         if (attacker.accountName) {
             const stats = this.accounts.record(attacker.accountName, {
-                hits: 1,
+                hits: discHit ? 1 : 0,
                 kills: out ? 1 : 0,
                 score: POINTS.hit + (out ? POINTS.elimination : 0)
             });

@@ -31,6 +31,9 @@ import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
+import { canExecute, executionProgress } from './execution';
+import type { Execution } from './execution';
+import { createExecutionView } from './executionView';
 import type { V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { createGold, GOLD_COLOUR } from './gold';
@@ -99,12 +102,26 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let hp = MAX_HP;
     const sound = createSound();
     const effects = createEffects(app);
+    let executionFrozen = false;
+    const executionView = createExecutionView(app, camera, (active) => {
+        executionFrozen = active;
+        const script = controller();
+        if (script) script.enabled = alive && !inputPaused && !spectating && !active;
+        player.rigidbody!.linearVelocity = Vec3.ZERO;
+        player.rigidbody!.angularVelocity = Vec3.ZERO;
+        player.rigidbody!.enabled = !spectating && !active;
+        if (active) {
+            cancelCharge();
+            inspectSince = null;
+        }
+    });
     // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     const labTargetId = 'audio-lab-target';
-    const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 180, pitch: 0 };
+    const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 0, pitch: 0 };
     let labHp: number = MAX_HP;
     let labRespawnAt = 0;
+    let labExecution: Execution | null = null;
     let labGolden = false;
     let labUi: AudioLabUi | undefined;
     if (audioLab) {
@@ -120,11 +137,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     return [p.x, p.y, p.z];
                 },
                 range: () => {
-                    player.rigidbody!.teleport(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z);
+                    player.rigidbody!.teleport(labTargetPose.p[0], labTargetPose.p[1], labTargetPose.p[2] + 1.1);
                     player.rigidbody!.linearVelocity = Vec3.ZERO;
                     player.rigidbody!.angularVelocity = Vec3.ZERO;
                     setLook(player, 0, 0);
-                    ui.notify('出生点正前方 4 米是固定人偶；身体两次或爆头一次淘汰，2.5 秒后原地复活。P 切换音效。');
+                    ui.notify('固定人偶在你正前方；靠近背后按 V 可处决。飞盘命中测试和 P 音效面板也可用。');
                 }
             });
         });
@@ -278,7 +295,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let caught = false;
 
     const selfId = () => net.id ?? 'local';
-    const nameOf = (id: string) => (id === 'guard' ? '保安' : (roster.get(id)?.name ?? '某人'));
+    const nameOf = (id: string) =>
+        id === 'guard' ? '保安' : id === labTargetId ? '固定测试人偶' : (roster.get(id)?.name ?? '某人');
     const refreshBoard = () => {
         ui.net(netState, roster.size);
         const me = selfId();
@@ -344,7 +362,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const setAlive = (value: boolean) => {
         alive = value;
         const script = controller();
-        if (script) script.enabled = value && !inputPaused;
+        if (script) script.enabled = value && !inputPaused && !executionFrozen;
         if (value) hp = MAX_HP;
         if (!value) {
             player.rigidbody!.linearVelocity = Vec3.ZERO;
@@ -369,7 +387,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         spectating = false;
         if (player.rigidbody) player.rigidbody.enabled = true;
         const script = controller();
-        if (script) script.enabled = alive && !inputPaused;
+        if (script) script.enabled = alive && !inputPaused && !executionFrozen;
         ui.spectate(null);
     };
     /** Places the camera behind and above the watched player, looking at them; click switches who. */
@@ -407,6 +425,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
             }
             if (state !== 'online') {
+                executionView.clear();
                 power = { pulledAt: null };
                 roster.clear();
                 avatars.clear();
@@ -424,10 +443,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             refreshCount();
         },
         welcome: (me, players, extra) => {
+            executionView.clear();
+            for (const record of extra.executions) executionView.start(record);
             power = extra.power;
             roster.clear();
-            if (me.spectating) startSpectating('灯已经灭了：本局观战，下一局开始时加入');
-            else stopSpectating();
+            if (me.spectating) {
+                setAlive(false);
+                startSpectating('本局已出局：观战，下一局开始时加入');
+            } else {
+                stopSpectating();
+                setAlive(me.alive);
+            }
             king = extra.king;
             ui.king(king);
             ui.chatHistory(extra.chat);
@@ -487,7 +513,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
-        struck: (target, by, targetHp, out, head, at, scores, sniper, golden, final) => {
+        struck: (target, by, targetHp, out, head, at, scores, sniper, golden, final, execution) => {
             const entryFinal = roster.get(target);
             if (entryFinal && final) entryFinal.spectating = true;
             const snipe = sniper && head && out;
@@ -534,7 +560,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     setAlive(false);
                     killer = nameOf(by);
                     startSpectating(
-                        by === 'guard' ? '你被保安的手电筒照到了，出局' : `你被 ${nameOf(by)} 淘汰，本局出局`
+                        execution
+                            ? `你被 ${nameOf(by)} 处决，本局进入观战`
+                            : by === 'guard'
+                              ? '你被保安的手电筒照到了，出局'
+                              : `你被 ${nameOf(by)} 淘汰，本局出局`
                     );
                 } else if (out) {
                     setAlive(false);
@@ -560,7 +590,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     sound.hitConfirm(out, head);
                     ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
                     ui.popup(
-                        out ? `${head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1` : '命中！',
+                        out ? `${execution ? '处决淘汰' : head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1` : '命中！',
                         out ? 'kill' : head ? 'head' : 'hit'
                     );
                     // Confirmation you can feel: a punch of the view, harder on eliminations.
@@ -672,6 +702,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         power: (next) => {
             power = next;
         },
+        executionStarted: (record) => executionView.start(record),
+        executionEnded: (id, completed, reason) => {
+            const local = executionView.localRecord(selfId())?.id === id;
+            executionView.stop(id);
+            if (local && !completed) ui.notify(`处决中断：${reason}`);
+        },
+        executionDenied: (reason) => ui.notify(reason),
         ammo: (next) => {
             if (next > ammo) {
                 sound.pickup();
@@ -708,6 +745,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const right = new Vec3();
     const origin = new Vec3();
     const throwDisc = (speed: number, sniper = false) => {
+        if (executionView.hasActor(selfId())) return false;
         const now = performance.now();
         if (!alive || now - lastThrowAt < THROW_COOLDOWN * 1000) return false;
         // The golden disc: a short cooldown after every burst of throws.
@@ -836,6 +874,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         else throwDisc(chargeSpeed(held));
     });
     const startInspect = () => {
+        if (executionView.hasActor(selfId())) return false;
         if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
         const now = performance.now();
         if ((now - lastThrowAt) / 1000 <= THROW_COOLDOWN) return false; // disc not back in hand yet
@@ -860,7 +899,87 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             .map((entry) => ({ name: entry.name, kills: entry.kills, deaths: entry.deaths, me: entry.id === me }));
         ui.scoreboard(rows.length ? rows : [{ name: '离线练习', kills: 0, deaths: 0, me: true }]);
     };
+    const executionTarget = () => {
+        if (
+            !started ||
+            !alive ||
+            spectating ||
+            inputPaused ||
+            executionView.hasActor(selfId()) ||
+            performance.now() < detainedUntil
+        )
+            return null;
+        const mine = pose();
+        if (audioLab && labHp > 0 && !executionView.hasActor(labTargetId) && canExecute(mine, labTargetPose)) {
+            const blocked = rigidbody
+                .raycastAll(
+                    new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
+                    new Vec3(labTargetPose.p[0], labTargetPose.p[1] + 0.3, labTargetPose.p[2])
+                )
+                .some((hit) => hit.entity !== player);
+            if (!blocked) return labTargetId;
+        }
+        if (net.state !== 'online' || roundState?.phase !== 'playing') return null;
+        return (
+            [...poses.entries()]
+                .filter(
+                    ([id, other]) =>
+                        id !== selfId() &&
+                        roster.get(id)?.alive &&
+                        !roster.get(id)?.spectating &&
+                        !executionView.hasActor(id) &&
+                        canExecute(mine, other) &&
+                        !rigidbody
+                            .raycastAll(
+                                new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
+                                new Vec3(other.p[0], other.p[1] + 0.3, other.p[2])
+                            )
+                            .some((hit) => hit.entity !== player)
+                )
+                .sort(
+                    (a, b) =>
+                        Math.hypot(a[1].p[0] - mine.p[0], a[1].p[2] - mine.p[2]) -
+                        Math.hypot(b[1].p[0] - mine.p[0], b[1].p[2] - mine.p[2])
+                )[0]?.[0] ?? null
+        );
+    };
+    let lastExecutionRequest = -Infinity;
+    const attemptExecution = () => {
+        if (performance.now() - lastExecutionRequest < 500) return;
+        const target = executionTarget();
+        if (!target) return;
+        lastExecutionRequest = performance.now();
+        cancelCharge();
+        if (audioLab && target === labTargetId) {
+            const now = roomNow();
+            const record: Execution = {
+                id: `practice-${now}`,
+                attacker: { id: selfId(), name: nickname || '玩家', colour: colourFor(selfId()), pose: pose() },
+                target: {
+                    id: labTargetId,
+                    name: '固定测试人偶',
+                    colour: colourFor(labTargetId),
+                    pose: { ...labTargetPose, p: [...labTargetPose.p] }
+                },
+                startsAt: now + 150,
+                endsAt: now + 150 + 2600
+            };
+            labExecution = record;
+            executionView.start(record);
+            return;
+        }
+        net.pose(pose(), true);
+        net.execute(target);
+    };
+    ui.onExecute(() => {
+        attemptExecution();
+        if (!locked()) void canvas.requestPointerLock().catch(() => undefined);
+    });
     window.addEventListener('keydown', (event) => {
+        if (event.code === 'KeyV' && !event.repeat && locked()) {
+            event.preventDefault();
+            attemptExecution();
+        }
         if (
             event.code === 'KeyE' &&
             !event.repeat &&
@@ -871,6 +990,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             performance.now() >= detainedUntil &&
             nearBreaker(pose().p) &&
             power.pulledAt === null &&
+            !executionView.hasActor(selfId()) &&
             (net.state !== 'online' || roundState?.phase === 'playing')
         ) {
             const now = roomNow();
@@ -899,6 +1019,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     });
 
     const animateFeel = (deltaTime: number, now: number) => {
+        if (executionView.hasActor(selfId())) {
+            viewmodel.enabled = false;
+            for (const ghost of ghosts) ghost.entity.enabled = false;
+            return;
+        }
         const cam = camera.camera!;
         punch = Math.max(0, punch - deltaTime * 6);
         // Sniper aim: the whole view zooms in gradually; sensitivity and walking speed follow the zoom.
@@ -1061,7 +1186,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         }
         // 纪老师's circle: stepping into it means standing still for a few seconds, frisbee or not. Once released you
         // get a few seconds to walk out before he can stop you again.
-        const watched = started && alive && !spectating && teacher.sees(player.getPosition());
+        const watched =
+            started && alive && !spectating && !executionView.hasActor(selfId()) && teacher.sees(player.getPosition());
         if (watched !== inWatch) {
             inWatch = watched;
             ui.watchWarning(watched);
@@ -1350,7 +1476,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
             } else if (chargingSince !== null) ui.charge(null);
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
-            if (net.state === 'online' && alive) net.pose(pose());
+            if (net.state === 'online' && alive && !executionView.hasActor(selfId())) net.pose(pose());
             const eye = camera.getPosition();
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
@@ -1364,7 +1490,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 else poses.delete(labTargetId);
                 labUi?.dummy(labHp, Math.max(0, (labRespawnAt - now) / 1000));
             }
-            avatars.update(poses, now);
+            avatars.update(poses, now, executionView.hiddenIds());
             animateFeel(deltaTime, now);
             updateRound(now);
             effects.update(deltaTime);
@@ -1423,9 +1549,41 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 }
             );
             ground.update(now);
+            executionView.update(roomNow(), selfId());
+            if (labExecution && roomNow() >= labExecution.endsAt) {
+                const record = labExecution;
+                labExecution = null;
+                executionView.stop(record.id);
+                labHp = 0;
+                labRespawnAt = now + RESPAWN_SECONDS * 1000;
+                const impact = [record.target.pose.p[0], record.target.pose.p[1] + 0.25, record.target.pose.p[2]] as V3;
+                if (labGolden) sound.snipeConfirm(true, true);
+                else sound.hitConfirm(true, false);
+                effects.burst(impact, colourFor(labTargetId), 'out');
+                ui.hitMarker('kill');
+                ui.popup(labGolden ? '人偶 · 金飞盘处决' : '人偶 · 处决淘汰', 'kill');
+                labUi?.hit(false, true, labGolden);
+            }
+            const local = executionView.localRecord(selfId());
+            ui.executionState(
+                local
+                    ? local.attacker.id === selfId()
+                        ? `正在处决 ${local.target.name}`
+                        : `正在被 ${local.attacker.name} 处决`
+                    : null,
+                local ? executionProgress(local, roomNow()) : 0
+            );
+            const target = executionTarget();
+            ui.executionPrompt(target ? nameOf(target) : null);
         },
         get alive() {
             return alive;
+        },
+        get executing() {
+            return executionView.hasActor(selfId());
+        },
+        get detained() {
+            return performance.now() < detainedUntil;
         },
         /** Lights out (the round's final minutes). */
         get dark() {
@@ -1470,7 +1628,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         setInputPaused(paused: boolean) {
             inputPaused = paused;
             const script = controller();
-            if (script) script.enabled = alive && !paused;
+            if (script) script.enabled = alive && !paused && !executionFrozen && !spectating;
             if (paused) {
                 chargingSince = null;
                 ui.charge(null);
@@ -1481,12 +1639,15 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 net: net.state,
                 id: net.id,
                 alive,
+                spectating,
+                executions: executionView.debug(roomNow(), selfId()),
                 hp,
                 players: [...roster.values()].map((entry) => ({ ...entry })),
                 discs: discs.count,
                 throws,
                 hitsClaimed,
                 practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
+                practiceExecution: labExecution ? { id: labExecution.id, endsAt: labExecution.endsAt } : null,
                 inspecting: inspectSince !== null,
                 aim,
                 gold: goldView.state,

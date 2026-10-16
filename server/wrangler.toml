@@ -1,0 +1,17 @@
+# Cloudflare Worker hosting the shared multiplayer room (see server/worker.ts). Deploy:
+#   npm run server:deploy        (local: npm run server:dev, which also allows localhost origins)
+name = "moonshot-csgo-multiplayer"
+main = "worker.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "moonshot-csgo.pages.dev,*.moonshot-csgo.pages.dev"
+
+[[durable_objects.bindings]]
+name = "WORLD"
+class_name = "World"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["World"]

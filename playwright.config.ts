@@ -12,11 +12,20 @@ export default defineConfig({
         headless: true,
         launchOptions: process.env.CI ? undefined : { channel: 'chrome' }
     },
-    webServer: {
-        command: 'npm run dev -- --host 127.0.0.1 --port 5174',
-        url: 'http://127.0.0.1:5174',
-        reuseExistingServer: !process.env.CI,
-        timeout: 30_000
-    },
+    webServer: [
+        {
+            command: 'npm run dev -- --host 127.0.0.1 --port 5174',
+            url: 'http://127.0.0.1:5174',
+            reuseExistingServer: !process.env.CI,
+            timeout: 30_000
+        },
+        {
+            // Local shared-world room (Cloudflare workerd via wrangler) for the multiplayer spec.
+            command: 'npm run server:dev',
+            url: 'http://127.0.0.1:8787/health',
+            reuseExistingServer: !process.env.CI,
+            timeout: 90_000
+        }
+    ],
     reporter: 'line'
 });

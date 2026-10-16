@@ -35,6 +35,7 @@ const MARKUP = `
       </div>
       <ol class="stages" aria-label="加载进度"></ol>
       <div class="title-actions">
+        <label class="nickname" for="nickname">昵称<input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
         <button class="primary" id="enter-button" type="button" disabled>正在加载</button>
         <p class="load-error" id="load-error" role="alert" hidden></p>
         <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
@@ -46,7 +47,10 @@ const MARKUP = `
         <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
         <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>
         <div><dt><span class="kbd">R</span></dt><dd>回到东入口</dd></div>
+        <div><dt><span class="kbd">左键</span></dt><dd>投掷飞盘（按住蓄力）</dd></div>
+        <div><dt><span class="kbd">Tab</span></dt><dd>排行榜</dd></div>
       </dl>
+      <p class="fine-print">所有人同在一张地图：飞盘击中即淘汰，稍后在别处复活。只显示你填写的昵称，不需要登录，也不保存任何个人信息。</p>
       <p class="fine-print">场景由 FF-01 平面图推导，墙高、门、家具与灯光为游戏补充，并非实地测量。</p>
     </div>
   </section>
@@ -54,18 +58,33 @@ const MARKUP = `
   <section class="screen screen-hud" aria-label="游戏界面">
     <div class="location" id="location" aria-live="polite">
       <span class="stripe" aria-hidden="true"></span>
-      <div class="location-body">
-        <span class="location-code" id="location-code">—</span>
-        <span class="location-name" id="location-name">正在定位</span>
-        <span class="location-kind" id="location-kind"></span>
-      </div>
+      <span class="location-code" id="location-code">—</span>
+      <span class="location-name" id="location-name">正在定位</span>
+      <span class="location-kind" id="location-kind"></span>
     </div>
+    <section class="leaderboard" id="leaderboard" aria-label="实时积分">
+      <header><span>积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
+      <ol id="leaderboard-rows"></ol>
+    </section>
     <span class="crosshair" aria-hidden="true"></span>
+    <span class="charge" id="charge" aria-hidden="true" hidden></span>
+    <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
+    <div class="damage" id="damage" aria-hidden="true"></div>
+    <div class="name-tags" id="name-tags" aria-hidden="true"></div>
+    <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
+    <div class="health" id="health" aria-label="生命"></div>
+    <ol class="feed" id="feed" aria-live="polite"></ol>
+    <div class="scoreboard" id="scoreboard" hidden>
+      <table><thead><tr><th>玩家</th><th>击中</th><th>被击中</th></tr></thead><tbody id="scoreboard-rows"></tbody></table>
+    </div>
+    <div class="eliminated" id="eliminated" hidden><strong id="eliminated-title"></strong><span id="eliminated-detail"></span></div>
     <div class="map-dock">
       <canvas id="minimap" width="150" height="150" aria-label="小地图，北方朝上"></canvas>
       <span class="tally" id="tally"></span>
     </div>
     <div class="hints" aria-hidden="true">
+      <span><span class="kbd">左键</span>飞盘</span>
+      <span><span class="kbd">Tab</span>排行</span>
       <span><span class="kbd">M</span>地图</span>
       <span><span class="kbd">Esc</span>暂停</span>
     </div>
@@ -111,9 +130,16 @@ const describe = (location: CampusRoom | undefined) => {
     };
 };
 
+const NICKNAME_KEY = 'moonshot.nickname';
+
 export const createUi = (locations: CampusRoom[]) => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
+    try {
+        $<HTMLInputElement>('#nickname').value = window.localStorage.getItem(NICKNAME_KEY) ?? '';
+    } catch {
+        /* storage unavailable */
+    }
     const root = $('#app-ui');
     const stagesList = $<HTMLOListElement>('.stages');
     for (const [stage, label] of STAGES) {
@@ -128,6 +154,7 @@ export const createUi = (locations: CampusRoom[]) => {
     const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'), locations);
     const byId = new Map(locations.map((location) => [location.id, location]));
     let toastTimer = 0;
+    let broadcastTimer = 0;
     let discoveredIds: readonly string[] = [];
 
     const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
@@ -245,6 +272,7 @@ export const createUi = (locations: CampusRoom[]) => {
             $('#location-code').append(tag);
             plate.dataset.new = String(isNew);
             plate.dataset.unmapped = String(info.unmapped);
+            plate.dataset.corridor = String(!location);
             if (info.colour) plate.style.setProperty('--kind-colour', info.colour);
             else plate.style.removeProperty('--kind-colour');
         },
@@ -261,7 +289,136 @@ export const createUi = (locations: CampusRoom[]) => {
             root.dataset.map = root.dataset.map === 'open' ? 'closed' : 'open';
         },
         drawMaps: (x: number, z: number, forwardX: number, forwardZ: number) =>
-            map.draw(x, z, forwardX, forwardZ, root.dataset.map === 'open')
+            map.draw(x, z, forwardX, forwardZ, root.dataset.map === 'open'),
+        /** Nickname typed on the title screen (remembered in this browser only). */
+        nickname: () => {
+            const value = $<HTMLInputElement>('#nickname').value.trim();
+            try {
+                window.localStorage.setItem(NICKNAME_KEY, value);
+            } catch {
+                /* storage unavailable */
+            }
+            return value;
+        },
+        nameTagLayer: () => $('#name-tags'),
+        net: (state: 'offline' | 'connecting' | 'online' | 'rejected', players: number) => {
+            const status = $('#net-status');
+            status.dataset.state = state;
+            status.textContent =
+                state === 'online'
+                    ? `在线 ${players} 人`
+                    : state === 'connecting'
+                      ? '连接中…'
+                      : state === 'rejected'
+                        ? '无法加入 · 离线'
+                        : '离线练习';
+        },
+        /** Live score list (top left): the top five, plus your own row when you are further down. */
+        leaderboard: (
+            rows: { name: string; score: number; hp: number; alive: boolean; colour: number; me: boolean }[]
+        ) => {
+            const sorted = [...rows].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            const shown = sorted.slice(0, 5);
+            const mine = sorted.findIndex((row) => row.me);
+            if (mine >= 5) shown.push(sorted[mine]);
+            $('#leaderboard-rows').replaceChildren(
+                ...shown.map((row) => {
+                    const item = document.createElement('li');
+                    item.style.setProperty('--player-colour', `hsl(${row.colour} 75% 52%)`);
+                    if (row.me) item.dataset.me = 'true';
+                    if (!row.alive) item.dataset.out = 'true';
+                    const rank = document.createElement('span');
+                    rank.className = 'rank';
+                    rank.textContent = String(sorted.indexOf(row) + 1);
+                    const name = document.createElement('span');
+                    name.className = 'who';
+                    name.textContent = row.name;
+                    const score = document.createElement('b');
+                    score.textContent = String(row.score);
+                    item.append(rank, name, score);
+                    return item;
+                })
+            );
+        },
+        health: (hp: number, max: number) => {
+            const health = $('#health');
+            health.replaceChildren(
+                ...Array.from({ length: max }, (_, index) => {
+                    const pip = document.createElement('span');
+                    if (index < hp) pip.dataset.full = 'true';
+                    return pip;
+                })
+            );
+            health.dataset.low = String(hp <= 1);
+        },
+        hitMarker: (kind: 'hit' | 'kill') => {
+            const marker = $('#hitmarker');
+            marker.dataset.kind = kind;
+            marker.classList.remove('show');
+            void marker.offsetWidth;
+            marker.classList.add('show');
+        },
+        damage: () => {
+            const damage = $('#damage');
+            damage.classList.remove('show');
+            void damage.offsetWidth;
+            damage.classList.add('show');
+        },
+        /** Elimination broadcast across the upper centre of the screen. */
+        broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me') => {
+            const banner = $('#broadcast');
+            banner.dataset.tone = tone;
+            const a = document.createElement('b');
+            a.textContent = killer;
+            const b = document.createElement('b');
+            b.textContent = victim;
+            banner.replaceChildren(a, document.createTextNode(' 淘汰了 '), b);
+            banner.hidden = false;
+            banner.classList.remove('show');
+            void banner.offsetWidth;
+            banner.classList.add('show');
+            window.clearTimeout(broadcastTimer);
+            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
+        },
+        /** Throw charge 0..1 around the crosshair, or null to hide. */
+        charge: (fraction: number | null) => {
+            const charge = $('#charge');
+            charge.hidden = fraction === null;
+            if (fraction !== null) charge.style.setProperty('--charge', String(fraction));
+        },
+        feed: (text: string, tone: 'neutral' | 'mine' | 'me' = 'neutral') => {
+            const list = $('#feed');
+            const item = document.createElement('li');
+            item.dataset.tone = tone;
+            item.textContent = text;
+            list.prepend(item);
+            while (list.children.length > 5) list.lastElementChild!.remove();
+            window.setTimeout(() => item.remove(), 6000);
+        },
+        scoreboard: (rows: { name: string; kills: number; deaths: number; me: boolean }[] | null) => {
+            const board = $('#scoreboard');
+            board.hidden = rows === null;
+            if (!rows) return;
+            $('#scoreboard-rows').replaceChildren(
+                ...rows.map((row) => {
+                    const tr = document.createElement('tr');
+                    if (row.me) tr.dataset.me = 'true';
+                    for (const value of [row.name, String(row.kills), String(row.deaths)]) {
+                        const td = document.createElement('td');
+                        td.textContent = value;
+                        tr.append(td);
+                    }
+                    return tr;
+                })
+            );
+        },
+        eliminated: (by: string | null, seconds = 0) => {
+            const overlay = $('#eliminated');
+            overlay.hidden = by === null;
+            if (by === null) return;
+            $('#eliminated-title').textContent = `被 ${by} 的飞盘击中`;
+            $('#eliminated-detail').textContent = `${seconds.toFixed(1)} 秒后复活`;
+        }
     };
 };
 

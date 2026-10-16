@@ -1,0 +1,174 @@
+// Combat sounds synthesised with the Web Audio API (no audio files). Remote throws and hits are positioned in 3D
+// relative to the camera; the local player's own sounds play centred. The context starts on the first user gesture.
+
+type V3 = [number, number, number];
+
+export const createSound = () => {
+    let ctx: AudioContext | null = null;
+    let master: GainNode | null = null;
+    let noise: AudioBuffer | null = null;
+
+    const ensure = () => {
+        if (!ctx) {
+            const Context =
+                window.AudioContext ??
+                (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+            if (!Context) return null;
+            ctx = new Context();
+            master = ctx.createGain();
+            master.gain.value = 0.55;
+            master.connect(ctx.destination);
+            noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+            const data = noise.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        }
+        if (ctx.state === 'suspended') void ctx.resume();
+        return ctx;
+    };
+
+    /** Output node: centred, or a panner at a world position. */
+    const output = (audio: AudioContext, at?: V3) => {
+        if (!at) return master!;
+        const panner = audio.createPanner();
+        panner.panningModel = 'HRTF';
+        panner.distanceModel = 'inverse';
+        panner.refDistance = 2;
+        panner.maxDistance = 60;
+        panner.rolloffFactor = 1.1;
+        panner.positionX.value = at[0];
+        panner.positionY.value = at[1];
+        panner.positionZ.value = at[2];
+        panner.connect(master!);
+        return panner;
+    };
+
+    const tone = (
+        audio: AudioContext,
+        destination: AudioNode,
+        type: OscillatorType,
+        from: number,
+        to: number,
+        start: number,
+        duration: number,
+        volume: number
+    ) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(from, start);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), start + duration);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        osc.connect(gain).connect(destination);
+        osc.start(start);
+        osc.stop(start + duration + 0.02);
+    };
+
+    const hiss = (
+        audio: AudioContext,
+        destination: AudioNode,
+        start: number,
+        duration: number,
+        volume: number,
+        fromHz: number,
+        toHz: number,
+        q = 1.2
+    ) => {
+        const source = audio.createBufferSource();
+        source.buffer = noise;
+        const filter = audio.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.Q.value = q;
+        filter.frequency.setValueAtTime(fromHz, start);
+        filter.frequency.exponentialRampToValueAtTime(toHz, start + duration);
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + duration * 0.25);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        source.connect(filter).connect(gain).connect(destination);
+        source.start(start, Math.random() * 0.5);
+        source.stop(start + duration + 0.02);
+    };
+
+    const play = (build: (audio: AudioContext, now: number) => void) => {
+        const audio = ensure();
+        if (audio) build(audio, audio.currentTime);
+    };
+
+    return {
+        /** Call from a user gesture (entering the campus) so browsers allow audio. */
+        unlock: () => void ensure(),
+        /** Keeps the 3D listener on the camera. */
+        listener(position: V3, forward: V3) {
+            if (!ctx) return;
+            const l = ctx.listener;
+            if (l.positionX) {
+                l.positionX.value = position[0];
+                l.positionY.value = position[1];
+                l.positionZ.value = position[2];
+                l.forwardX.value = forward[0];
+                l.forwardY.value = forward[1];
+                l.forwardZ.value = forward[2];
+                l.upX.value = 0;
+                l.upY.value = 1;
+                l.upZ.value = 0;
+            }
+        },
+        /** Disc release: an airy whoosh (positioned for other players' throws). */
+        throw: (at?: V3) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                hiss(audio, out, now, 0.32, 0.5, 900, 2600, 1.6);
+                tone(audio, out, 'triangle', 240, 140, now, 0.08, 0.12);
+            }),
+        /** Disc striking a wall or floor. */
+        bounce: (at: V3, strength: number) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                tone(audio, out, 'square', 320, 180, now, 0.05, Math.min(0.12, 0.03 + strength * 0.01));
+            }),
+        /** Your disc hit someone: a crisp confirmation; brighter when it eliminates. */
+        hitConfirm: (eliminated: boolean) =>
+            play((audio, now) => {
+                tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
+                tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
+                if (eliminated) {
+                    tone(audio, master!, 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
+                    tone(audio, master!, 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
+                }
+            }),
+        /** You were hit: a thud with a low buzz. */
+        hurt: (eliminated: boolean) =>
+            play((audio, now) => {
+                tone(audio, master!, 'sine', 160, 55, now, 0.28, 0.75);
+                hiss(audio, master!, now, 0.18, 0.4, 600, 200, 0.8);
+                if (eliminated) {
+                    tone(audio, master!, 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
+                }
+            }),
+        /** Someone else was hit nearby (positioned). */
+        impact: (at: V3) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                tone(audio, out, 'sine', 220, 90, now, 0.18, 0.5);
+            }),
+        /** Elimination announcement for other players' eliminations. */
+        announce: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'triangle', 520, 520, now, 0.12, 0.12);
+                tone(audio, master!, 'triangle', 390, 390, now + 0.12, 0.18, 0.12);
+            }),
+        respawn: () =>
+            play((audio, now) => {
+                for (const [k, f] of [523, 659, 784].entries())
+                    tone(audio, master!, 'sine', f, f, now + k * 0.07, 0.2, 0.18);
+            }),
+        join: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'sine', 880, 880, now, 0.08, 0.06);
+            })
+    };
+};
+
+export type Sound = ReturnType<typeof createSound>;

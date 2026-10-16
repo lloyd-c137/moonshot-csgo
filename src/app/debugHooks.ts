@@ -1,3 +1,5 @@
+import type { MatchDebug } from '../gameplay/match';
+
 // Development-only hooks used by the browser tests (installed when import.meta.env.DEV). Not in production builds.
 export type DebugHooks = {
     position: () => number[];
@@ -14,6 +16,7 @@ export type DebugHooks = {
     roomId: () => string | null;
     discovered: () => string[];
     /** Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed. */
+    match: MatchDebug;
     setRendering: (enabled: boolean) => void;
 };
 

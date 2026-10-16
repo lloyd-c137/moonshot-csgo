@@ -393,7 +393,8 @@ export class Room {
     /** The thrower reports where its (ordinary) disc came to rest: it lies there for anyone to pick up. */
     private landed(player: Player, throwId: number, at: Vec3Tuple) {
         const entry = player.throws.get(throwId);
-        if (!entry || entry.landed || entry.golden) return;
+        // Golden throws count too: the golden disc flies home, but leaves an ordinary disc where it came down.
+        if (!entry || entry.landed) return;
         entry.landed = true;
         // Plausibility: within reach of the launch, inside the campus, and laid on the floor.
         const reach = Math.hypot(...entry.record.v) * DISC_REST_SECONDS + 5;

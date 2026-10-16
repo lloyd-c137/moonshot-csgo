@@ -383,3 +383,29 @@ test('discs are ammunition: throws spend them, landed discs are picked up, the P
     assert.ok(thrown().includes(4));
     assert.equal(room.players.get('a').ammo, 0);
 });
+
+test("the golden disc's throws leave an ordinary disc where they come down, without spending the holder's", () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24
+    );
+    inbox.set('a', []);
+    room.connect('a');
+    room.message('a', { type: 'hello', version: PROTOCOL_VERSION, name: 'A' }, 0);
+    room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, 100);
+    room.gold = { holder: 'a', at: [0, 0.92, 0] };
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [10, 0, 0], tilt: 0 } }, 1000);
+    room.message('a', { type: 'landed', throwId: 1, at: [10, 0.02, 0] }, 2000);
+    assert.deepEqual(
+        room.discs.map((disc) => disc.at),
+        [[10, 0.02, 0]]
+    );
+    assert.equal(room.players.get('a').ammo, AMMO.start);
+});

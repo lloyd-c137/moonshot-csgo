@@ -1103,13 +1103,16 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 (at, speed) => sound.bounce(at, speed),
                 (at, hue) => effects.tracer(at, hue),
                 (rest) => {
-                    // The golden disc flies home; an ordinary one of ours now lies where it stopped.
-                    if (rest.gold) {
-                        if (rest.at) effects.ring(rest.at, GOLD_COLOUR, 0.1, 0.3, 0.8);
-                        return;
+                    // The golden disc flies home but leaves an ordinary disc on the floor where it came down;
+                    // an ordinary disc of ours now lies where it stopped.
+                    if (rest.gold && rest.at) {
+                        effects.ring(rest.at, GOLD_COLOUR, 0.1, 0.3, 0.8);
+                        effects.burst(rest.at, 45, 'head');
                     }
-                    if (rest.local && rest.at && net.state === 'online')
-                        net.landed(rest.throwId, rest.at.map(round) as V3);
+                    if (rest.local && rest.at && net.state === 'online') {
+                        const at = rest.gold ? [rest.at[0], 0.02, rest.at[2]] : rest.at;
+                        net.landed(rest.throwId, at.map(round) as V3);
+                    }
                 }
             );
             ground.update(now);

@@ -1,5 +1,7 @@
-// Combat sounds synthesised with the Web Audio API (no audio files). Remote throws and hits are positioned in 3D
-// relative to the camera; the local player's own sounds play centred. The context starts on the first user gesture.
+// Combat sounds: synthesised with the Web Audio API, plus two clips supplied by the owner (public/assets/audio:
+// defeat.mp3 when you are eliminated, kill.mp3 when you eliminate someone). Remote throws and hits are positioned
+// in 3D relative to the camera (equal-power panning: cheap, no HRTF start-up hitch); the local player's own sounds
+// play centred. The context starts on the first user gesture.
 
 type V3 = [number, number, number];
 
@@ -7,6 +9,28 @@ export const createSound = () => {
     let ctx: AudioContext | null = null;
     let master: GainNode | null = null;
     let noise: AudioBuffer | null = null;
+    const clips = new Map<string, AudioBuffer>();
+    let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+    const loadClip = async (audio: AudioContext, name: string, url: string) => {
+        try {
+            const response = await fetch(url);
+            clips.set(name, await audio.decodeAudioData(await response.arrayBuffer()));
+        } catch {
+            /* clip unavailable: the synthesised fallback plays instead */
+        }
+    };
+    const playClip = (audio: AudioContext, name: string, volume: number) => {
+        const buffer = clips.get(name);
+        if (!buffer) return null;
+        const source = audio.createBufferSource();
+        source.buffer = buffer;
+        const gain = audio.createGain();
+        gain.gain.value = volume;
+        source.connect(gain).connect(master!);
+        source.start();
+        return { source, gain };
+    };
 
     const ensure = () => {
         if (!ctx) {
@@ -21,6 +45,8 @@ export const createSound = () => {
             noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
             const data = noise.getChannelData(0);
             for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            void loadClip(ctx, 'defeat', '/assets/audio/defeat.mp3');
+            void loadClip(ctx, 'kill', '/assets/audio/kill.mp3');
         }
         if (ctx.state === 'suspended') void ctx.resume();
         return ctx;
@@ -30,7 +56,7 @@ export const createSound = () => {
     const output = (audio: AudioContext, at?: V3) => {
         if (!at) return master!;
         const panner = audio.createPanner();
-        panner.panningModel = 'HRTF';
+        panner.panningModel = 'equalpower';
         panner.distanceModel = 'inverse';
         panner.refDistance = 2;
         panner.maxDistance = 60;
@@ -128,25 +154,34 @@ export const createSound = () => {
                 const out = output(audio, at);
                 tone(audio, out, 'square', 320, 180, now, 0.05, Math.min(0.12, 0.03 + strength * 0.01));
             }),
-        /** Your disc hit someone: a crisp confirmation; brighter when it eliminates. */
+        /** Your disc hit someone: a crisp confirmation; the "kill" clip when it eliminates. */
         hitConfirm: (eliminated: boolean) =>
             play((audio, now) => {
                 tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
                 tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
-                if (eliminated) {
+                if (eliminated && !playClip(audio, 'kill', 1.1)) {
                     tone(audio, master!, 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
                     tone(audio, master!, 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
                 }
             }),
-        /** You were hit: a thud with a low buzz. */
+        /** You were hit: a thud with a low buzz; the "defeat" clip when it eliminates you. */
         hurt: (eliminated: boolean) =>
             play((audio, now) => {
                 tone(audio, master!, 'sine', 160, 55, now, 0.28, 0.75);
                 hiss(audio, master!, now, 0.18, 0.4, 600, 200, 0.8);
                 if (eliminated) {
-                    tone(audio, master!, 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
+                    defeatVoice = playClip(audio, 'defeat', 0.9);
+                    if (!defeatVoice) tone(audio, master!, 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
                 }
             }),
+        /** Fades out the defeat clip (on respawn). */
+        endDefeat: () => {
+            if (!ctx || !defeatVoice) return;
+            const { source, gain } = defeatVoice;
+            defeatVoice = null;
+            gain.gain.setTargetAtTime(0, ctx.currentTime, 0.25);
+            source.stop(ctx.currentTime + 1.2);
+        },
         /** Someone else was hit nearby (positioned). */
         impact: (at: V3) =>
             play((audio, now) => {

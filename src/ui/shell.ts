@@ -70,6 +70,7 @@ const MARKUP = `
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
     <div class="damage" id="damage" aria-hidden="true"></div>
+    <span class="damage-dir" id="damage-dir" aria-hidden="true"></span>
     <div class="name-tags" id="name-tags" aria-hidden="true"></div>
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
     <div class="health" id="health" aria-label="生命"></div>
@@ -332,7 +333,15 @@ export const createUi = (locations: CampusRoom[]) => {
                     rank.textContent = String(sorted.indexOf(row) + 1);
                     const name = document.createElement('span');
                     name.className = 'who';
-                    name.textContent = row.name;
+                    // The leader (first place with points) carries the 淘汰王 title.
+                    if (sorted[0] === row && row.score > 0) {
+                        item.dataset.leader = 'true';
+                        const title = document.createElement('b');
+                        title.className = 'title';
+                        title.textContent = '淘汰王';
+                        name.append(title);
+                    }
+                    name.append(row.name);
                     const score = document.createElement('b');
                     score.textContent = String(row.score);
                     item.append(rank, name, score);
@@ -358,14 +367,21 @@ export const createUi = (locations: CampusRoom[]) => {
             void marker.offsetWidth;
             marker.classList.add('show');
         },
-        damage: () => {
+        /** Red flash, plus an arc around the crosshair pointing toward the thrower (degrees, 0 = ahead, clockwise). */
+        damage: (fromAngle: number | null = null) => {
             const damage = $('#damage');
             damage.classList.remove('show');
             void damage.offsetWidth;
             damage.classList.add('show');
+            if (fromAngle === null) return;
+            const arc = $('#damage-dir');
+            arc.style.setProperty('--angle', `${fromAngle}deg`);
+            arc.classList.remove('show');
+            void arc.offsetWidth;
+            arc.classList.add('show');
         },
         /** Elimination broadcast across the upper centre of the screen. */
-        broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me') => {
+        broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me', streak = 1) => {
             const banner = $('#broadcast');
             banner.dataset.tone = tone;
             const a = document.createElement('b');
@@ -373,6 +389,12 @@ export const createUi = (locations: CampusRoom[]) => {
             const b = document.createElement('b');
             b.textContent = victim;
             banner.replaceChildren(a, document.createTextNode(' 淘汰了 '), b);
+            if (streak > 1) {
+                const tag = document.createElement('span');
+                tag.className = 'streak';
+                tag.textContent = streak >= 3 ? `${streak} 连淘汰！` : '双杀';
+                banner.append(tag);
+            }
             banner.hidden = false;
             banner.classList.remove('show');
             void banner.offsetWidth;

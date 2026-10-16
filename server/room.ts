@@ -6,6 +6,7 @@ import type {
     PlayerSummary,
     Scores,
     ServerMessage,
+    StampedPose,
     ThrowRecord,
     Vec3Tuple
 } from '../src/net/protocol.ts';
@@ -20,6 +21,7 @@ import {
     PROTOCOL_VERSION,
     randomName,
     RESPAWN_SECONDS,
+    SPAWN_PROTECTION,
     THROW_CLAIM_WINDOW,
     THROW_COOLDOWN
 } from '../src/net/protocol.ts';
@@ -35,6 +37,7 @@ type Player = PlayerSummary & {
     lastThrowAt: number;
     respawnAt: number;
     hurtAt: number;
+    spawnedAt: number;
     throws: Map<number, { record: ThrowRecord; at: number; scored: boolean }>;
 };
 
@@ -77,14 +80,17 @@ export class Room {
             }
             return;
         }
-        if (message.type === 'hello') return this.hello(id, message.version, message.name);
+        if (message.type === 'hello') return this.hello(id, message.version, message.name, now);
         const player = this.players.get(id);
         if (!player) return;
         switch (message.type) {
             case 'pose':
             case 'respawned':
                 if (!inBounds(message.pose)) return;
-                if (message.type === 'respawned' && !player.alive && now >= player.respawnAt) player.alive = true;
+                if (message.type === 'respawned' && !player.alive && now >= player.respawnAt) {
+                    player.alive = true;
+                    player.spawnedAt = now;
+                }
                 player.pose = message.pose;
                 player.poseAt = now;
                 return;
@@ -111,8 +117,10 @@ export class Room {
                 if (now - entry.at > THROW_CLAIM_WINDOW * 1000) player.throws.delete(throwId);
             }
         }
-        const poses: Record<string, PlayerPose> = {};
-        for (const player of this.players.values()) if (player.pose && player.alive) poses[player.id] = player.pose;
+        const poses: Record<string, StampedPose> = {};
+        for (const player of this.players.values()) {
+            if (player.pose && player.alive) poses[player.id] = { ...player.pose, t: player.poseAt };
+        }
         if (this.players.size) this.out.all({ type: 'snapshot', t: now, poses });
     }
 
@@ -120,7 +128,7 @@ export class Room {
         return [...this.players.values()].map((player) => summary(player));
     }
 
-    private hello(id: string, version: number, rawName: string) {
+    private hello(id: string, version: number, rawName: string, now: number) {
         if (!this.pending.has(id)) return;
         this.pending.delete(id);
         if (version !== PROTOCOL_VERSION) {
@@ -148,6 +156,7 @@ export class Room {
             lastThrowAt: -Infinity,
             respawnAt: 0,
             hurtAt: 0,
+            spawnedAt: now,
             throws: new Map()
         };
         this.players.set(id, player);
@@ -163,13 +172,14 @@ export class Room {
         if (player.pose && distance(player.pose.p, record.o) > 3) return;
         player.lastThrowAt = now;
         player.throws.set(record.id, { record, at: now, scored: false });
-        this.out.all({ type: 'thrown', from: player.id, throw: record }, player.id);
+        this.out.all({ type: 'thrown', from: player.id, t: now, throw: record }, player.id);
     }
 
     private hit(player: Player, throwId: number, targetId: string, at: Vec3Tuple, now: number) {
         const entry = player.throws.get(throwId);
         const target = this.players.get(targetId);
         if (!entry || entry.scored || !target || target === player || !target.alive || !target.pose) return;
+        if (now - target.spawnedAt < SPAWN_PROTECTION * 1000) return;
         const elapsed = (now - entry.at) / 1000;
         if (elapsed > THROW_CLAIM_WINDOW) return;
         // Reach: the target must be within what the disc could cover since release, and the claimed contact point

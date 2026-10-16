@@ -5,7 +5,7 @@ import { BLEND_NORMAL, Color, Entity, Mesh, MeshInstance, StandardMaterial, Vec3
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
-import { CHARACTER_SOURCE_HEIGHT, CHARACTER_VISUAL_HEIGHT } from '../characters/CharacterAssetLoader';
+import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
 import { MONITOR_CONSOLE, SPECIAL_LOCATIONS } from '../config/specialLocations';
@@ -125,7 +125,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const labTargetId = 'audio-lab-target';
     const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 0, pitch: 0 };
     let labHp: number = MAX_HP;
-    let labDummyHeight = CHARACTER_VISUAL_HEIGHT;
+    let labDummyHeight = 2.1;
     let labRespawnAt = 0;
     let labExecution: Execution | null = null;
     let labGolden = false;
@@ -1530,8 +1530,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             if (audioLab) {
                 // Network state changes clear remote avatars, including on first entering offline practice.
                 // Keep the local target registered independently of that remote-player lifecycle.
-                if (!avatars.has(labTargetId)) avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
-                avatars.setScale(labTargetId, labDummyHeight / CHARACTER_SOURCE_HEIGHT);
+                if (!avatars.has(labTargetId)) {
+                    avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
+                    avatars.setScale(labTargetId, labDummyHeight / CHARACTER_SOURCE_HEIGHT);
+                }
                 if (labHp === 0 && now >= labRespawnAt) labHp = MAX_HP;
                 if (labHp > 0) poses.set(labTargetId, labTargetPose);
                 else poses.delete(labTargetId);

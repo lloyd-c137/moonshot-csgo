@@ -20,7 +20,7 @@ export const mountAudioLab = async ({ sound, canvas, range, position, setGolden,
       <dialog class="audio-lab" aria-labelledby="audio-lab-title">
         <header><div><small>MOONSHOT · LOCAL AUDIO LAB</small><h2 id="audio-lab-title">拆分音效 · 游戏内对比</h2></div><button data-action="close" type="button">关闭</button></header>
         <p>金飞盘击杀候选来自第一段视频的片段 06；破空候选来自新视频，作用于普通与狙击投掷释放声。选“原有音效”使用生产默认配置。按 P 暂停并切换。</p>
-        <label class="audio-lab-scale">测试人偶高度 <output data-dummy-height>1.32 m</output><input data-dummy-scale type="range" min="0.60" max="2.10" step="0.05" value="1.32"><small>仅调整本地测试人偶；拖动比较不同高度，其他角色与碰撞判定不变。</small></label>
+        <label class="audio-lab-scale">测试人偶高度 <output data-dummy-height>2.10 m</output><input data-dummy-scale type="range" min="0.60" max="2.10" step="0.05" value="2.10"><small>仅调整本地测试人偶；拖动比较不同高度，其他角色与碰撞判定不变。</small></label>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>

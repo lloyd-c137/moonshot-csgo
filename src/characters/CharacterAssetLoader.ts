@@ -117,6 +117,7 @@ export class CharacterAssetLoader {
             modelRoot.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
         const tracks = this.tracks;
         let visualScale = CHARACTER_VISUAL_SCALE;
+        let requestedAnimation: string | null = null;
         return {
             root,
             materials,
@@ -128,7 +129,8 @@ export class CharacterAssetLoader {
                 root.setLocalScale(visualScale, visualScale, visualScale);
             },
             play(name: string, blend = 0.12) {
-                if (!tracks.has(name) || modelRoot.anim!.baseLayer!.activeState === name) return;
+                if (!tracks.has(name) || requestedAnimation === name) return;
+                requestedAnimation = name;
                 modelRoot.anim!.baseLayer!.transition(name, blend);
             },
             dispose() {

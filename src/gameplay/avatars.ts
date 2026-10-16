@@ -26,6 +26,7 @@ type Avatar = {
     opacity: string;
     lastPosition: Vec3;
     lastMovedAt: number;
+    locomotion: 'Idle_Loop' | 'Jog_Fwd_Loop' | 'Sprint_Loop';
 };
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -129,7 +130,8 @@ export const createAvatars = (
             transform: '',
             opacity: '',
             lastPosition: new Vec3(),
-            lastMovedAt: 0
+            lastMovedAt: 0,
+            locomotion: 'Idle_Loop'
         });
         if (goldHolder === id) setGold(id);
     };
@@ -187,13 +189,23 @@ export const createAvatars = (
             avatar.root.enabled = true;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);
             avatar.root.setEulerAngles(0, pose.yaw, 0);
-            const moved = Math.hypot(pose.p[0] - avatar.lastPosition.x, pose.p[2] - avatar.lastPosition.z);
             const delta = now - avatar.lastMovedAt;
-            if (delta > 0 && delta < 250 && moved / (delta / 1000) > 0.2) {
-                avatar.character.play(moved / (delta / 1000) > 5.2 ? 'Sprint_Loop' : 'Jog_Fwd_Loop');
-            } else avatar.character.play('Idle_Loop');
-            avatar.lastPosition.set(pose.p[0], pose.p[1], pose.p[2]);
-            avatar.lastMovedAt = now;
+            if (delta >= 100) {
+                const moved = Math.hypot(pose.p[0] - avatar.lastPosition.x, pose.p[2] - avatar.lastPosition.z);
+                const speed = delta < 350 ? moved / (delta / 1000) : 0;
+                // ponytail: a 100 ms window filters interpolation noise without adding per-frame animation state.
+                if (avatar.locomotion === 'Sprint_Loop') {
+                    if (speed < 4.6) avatar.locomotion = speed > 0.3 ? 'Jog_Fwd_Loop' : 'Idle_Loop';
+                } else if (avatar.locomotion === 'Jog_Fwd_Loop') {
+                    if (speed > 5.4) avatar.locomotion = 'Sprint_Loop';
+                    else if (speed < 0.25) avatar.locomotion = 'Idle_Loop';
+                } else if (speed > 0.45) {
+                    avatar.locomotion = speed > 5.4 ? 'Sprint_Loop' : 'Jog_Fwd_Loop';
+                }
+                avatar.lastPosition.set(pose.p[0], pose.p[1], pose.p[2]);
+                avatar.lastMovedAt = now;
+                avatar.character.play(avatar.locomotion);
+            }
             head.set(pose.p[0], pose.p[1] - 0.9 + avatar.character.height + 0.06, pose.p[2]);
             const distance = head.distance(eye);
             // Line of sight for the name tag, re-checked a few times a second.

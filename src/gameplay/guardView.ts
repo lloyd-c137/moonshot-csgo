@@ -29,7 +29,8 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
         colour: [0, 0, 0],
         materialColours: { M_Main: [0, 0, 0], M_Joints: [0, 0, 0], M_Head: [0, 0, 0] }
     });
-    const root = character.root;
+    const root = new Entity('guard-world-root');
+    root.addChild(character.root);
     const lens = new StandardMaterial();
     lens.emissive = new Color(1, 0.96, 0.8);
     lens.update();

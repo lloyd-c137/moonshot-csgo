@@ -71,7 +71,8 @@ export const createTeacher = (
         colour: [1, 1, 1],
         materialColours: { M_Main: [1, 1, 1], M_Joints: [1, 1, 1], M_Head: [1, 1, 1] }
     });
-    const root = character.root;
+    const root = new Entity('teacher-world-root');
+    root.addChild(character.root);
     const armbandMaterial = new StandardMaterial();
     armbandMaterial.diffuse = new Color(0.9, 0.08, 0.1);
     armbandMaterial.update();

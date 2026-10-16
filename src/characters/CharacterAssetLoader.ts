@@ -3,8 +3,8 @@ import type { AppBase, ContainerResource, AnimTrack, StandardMaterial } from 'pl
 
 export const CHARACTER_ASSET_URL = '/assets/characters/moonshot-humanoid.glb';
 export const CHARACTER_SOURCE_HEIGHT = 1.829;
-export const CHARACTER_VISUAL_SCALE = 0.72;
-export const CHARACTER_VISUAL_HEIGHT = CHARACTER_SOURCE_HEIGHT * CHARACTER_VISUAL_SCALE;
+export const CHARACTER_VISUAL_HEIGHT = 2.1;
+export const CHARACTER_VISUAL_SCALE = CHARACTER_VISUAL_HEIGHT / CHARACTER_SOURCE_HEIGHT;
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 

@@ -53,7 +53,7 @@ test('lifetime board shows eliminations and measured win rates, including no rec
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     await page.getByRole('tab', { name: '排行榜' }).click();
-    await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率']);
+    await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率指数']);
     await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '50.0%']);
     await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '0.0%']);
     await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '100.0%']);

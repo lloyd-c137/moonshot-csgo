@@ -89,7 +89,7 @@ export class CharacterAssetLoader {
             .filter((bone): bone is Entity => bone !== null);
         const gripMask = Object.fromEntries(
             gripBones.map((bone) => {
-                const relativePath = bone.getPath().slice(armature.getPath().length + 1);
+                const relativePath = bone.path.slice(armature.path.length + 1);
                 return [`${armature.name}/${relativePath}`, { children: true }];
             })
         );

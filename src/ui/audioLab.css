@@ -1,0 +1,114 @@
+.audio-lab-toggle {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 900;
+    padding: 10px 16px;
+    color: #c8f2bc;
+    background: #17271e;
+    border: 1px solid #627a63;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.audio-lab {
+    box-sizing: border-box;
+    width: min(880px, 94vw);
+    max-height: 90vh;
+    padding: 26px;
+    background: #151c19;
+    color: #eef1e9;
+    border: 1px solid #5c715e;
+    border-radius: 16px;
+    font:
+        14px/1.6 system-ui,
+        sans-serif;
+}
+.audio-lab::backdrop {
+    background: #0009;
+}
+.audio-lab header,
+.audio-lab footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.audio-lab h2 {
+    font-size: 24px;
+    margin: 4px 0;
+}
+.audio-lab small {
+    color: #b9e3ab;
+    letter-spacing: 0.12em;
+}
+.audio-lab p {
+    color: #b8c5bb;
+}
+.audio-lab .audio-lab-status {
+    padding: 12px;
+    border-left: 3px solid #c8f2bc;
+    background: #24362a;
+}
+.audio-lab-rows {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin: 20px 0;
+}
+.audio-lab section {
+    padding: 15px;
+    background: #202b24;
+    border: 1px solid #425647;
+    border-radius: 9px;
+}
+.audio-lab h3 {
+    margin: 0 0 12px;
+}
+.audio-lab label {
+    display: block;
+    margin: 10px 0;
+}
+.audio-lab select,
+.audio-lab input[type='number'] {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+    padding: 9px;
+    border: 1px solid #5c715e;
+    border-radius: 5px;
+    background: #101b14;
+    color: #eef1e9;
+}
+.audio-lab select {
+    font-size: 12px;
+}
+.audio-lab-trim {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.audio-lab-volume input {
+    width: 70%;
+    accent-color: #c8f2bc;
+}
+.audio-lab output {
+    margin-left: 8px;
+}
+.audio-lab button {
+    padding: 9px 12px;
+    color: #e5eddd;
+    border: 1px solid #5c715e;
+    background: #304b36;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.audio-lab-note {
+    font-size: 12px;
+}
+@media (max-width: 700px) {
+    .audio-lab-rows {
+        grid-template-columns: 1fr;
+    }
+}

@@ -28,3 +28,6 @@ playwright-report/
 
 # Local Cloudflare Worker state (wrangler dev)
 .wrangler/
+
+# User-supplied audio for local evaluation; never bundle or publish these clips.
+.audio-lab-local/

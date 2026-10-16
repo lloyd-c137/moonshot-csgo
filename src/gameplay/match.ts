@@ -14,6 +14,7 @@ import {
     colourFor,
     AMMO,
     DETENTION_SECONDS,
+    HEAD_ABOVE,
     MAX_HP,
     RESPAWN_SECONDS,
     ROUND,
@@ -94,6 +95,31 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let hp = MAX_HP;
     const sound = createSound();
     const effects = createEffects(app);
+    // GAMEPLAY_AUTHORED local test target in the existing, browser-tested M104 corridor.
+    const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
+    const labTargetId = 'audio-lab-target';
+    const labTargetPose: PlayerPose = { p: [-40.3, 0.92, 39.6], yaw: 90, pitch: 0 };
+    let labHit: ((head: boolean) => void) | undefined;
+    if (audioLab) {
+        avatars.add(labTargetId, '音效试音靶', colourFor(labTargetId));
+        void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
+            labHit = await mountAudioLab({
+                sound,
+                canvas,
+                position: () => {
+                    const p = camera.getPosition();
+                    return [p.x, p.y, p.z];
+                },
+                range: () => {
+                    player.rigidbody!.teleport(-46.3, 0.92, 39.6);
+                    player.rigidbody!.linearVelocity = Vec3.ZERO;
+                    player.rigidbody!.angularVelocity = Vec3.ZERO;
+                    setLook(player, 0, -90);
+                    ui.notify('前方 6 米是可重复命中的试音靶；F8 切换音效，向墙面投掷测试碰撞。');
+                }
+            });
+        });
+    }
     let king: King | null = null;
     // The round, the golden disc and 纪老师.
     const goldView = createGold(app, discs.mesh, effects);
@@ -1268,6 +1294,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
             poses = net.poses();
+            if (audioLab) poses.set(labTargetId, labTargetPose);
             avatars.update(poses, now);
             animateFeel(deltaTime, now);
             updateRound(now);
@@ -1278,6 +1305,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 deltaTime,
                 targets,
                 (throwId, target, at) => {
+                    if (audioLab && target === labTargetId) {
+                        const head = at[1] - labTargetPose.p[1] > HEAD_ABOVE;
+                        sound.hitConfirm(head, head);
+                        effects.burst(at, colourFor(labTargetId), head ? 'out' : 'hit');
+                        avatars.flash(target, performance.now());
+                        ui.hitMarker(head ? 'kill' : 'hit');
+                        ui.popup(head ? '试音靶 · 爆头' : '试音靶 · 身体命中', head ? 'kill' : 'hit');
+                        labHit?.(head);
+                        hitsClaimed++;
+                        return;
+                    }
                     // Instant local confirmation (the room's verdict follows within a round trip).
                     ui.hitMarker('hit');
                     hitsClaimed++;

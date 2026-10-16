@@ -4,6 +4,7 @@
 // play centred. The context starts on the first user gesture.
 
 type V3 = [number, number, number];
+export type TestSoundCue = 'hit' | 'head' | 'bounce';
 
 export const createSound = () => {
     let ctx: AudioContext | null = null;
@@ -11,6 +12,10 @@ export const createSound = () => {
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+    const testClips = new Map<TestSoundCue, { buffer: AudioBuffer; gain: number; start: number; end: number }>();
+    const testVersions = new Map<TestSoundCue, number>();
+    const testVoices = new Map<TestSoundCue, { source: AudioBufferSourceNode; gain: GainNode }>();
+    const testCache = new Map<string, AudioBuffer>();
 
     const loadClip = async (audio: AudioContext, name: string, url: string) => {
         try {
@@ -144,7 +149,56 @@ export const createSound = () => {
         if (audio) build(audio, audio.currentTime);
     };
 
+    /** Local audition overrides share the real event path; no replacement is active by default. */
+    const playTestClip = (audio: AudioContext, cue: TestSoundCue, at?: V3) => {
+        const clip = testClips.get(cue);
+        if (!clip) return false;
+        testVoices.get(cue)?.source.stop();
+        const source = audio.createBufferSource();
+        source.buffer = clip.buffer;
+        const gain = audio.createGain();
+        gain.gain.value = clip.gain;
+        const destination = output(audio, at);
+        source.connect(gain).connect(destination);
+        testVoices.set(cue, { source, gain });
+        source.onended = () => {
+            source.disconnect();
+            gain.disconnect();
+            if (destination !== master) destination.disconnect();
+            if (testVoices.get(cue)?.source === source) testVoices.delete(cue);
+        };
+        source.start(0, clip.start, clip.end - clip.start);
+        return true;
+    };
+
     return {
+        /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
+        async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
+            const version = (testVersions.get(cue) ?? 0) + 1;
+            testVersions.set(cue, version);
+            testVoices.get(cue)?.source.stop();
+            if (!url) {
+                testClips.delete(cue);
+                return;
+            }
+            const audio = ensure();
+            if (!audio) throw new Error('浏览器不支持 Web Audio');
+            let buffer = testCache.get(url);
+            if (!buffer) {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`音效加载失败：${response.status}`);
+                buffer = await audio.decodeAudioData(await response.arrayBuffer());
+                testCache.set(url, buffer);
+            }
+            const until = Math.min(end, buffer.duration);
+            if (!Number.isFinite(start) || start < 0 || start >= until || !Number.isFinite(until))
+                throw new Error('片段起止时间无效');
+            if (!Number.isFinite(gain) || gain < 0 || gain > 1) throw new Error('音量需在 0–1 之间');
+            if (testVersions.get(cue) === version) testClips.set(cue, { buffer, gain, start, end: until });
+        },
+        stopTestClips: () => {
+            for (const voice of testVoices.values()) voice.source.stop();
+        },
         /** Call from a user gesture (entering the campus) so browsers allow audio. */
         unlock: () => void ensure(),
         /** Keeps the 3D listener on the camera. */
@@ -225,6 +279,7 @@ export const createSound = () => {
         /** Your sniper disc took someone's head: a heavy bass hit under a bright bell. */
         snipeConfirm: () =>
             play((audio, now) => {
+                if (playTestClip(audio, 'head')) return;
                 tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
                 tone(audio, master!, 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
                 tone(audio, master!, 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
@@ -312,12 +367,14 @@ export const createSound = () => {
         /** Disc striking a wall or floor. */
         bounce: (at: V3, strength: number) =>
             play((audio, now) => {
+                if (playTestClip(audio, 'bounce', at)) return;
                 const out = output(audio, at);
                 tone(audio, out, 'square', 320, 180, now, 0.05, Math.min(0.12, 0.03 + strength * 0.01));
             }),
         /** Your disc hit someone: a crisp confirmation; the "kill" clip when it eliminates. */
         hitConfirm: (eliminated: boolean, head = false) =>
             play((audio, now) => {
+                if (playTestClip(audio, head ? 'head' : 'hit')) return;
                 tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
                 tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
                 // Head hits ring higher and longer.

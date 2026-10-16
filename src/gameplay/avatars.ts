@@ -3,6 +3,7 @@
 import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'playcanvas';
 import { Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
+import { CHARACTER_VISUAL_HEIGHT } from '../characters/CharacterAssetLoader';
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
@@ -83,7 +84,7 @@ export const createAvatars = (
         const root = new Entity(`avatar-${id}`);
         root.addChild(character.root);
         // The capsule uses centre origin. Offset the model down so scaled feet still meet the floor.
-        character.root.setLocalPosition(0, -0.9 / 0.82, 0);
+        character.root.setLocalPosition(0, -0.9, 0);
         const hand = character.root.findByName('hand_r');
         const disc = new Entity(`avatar-disc-${id}`);
         disc.addComponent('render', {
@@ -174,7 +175,7 @@ export const createAvatars = (
                 const yaw = (pose.yaw * Math.PI) / 180;
                 avatar.glint.setPosition(
                     pose.p[0] - Math.sin(yaw) * 0.25,
-                    pose.p[1] + 0.66,
+                    pose.p[1] - 0.9 + CHARACTER_VISUAL_HEIGHT * 0.88,
                     pose.p[2] - Math.cos(yaw) * 0.25
                 );
                 avatar.glint.lookAt(eye);
@@ -194,7 +195,7 @@ export const createAvatars = (
             } else avatar.character.play('Idle_Loop');
             avatar.lastPosition.set(pose.p[0], pose.p[1], pose.p[2]);
             avatar.lastMovedAt = now;
-            head.set(pose.p[0], pose.p[1] + 1.05, pose.p[2]);
+            head.set(pose.p[0], pose.p[1] - 0.9 + CHARACTER_VISUAL_HEIGHT + 0.06, pose.p[2]);
             const distance = head.distance(eye);
             // Line of sight for the name tag, re-checked a few times a second.
             if (now - avatar.checkedAt > 200) {

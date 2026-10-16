@@ -5,6 +5,7 @@ import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'pl
 import { BLEND_ADDITIVE, Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+import { CHARACTER_VISUAL_HEIGHT } from '../characters/CharacterAssetLoader';
 import { cylinder, place } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
@@ -113,7 +114,7 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
             character.play(pose.walking ? 'Walk_Loop' : on ? 'Idle_Torch_Loop' : 'Idle_Loop');
             torch.light!.intensity = on ? 3.2 : 0;
             beam.enabled = on;
-            head.set(pose.x, 2.15, pose.z);
+            head.set(pose.x, CHARACTER_VISUAL_HEIGHT + 0.06, pose.z);
             camera.camera!.worldToScreen(head, screen);
             const shown = screen.z > 0 && head.distance(camera.getPosition()) < 45;
             tag.hidden = !shown;

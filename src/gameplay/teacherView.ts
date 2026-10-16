@@ -5,6 +5,7 @@ import type { AppBase, Entity as EntityType } from 'playcanvas';
 import { BLEND_ADDITIVE, Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+import { CHARACTER_VISUAL_HEIGHT } from '../characters/CharacterAssetLoader';
 import { box, merge, place } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
@@ -133,7 +134,7 @@ export const createTeacher = (
             root.setEulerAngles(0, pose.yaw, 0);
             character.play(pose.walking ? 'Walk_Formal_Loop' : 'Idle_Talking_Loop');
             // Name tag and bubble over his head (DOM), when in front of the camera and near enough.
-            head.set(pose.x, floorY + 1.95, pose.z);
+            head.set(pose.x, floorY + CHARACTER_VISUAL_HEIGHT + 0.06, pose.z);
             camera.camera!.worldToScreen(head, screen);
             const distance = head.distance(camera.getPosition());
             const shown = screen.z > 0 && distance < 40;

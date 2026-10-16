@@ -1,7 +1,9 @@
-import { Asset, AnimStateGraph } from 'playcanvas';
-import type { AppBase, ContainerResource, Entity, AnimTrack, StandardMaterial } from 'playcanvas';
+import { Asset, AnimStateGraph, Entity } from 'playcanvas';
+import type { AppBase, ContainerResource, AnimTrack, StandardMaterial } from 'playcanvas';
 
 export const CHARACTER_ASSET_URL = '/assets/characters/moonshot-humanoid.glb';
+export const CHARACTER_VISUAL_SCALE = 0.33;
+export const CHARACTER_VISUAL_HEIGHT = 1.829 * CHARACTER_VISUAL_SCALE;
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
@@ -47,9 +49,12 @@ export class CharacterAssetLoader {
         materialColours?: Partial<Record<'M_Main' | 'M_Joints' | 'M_Head', [number, number, number]>>;
         castShadows?: boolean;
     }) {
-        const root = this.resource.instantiateRenderEntity({ castShadows: options.castShadows ?? false });
+        const modelRoot = this.resource.instantiateRenderEntity({ castShadows: options.castShadows ?? false });
+        const root = new Entity(options.name);
         root.name = options.name;
-        root.setLocalScale(0.82, 0.82, 0.82);
+        root.setLocalScale(CHARACTER_VISUAL_SCALE, CHARACTER_VISUAL_SCALE, CHARACTER_VISUAL_SCALE);
+        modelRoot.name = `${options.name}-model`;
+        root.addChild(modelRoot);
         const materials = new Map<string, StandardMaterial>();
         root.forEach((node) => {
             const render = (node as Entity).render;
@@ -74,10 +79,10 @@ export class CharacterAssetLoader {
                 instance.receiveShadow = false;
             }
         });
-        const armature = (root.findByName('Armature') as Entity | null) ?? root;
-        root.addComponent('anim', { activate: true, rootBone: armature });
+        const armature = (modelRoot.findByName('Armature') as Entity | null) ?? modelRoot;
+        modelRoot.addComponent('anim', { activate: true, rootBone: armature });
         const stateNames = [...this.tracks.keys()];
-        root.anim!.loadStateGraph(
+        modelRoot.anim!.loadStateGraph(
             new AnimStateGraph({
                 layers: [
                     {
@@ -108,14 +113,14 @@ export class CharacterAssetLoader {
             })
         );
         for (const [name, track] of this.tracks)
-            root.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
+            modelRoot.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
         const tracks = this.tracks;
         return {
             root,
             materials,
             play(name: string, blend = 0.12) {
-                if (!tracks.has(name) || root.anim!.baseLayer!.activeState === name) return;
-                root.anim!.baseLayer!.transition(name, blend);
+                if (!tracks.has(name) || modelRoot.anim!.baseLayer!.activeState === name) return;
+                modelRoot.anim!.baseLayer!.transition(name, blend);
             },
             dispose() {
                 root.destroy();

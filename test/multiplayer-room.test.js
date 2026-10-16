@@ -484,6 +484,9 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 1);
     room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 100);
     assert.ok([...room.players.values()].every((p) => !p.spectating));
-    const respawned = inbox.get('a').filter((m) => m.type === 'respawn').map((m) => m.id);
+    const respawned = inbox
+        .get('a')
+        .filter((m) => m.type === 'respawn')
+        .map((m) => m.id);
     assert.ok(respawned.includes('b') && respawned.includes('c'), 'the watchers are respawned');
 });

@@ -1,0 +1,101 @@
+// Account calls to the room Worker's /api (register, login, logout, me) plus the public 淘汰王 / leaderboard.
+// The session token is kept in this browser only (localStorage) and sent with the WebSocket hello.
+import type { AccountStats, King } from './protocol';
+
+const TOKEN_KEY = 'moonshot.session';
+
+/** HTTP base for a WebSocket room URL: wss://host/ws → https://host. */
+export const apiBase = (wsUrl: string | null) =>
+    wsUrl ? wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/?$/, '') : null;
+
+const storage = {
+    get: () => {
+        try {
+            return window.localStorage.getItem(TOKEN_KEY);
+        } catch {
+            return null;
+        }
+    },
+    set: (token: string | null) => {
+        try {
+            if (token) window.localStorage.setItem(TOKEN_KEY, token);
+            else window.localStorage.removeItem(TOKEN_KEY);
+        } catch {
+            /* storage unavailable: session lasts for this page only */
+        }
+    }
+};
+
+export type Board = { king: King | null; top: AccountStats[]; online: number };
+
+export const createAuth = (base: string | null) => {
+    let token = storage.get();
+    let account: AccountStats | null = null;
+    const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+        if (!base) throw new Error('当前为离线模式，无法连接账号服务');
+        const response = await fetch(`${base}${path}`, {
+            ...init,
+            headers: {
+                'content-type': 'application/json',
+                ...(token ? { authorization: `Bearer ${token}` } : {}),
+                ...(init.headers ?? {})
+            }
+        });
+        const body = (await response.json().catch(() => ({}))) as T & { error?: string };
+        if (!response.ok) throw new Error(body.error ?? `请求失败（${response.status}）`);
+        return body;
+    };
+    const signIn = async (path: '/api/login' | '/api/register', name: string, password: string) => {
+        const result = await call<{ token: string; account: AccountStats }>(path, {
+            method: 'POST',
+            body: JSON.stringify({ name, password })
+        });
+        token = result.token;
+        account = result.account;
+        storage.set(token);
+        return account;
+    };
+    return {
+        get available() {
+            return base !== null;
+        },
+        get token() {
+            return token;
+        },
+        get account() {
+            return account;
+        },
+        set account(value: AccountStats | null) {
+            account = value;
+        },
+        /** Restores a saved session; clears it if the server no longer knows it. */
+        async restore() {
+            if (!token || !base) return null;
+            try {
+                account = (await call<{ account: AccountStats }>('/api/me')).account;
+            } catch {
+                token = null;
+                account = null;
+                storage.set(null);
+            }
+            return account;
+        },
+        login: (name: string, password: string) => signIn('/api/login', name, password),
+        register: (name: string, password: string) => signIn('/api/register', name, password),
+        async logout() {
+            const old = token;
+            token = null;
+            account = null;
+            storage.set(null);
+            if (old && base) {
+                await fetch(`${base}/api/logout`, {
+                    method: 'POST',
+                    headers: { authorization: `Bearer ${old}` }
+                }).catch(() => undefined);
+            }
+        },
+        board: () => call<Board>('/api/leaderboard')
+    };
+};
+
+export type Auth = ReturnType<typeof createAuth>;

@@ -65,6 +65,14 @@ export const setLook = (player: Entity, pitch: number, yaw: number) => {
     controller?._angles?.set(pitch, yaw, 0);
 };
 
+/** Nudges the view by degrees (positive pitch looks up), e.g. a head hit knocking the view upward. */
+export const kickLook = (player: Entity, pitch: number, yaw = 0) => {
+    const controller = player.script?.get(FirstPersonController) as unknown as { _angles?: Vec3 } | null;
+    const angles = controller?._angles;
+    if (!angles) return;
+    angles.set(Math.max(-89, Math.min(89, angles.x + pitch)), angles.y + yaw, angles.z);
+};
+
 /** True when the capsule centre has dropped below the level and must be recovered. */
 export const isOutOfWorld = (y: number) => !Number.isFinite(y) || y < FALL_RECOVERY_Y;
 

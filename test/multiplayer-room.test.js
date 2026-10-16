@@ -40,7 +40,7 @@ test('players join one shared room with cleaned, unique nicknames', () => {
     assert.equal(a[0].type, 'welcome');
     assert.equal(a[0].name, '小明b');
     const b = join('b', '小明b');
-    assert.equal(b[0].name, '小明b2');
+    assert.equal(b[0].name, '小明b·2');
     assert.deepEqual(
         b[0].players.map((player) => player.id),
         ['a', 'b']

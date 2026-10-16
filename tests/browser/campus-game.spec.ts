@@ -26,11 +26,10 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await advance(page, 500);
     await expect(page.locator('#location-code')).toContainText('南入口门厅');
     await expect(page.locator('#location-name')).toHaveText('ENTRANCE-SOUTH');
-    // The spawn lobby is the first discovery: plate tag, toast and tally all report it.
+    // The spawn lobby is the first discovery: plate tag and toast report it.
     expect(await page.evaluate(() => window.__MOONSHOT__!.discovered())).toEqual(['ENTRANCE-SOUTH']);
     await expect(page.locator('#location')).toHaveAttribute('data-new', 'true');
     await expect(page.locator('#toast')).toContainText('南入口门厅');
-    await expect(page.locator('#tally')).toHaveText('已发现 1 / 166');
 
     await page.keyboard.press('m');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'open');

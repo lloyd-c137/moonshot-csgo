@@ -29,6 +29,8 @@
 
 ## 战斗音效候选
 
+后续用户已提供 Kenney Impact Sounds ZIP。130 个文件的技术审计、12 个候选及选择理由见 [Kenney 素材审计](audio-audit/README.md)，可在 [试听页](audio-audit/index.html)逐个比较。本次候选未接入游戏，主观试听与实战听感仍待确认。
+
 现有文件用 macOS `afinfo` 检查：`kill.mp3` 为 48 kHz 双声道，估计 0.864 s；`defeat.mp3` 为 44.1 kHz 双声道，估计 4.598 s。白天复活仅 2.5 s，代码会在复活时淡出 defeat；试听时需要检查结尾是否自然。以上是文件元数据，不是实听评价。
 
 已查阅官方素材页及许可说明；没有购买、整包下载、试听打分或替换现有 `kill.mp3` / `defeat.mp3`。这里的适配是制作建议，不是实听质量结论。

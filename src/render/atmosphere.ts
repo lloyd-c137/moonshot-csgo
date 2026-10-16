@@ -1,6 +1,6 @@
 // Sun, ambient, post-processing and the pooled interior lights. Uses the engine's upstream CameraFrame script;
 // pooled omni lights follow the player so hundreds of fixtures cost a fixed light budget.
-import type { AppBase , StandardMaterial } from 'playcanvas';
+import type { AppBase, StandardMaterial } from 'playcanvas';
 import { Color, Entity, Vec3 } from 'playcanvas';
 import { CameraFrame } from 'playcanvas/scripts/esm/camera-frame.mjs';
 

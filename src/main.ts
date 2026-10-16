@@ -249,6 +249,7 @@ const boot = async () => {
     const settings = loadSettings(storage);
     applySettings(player, camera, settings);
     match.setView(settings.fieldOfView, settings.lookSensitivity);
+    match.setFeedbackSettings(settings);
 
     // The exploration log was removed; drop what older versions saved.
     storage?.removeItem('moonshot-open-world.discovered.v1');
@@ -483,6 +484,7 @@ const boot = async () => {
             settingsChanged: (next) => {
                 applySettings(player, camera, next);
                 match.setView(next.fieldOfView, next.lookSensitivity);
+                match.setFeedbackSettings(next);
                 saveSettings(storage, next);
             },
             logout: async () => {

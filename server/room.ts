@@ -454,14 +454,26 @@ export class Room {
     private hit(player: Player, throwId: number, targetId: string, at: Vec3Tuple, now: number) {
         const entry = player.throws.get(throwId);
         const target = this.players.get(targetId);
-        if (!entry || entry.scored || !target || target === player || !target.alive || !target.pose) return;
-        if (now - target.spawnedAt < SPAWN_PROTECTION * 1000) return;
+        if (!entry || entry.scored || !target || target === player || !target.alive || !target.pose) {
+            this.out.to(player.id, { type: 'hitRejected', throwId });
+            return;
+        }
+        if (now - target.spawnedAt < SPAWN_PROTECTION * 1000) {
+            this.out.to(player.id, { type: 'hitRejected', throwId });
+            return;
+        }
         const elapsed = (now - entry.at) / 1000;
-        if (elapsed > THROW_CLAIM_WINDOW) return;
+        if (elapsed > THROW_CLAIM_WINDOW) {
+            this.out.to(player.id, { type: 'hitRejected', throwId });
+            return;
+        }
         // Reach: the target must be within what the disc could cover since release, and the claimed contact point
         // must be near the target (both with slack for latency and interpolation).
         const reach = Math.hypot(...entry.record.v) * (elapsed + 0.35) + HIT_SLACK;
-        if (distance(entry.record.o, target.pose.p) > reach || distance(at, target.pose.p) > HIT_SLACK) return;
+        if (distance(entry.record.o, target.pose.p) > reach || distance(at, target.pose.p) > HIT_SLACK) {
+            this.out.to(player.id, { type: 'hitRejected', throwId });
+            return;
+        }
         entry.scored = true;
         this.cancelExecutionFor(target.id, '被飞盘命中');
         const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
@@ -484,6 +496,7 @@ export class Room {
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
         this.out.all({
             type: 'struck',
+            throwId: entry.record.id,
             target: target.id,
             by: player.id,
             hp: target.hp,

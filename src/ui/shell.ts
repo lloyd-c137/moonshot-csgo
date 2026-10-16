@@ -255,6 +255,23 @@ const MARKUP = `
         <label class="slider">视野<output id="fov-value"></output>
           <input id="fov" type="range" /></label>
       </fieldset>
+      <fieldset>
+        <legend>战斗反馈</legend>
+        <label class="slider">镜头动态
+          <select id="camera-motion"><option value="off">关闭</option><option value="low">低</option><option value="normal">标准</option></select></label>
+        <label class="slider">特效强度
+          <select id="effects-quality"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+        <label class="check-row"><input id="reduced-flashes" type="checkbox" />减少闪光</label>
+      </fieldset>
+      <fieldset>
+        <legend>音量</legend>
+        <label class="slider">总音量<output id="master-volume-value"></output>
+          <input id="master-volume" type="range" /></label>
+        <label class="slider">战斗音量<output id="combat-volume-value"></output>
+          <input id="combat-volume" type="range" /></label>
+        <label class="slider">确认音量<output id="confirmation-volume-value"></output>
+          <input id="confirmation-volume" type="range" /></label>
+      </fieldset>
     </div>
   </section>
 </div>`;
@@ -411,7 +428,7 @@ export const createUi = () => {
         onInput: (value: number) => void
     ) => {
         const input = $<HTMLInputElement>(`#${id}`);
-        const output = $<HTMLOutputElement>(`#${id === 'fov' ? 'fov' : 'sensitivity'}-value`);
+        const output = $<HTMLOutputElement>(`#${id}-value`);
         input.min = String(range.min);
         input.max = String(range.max);
         input.step = String(range.step);
@@ -439,6 +456,7 @@ export const createUi = () => {
             $('#resume-button').addEventListener('click', actions.enter);
             $('#recover-button').addEventListener('click', actions.recover);
             const current = { ...settings };
+            root.dataset.reducedFlashes = String(current.reducedFlashes);
             bindSlider(
                 'sensitivity',
                 SETTING_RANGES.lookSensitivity,
@@ -459,6 +477,37 @@ export const createUi = () => {
                     actions.settingsChanged({ ...current });
                 }
             );
+            bindSlider('master-volume', { min: 0, max: 1, step: 0.01 }, settings.masterVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
+                current.masterVolume = v;
+                actions.settingsChanged({ ...current });
+            });
+            bindSlider('combat-volume', { min: 0, max: 1, step: 0.01 }, settings.combatVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
+                current.combatVolume = v;
+                actions.settingsChanged({ ...current });
+            });
+            bindSlider('confirmation-volume', { min: 0, max: 1, step: 0.01 }, settings.confirmationVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
+                current.confirmationVolume = v;
+                actions.settingsChanged({ ...current });
+            });
+            const cameraMotion = $<HTMLSelectElement>('#camera-motion');
+            cameraMotion.value = settings.cameraMotion;
+            cameraMotion.addEventListener('change', () => {
+                current.cameraMotion = cameraMotion.value as Settings['cameraMotion'];
+                actions.settingsChanged({ ...current });
+            });
+            const effectsQuality = $<HTMLSelectElement>('#effects-quality');
+            effectsQuality.value = settings.effectsQuality;
+            effectsQuality.addEventListener('change', () => {
+                current.effectsQuality = effectsQuality.value as Settings['effectsQuality'];
+                actions.settingsChanged({ ...current });
+            });
+            const reducedFlashes = $<HTMLInputElement>('#reduced-flashes');
+            reducedFlashes.checked = settings.reducedFlashes;
+            reducedFlashes.addEventListener('change', () => {
+                current.reducedFlashes = reducedFlashes.checked;
+                root.dataset.reducedFlashes = String(current.reducedFlashes);
+                actions.settingsChanged({ ...current });
+            });
             setScreen('ready');
             const needsSignIn = !signedIn && $('#operator').dataset.accounts !== 'false';
             (needsSignIn ? $('#auth-name') : enterButton).focus();
@@ -760,8 +809,22 @@ export const createUi = () => {
             );
             health.dataset.low = String(hp <= 1);
         },
+        hitPrediction: (throwId: number) => {
+            const marker = $('#hitmarker');
+            marker.dataset.prediction = String(throwId);
+            marker.dataset.kind = 'predicted';
+            replay(marker, 'show');
+        },
+        rejectHitPrediction: (throwId: number) => {
+            const marker = $('#hitmarker');
+            if (marker.dataset.prediction !== String(throwId)) return;
+            delete marker.dataset.prediction;
+            delete marker.dataset.kind;
+            marker.classList.remove('show');
+        },
         hitMarker: (kind: 'hit' | 'head' | 'kill' | 'snipe') => {
             const marker = $('#hitmarker');
+            delete marker.dataset.prediction;
             marker.dataset.kind = kind;
             replay(marker, 'show');
         },

@@ -40,6 +40,9 @@ export const createEffects = (app: AppBase) => {
     const ringMesh = meshOf(app, place(torus(1, 0.06, 40, 6), {}));
     const particles: Particle[] = [];
     const free: Particle[] = [];
+    let density = 0.65;
+    let reducedFlashes = false;
+    let tracerTick = 0;
     const make = (ring: boolean) => {
         const material = new StandardMaterial();
         material.useLighting = false;
@@ -116,7 +119,7 @@ export const createEffects = (app: AppBase) => {
          */
         burst(at: V3, hue: number, kind: 'hit' | 'head' | 'out') {
             const colour = kind === 'head' ? ([1, 0.82, 0.25] as [number, number, number]) : hueColour(hue);
-            const count = kind === 'out' ? 34 : kind === 'head' ? 26 : 18;
+            const count = Math.max(4, Math.round((kind === 'out' ? 34 : kind === 'head' ? 26 : 18) * density));
             for (let i = 0; i < count; i++) {
                 const a = Math.random() * Math.PI * 2;
                 const up = Math.random() * 0.9 + 0.2;
@@ -130,7 +133,7 @@ export const createEffects = (app: AppBase) => {
                 );
             }
             // Thin, fast sparks.
-            for (let i = 0; i < (kind === 'hit' ? 8 : 14); i++) {
+            for (let i = 0; i < Math.round((kind === 'hit' ? 8 : 14) * density); i++) {
                 const a = Math.random() * Math.PI * 2;
                 const speed = 8 + Math.random() * 6;
                 emit(
@@ -144,19 +147,19 @@ export const createEffects = (app: AppBase) => {
                 );
             }
             // Core flash: big and short, then a softer afterglow.
-            emit(at, [1, 1, 1], [0, 0, 0], kind === 'hit' ? 0.32 : 0.45, 0.09, false, 0);
+            if (!reducedFlashes) emit(at, [1, 1, 1], [0, 0, 0], kind === 'hit' ? 0.32 : 0.45, 0.09, false, 0);
             emit(at, colour, [0, 0, 0], kind === 'hit' ? 0.22 : 0.32, 0.25, false, 0);
             // Shock ring on every hit; eliminations get a second, slower one.
             emit(at, [1, 1, 1], [0, 0, 0], 0.12, 0.22, true, 0, kind === 'hit' ? 1.4 : 2);
             if (kind !== 'hit') emit(at, colour, [0, 0, 0], 0.2, kind === 'out' ? 0.6 : 0.4, true, 0, 2.6);
             if (kind === 'head') {
-                for (let i = 0; i < 12; i++) {
+                for (let i = 0; i < Math.round(12 * density); i++) {
                     const a = (i / 12) * Math.PI * 2;
                     emit(at, [1, 0.85, 0.3], [Math.cos(a) * 3, 5, Math.sin(a) * 3], 0.04, 0.55, false, 6);
                 }
             }
             if (kind === 'out') {
-                for (let i = 0; i < 10; i++) {
+                for (let i = 0; i < Math.round(10 * density); i++) {
                     emit(
                         at,
                         colour,
@@ -178,19 +181,28 @@ export const createEffects = (app: AppBase) => {
             emit(at, colour, [0, 0, 0], size, life, true, 0, grow);
         },
         /** One glowing mote of a sniper disc's tracer (call each frame along its path). */
-        tracer(at: V3, hue: number) {
+        tracer(at: V3, hue: number, speed = 16) {
+            tracerTick++;
+            if (density < 0.5 && tracerTick % 2 !== 0) return;
             // hue < 0: the golden disc's trail.
             const [r, g, b] = hue < 0 ? [1, 0.75, 0.2] : hueColour(hue);
-            emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], 0.07, 0.28);
+            const size = Math.max(0.045, Math.min(0.1, 0.045 + speed * 0.002));
+            emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], size, 0.24);
         },
         /** A sniper headshot: a tall gold flash and a wide ring on top of the elimination burst. */
         snipe(at: V3) {
-            emit(at, [1, 0.85, 0.3], [0, 0, 0], 0.45, 0.18);
+            if (!reducedFlashes) emit(at, [1, 0.85, 0.3], [0, 0, 0], 0.45, 0.18);
             emit(at, [1, 0.82, 0.25], [0, 0, 0], 0.35, 0.7, true);
-            for (let i = 0; i < 10; i++) {
+            for (let i = 0; i < Math.round(10 * density); i++) {
                 const a = (i / 10) * Math.PI * 2;
                 emit(at, [1, 0.9, 0.5], [Math.cos(a) * 7, 1.5 + Math.random() * 2, Math.sin(a) * 7], 0.05, 0.5);
             }
+        },
+        setQuality(quality: 'low' | 'medium' | 'high') {
+            density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : 1;
+        },
+        setReducedFlashes(value: boolean) {
+            reducedFlashes = value;
         },
         /** Ends every live particle at once. */
         clear() {

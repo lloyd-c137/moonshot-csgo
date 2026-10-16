@@ -128,6 +128,16 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await page.keyboard.press('Escape');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'paused');
     await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
+    await page.locator('#camera-motion').selectOption('off');
+    expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).cameraMotionScale).toBe(0);
+    await page.locator('#effects-quality').selectOption('low');
+    await page.locator('#reduced-flashes').check();
+    await page.locator('#master-volume').fill('0.45');
+    await expect
+        .poll(() =>
+            page.evaluate(() => JSON.parse(localStorage.getItem('moonshot-open-world.settings.v1') ?? '{}'))
+        )
+        .toMatchObject({ cameraMotion: 'off', effectsQuality: 'low', reducedFlashes: true, masterVolume: 0.45 });
     await enterCampus(page);
 
     // R teleports to the middle of the 莲花球场.

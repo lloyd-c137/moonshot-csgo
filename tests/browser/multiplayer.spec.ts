@@ -34,7 +34,9 @@ const enter = async (page: Page, name: string, password: string) => {
 
 const state = (page: Page) => page.evaluate(() => window.__MOONSHOT__!.match.state());
 
-test('lifetime board shows eliminations and measured win rates, including no recorded history', async ({ page }) => {
+test('lifetime board shows eliminations and loss-only win-rate indices, including no recorded history', async ({
+    page
+}) => {
     const base = { deaths: 3, hits: 99, score: 999 };
     await page.route('**/api/leaderboard', (route) =>
         route.fulfill({
@@ -42,9 +44,9 @@ test('lifetime board shows eliminations and measured win rates, including no rec
                 king: null,
                 online: 0,
                 top: [
-                    { ...base, name: 'HalfWins', kills: 8, wins: 1, rounds: 2 },
-                    { ...base, name: 'NoWins', kills: 7, wins: 0, rounds: 3 },
-                    { ...base, name: 'NoHistory', kills: 6, wins: 0, rounds: 0 }
+                    { ...base, name: 'HalfWins', kills: 8, wins: 1, rounds: 2, losses: 1 },
+                    { ...base, name: 'NoWins', kills: 7, wins: 0, rounds: 3, losses: 3 },
+                    { ...base, name: 'NoHistory', kills: 6, wins: 0, rounds: 0, losses: 0 }
                 ]
             }
         })
@@ -54,8 +56,8 @@ test('lifetime board shows eliminations and measured win rates, including no rec
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     await page.getByRole('tab', { name: '排行榜' }).click();
     await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率指数']);
-    await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '50.0%']);
-    await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '0.0%']);
+    await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '95.0%']);
+    await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '85.7%']);
     await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '100.0%']);
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
@@ -120,8 +122,12 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect
         .poll(async () => [(await state(b.page)).hp, (await state(a.page)).hitsClaimed], { timeout: 5_000 })
         .toEqual([1, 1]);
+    expect((await state(a.page)).hitsPredicted).toBe(1);
     expect((await state(b.page)).alive).toBe(true);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
+    expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idB)).toBe('Hit_Chest');
+    await expect(a.page.locator('#hitmarker')).not.toHaveAttribute('data-prediction');
+    await a.page.screenshot({ path: 'test-results/combat-body-hit.png' });
 
     // Second hit (after the throw cooldown): eliminated and broadcast to everyone.
     await a.page.waitForTimeout(700);
@@ -132,6 +138,8 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect(b.page.locator('#eliminated')).toBeVisible();
     await expect(a.page.locator('#broadcast')).toContainText(`${nameA} 淘汰了 ${nameB}`);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
+    expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idB)).toBe('Death01');
+    await a.page.screenshot({ path: 'test-results/combat-elimination.png' });
     const scores = (await state(a.page)).players;
     expect(scores.find((p) => p.name === nameA)).toMatchObject({ score: 1, kills: 1, deaths: 0 });
     expect(scores.find((p) => p.id === idB)).toMatchObject({ score: 0, kills: 0, deaths: 1 });

@@ -5,7 +5,9 @@ import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
     chargeSpeed,
     discAcceleration,
+    discContactWithPlayer,
     discHitsPlayer,
+    earliestDiscContact,
     launchNormal,
     segmentDistance,
     simulateFlight,
@@ -46,12 +48,32 @@ test('lift acts against gravity for a nose-up disc and drag slows it', () => {
 
 test('hit geometry: segment–capsule distance and player hits', () => {
     assert.equal(segmentDistance([0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]), 1);
+    assert.equal(segmentDistance([0, 1, 0], [10, 1, 0], [5, 0, 0], [5, 0, 0]), 1);
     assert.ok(Math.abs(segmentDistance([0, 0, -1], [0, 0, 1], [-1, 0.5, 0], [1, 0.5, 0]) - 0.5) < 1e-12);
     const centre = [5, 0.92, 0];
     assert.ok(discHitsPlayer([4, 1.4, 0], [6, 1.4, 0], centre), 'through the chest');
     assert.ok(discHitsPlayer([5.4, 1.0, -1], [5.4, 1.0, 1], centre), 'grazing the side');
     assert.ok(!discHitsPlayer([4, 2.6, 0], [6, 2.6, 0], centre), 'over the head');
     assert.ok(!discHitsPlayer([5.6, 1.0, -1], [5.6, 1.0, 1], centre), 'clear miss');
+});
+
+test('contact result returns the earliest swept point and stable earliest target', () => {
+    const centre = [5, 0.92, 0];
+    const contact = discContactWithPlayer([0, 1.4, 0], [10, 1.4, 0], centre);
+    assert.ok(contact);
+    assert.ok(Math.abs(contact.fraction - 0.4505) < 1e-5);
+    assert.ok(Math.abs(contact.at[0] - 4.505) < 1e-4);
+    assert.equal(contact.region, 'head');
+    assert.deepEqual(contact.impactDirection, [1, 0, 0]);
+
+    const targets = new Map([
+        ['farther', [7, 0.92, 0]],
+        ['nearer', [5, 0.92, 0]],
+        ['owner', [2, 0.92, 0]]
+    ]);
+    const earliest = earliestDiscContact([0, 1.1, 0], [10, 1.1, 0], targets, 'owner');
+    assert.equal(earliest?.target, 'nearer');
+    assert.ok(earliest?.contact.fraction && earliest.contact.fraction < 0.451);
 });
 
 test('every respawn point is on reachable floor with clearance', () => {

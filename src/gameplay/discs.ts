@@ -18,8 +18,8 @@ import {
 import { SNIPER } from '../net/protocol';
 import { cylinder, merge, place, torus } from '../render/shapes';
 
-import type { V3 } from './frisbee';
-import { DISC, DISC_LIVE_SECONDS, discAcceleration, discHitsPlayer } from './frisbee';
+import type { DiscContact, V3 } from './frisbee';
+import { DISC, DISC_LIVE_SECONDS, discAcceleration, earliestDiscContact, segmentDistance } from './frisbee';
 
 type Disc = {
     entity: EntityType;
@@ -29,6 +29,7 @@ type Disc = {
     throwId: number;
     local: boolean;
     age: number;
+    trailElapsed: number;
     live: boolean;
     spin: number;
     last: V3;
@@ -37,6 +38,7 @@ type Disc = {
     sniper: boolean;
     hue: number;
     gold: boolean;
+    flybyPlayed: boolean;
 };
 
 /** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
@@ -176,13 +178,15 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 throwId: options.throwId,
                 local: options.local,
                 age: 0,
+                trailElapsed: 0,
                 live: true,
                 spin: 0,
                 last: options.origin,
                 settledFor: 0,
                 sniper: options.sniper === true,
                 hue: options.hue,
-                gold: options.gold === true
+                gold: options.gold === true,
+                flybyPlayed: false
             });
         },
         /**
@@ -192,10 +196,12 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
         update(
             deltaTime: number,
             targets: Map<string, V3>,
-            onHit: (throwId: number, target: string, at: V3, velocity: V3) => void,
+            onHit: (throwId: number, target: string, contact: DiscContact, velocity: V3) => void,
             onBounce?: (at: V3, speed: number) => void,
-            onTracer?: (at: V3, hue: number) => void,
-            onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void
+            onTracer?: (at: V3, hue: number, speed: number) => void,
+            onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void,
+            listener?: V3,
+            onFlyby?: (at: V3, speed: number) => void
         ) {
             bounceHandler = onBounce ?? null;
             // Backwards, so removing a disc does not skip the next one (and no per-frame array copy).
@@ -214,24 +220,34 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     // Sniper disc: cancel gravity exactly, no aerodynamics — it goes where it was aimed.
                     force.set(0, Math.abs(worldGravity) * DISC.mass, 0);
                     body.applyForce(force);
-                    onTracer?.(position, disc.hue);
                 } else if (disc.live || p.y > 0.25) {
-                    if (disc.gold && disc.live) onTracer?.(position, -1);
                     const a = discAcceleration(velocity, disc.normal, worldGravity);
                     force.set(a[0] * DISC.mass, a[1] * DISC.mass, a[2] * DISC.mass);
                     body.applyForce(force);
+                }
+                // A sparse, speed-gated trail makes ordinary flights readable while bounding pooled samples.
+                if (disc.live && speed > 5) {
+                    disc.trailElapsed += deltaTime;
+                    if (disc.trailElapsed >= 0.06) {
+                        disc.trailElapsed %= 0.06;
+                        onTracer?.(position, disc.gold ? -1 : disc.hue, speed);
+                    }
+                }
+                if (!disc.local && !disc.flybyPlayed && listener && speed > 7) {
+                    const distance = segmentDistance(disc.last, position, listener, listener);
+                    if (distance < 1.15) {
+                        disc.flybyPlayed = true;
+                        onFlyby?.(position, speed);
+                    }
                 }
                 // Spin for show about the disc's own axis.
                 disc.spin += deltaTime * Math.min(40, speed * 3);
                 disc.visual.setLocalEulerAngles(0, (disc.spin * 180) / Math.PI, 0);
                 if (disc.live && disc.local) {
-                    for (const [id, centre] of targets) {
-                        if (id === disc.owner) continue;
-                        if (discHitsPlayer(disc.last, position, centre)) {
-                            disc.live = false;
-                            onHit(disc.throwId, id, position, velocity);
-                            break;
-                        }
+                    const earliest = earliestDiscContact(disc.last, position, targets, disc.owner);
+                    if (earliest) {
+                        disc.live = false;
+                        onHit(disc.throwId, earliest.target, earliest.contact, velocity);
                     }
                 }
                 if (

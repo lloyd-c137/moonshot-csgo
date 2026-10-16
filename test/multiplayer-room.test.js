@@ -82,9 +82,11 @@ test('two valid hits eliminate (one per disc), scoring one point for the elimina
     assert.ok(inbox.get('b').some((message) => message.type === 'thrown' && message.from === 'a'));
     let struck = inbox.get('b').filter((message) => message.type === 'struck');
     assert.deepEqual([struck.length, struck[0].hp, struck[0].out, struck[0].scores.a], [1, 1, false, [0, 0, 0]]);
+    assert.equal(struck[0].throwId, 1);
     // The same disc cannot score twice.
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 1600);
     assert.equal(inbox.get('b').filter((message) => message.type === 'struck').length, 1);
+    assert.ok(inbox.get('a').some((message) => message.type === 'hitRejected' && message.throwId === 1));
     throwAndHit(2, 2000);
     struck = inbox.get('b').filter((message) => message.type === 'struck');
     assert.deepEqual(

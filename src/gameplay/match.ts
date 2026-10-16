@@ -25,7 +25,7 @@ import {
     SPAWN_PROTECTION,
     THROW_COOLDOWN
 } from '../net/protocol';
-import { kickLook, setLook } from '../player/playerController';
+import { setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
 import type { Ui } from '../ui/shell';
@@ -37,7 +37,10 @@ import { createEffects } from './effects';
 import { canExecute, executionProgress } from './execution';
 import type { Execution } from './execution';
 import { createExecutionView } from './executionView';
-import type { V3 } from './frisbee';
+import { CameraImpulseController } from './feedback/CameraImpulseController';
+import type { CameraMotion } from './feedback/CameraImpulseController';
+import { CombatFeedbackDirector } from './feedback/CombatFeedbackDirector';
+import type { DiscContact, V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { createGold, GOLD_COLOUR } from './gold';
 import { createGroundDiscs } from './groundDiscs';
@@ -103,10 +106,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let started = false;
     let throws = 0;
     let hitsClaimed = 0;
+    let hitsPredicted = 0;
+    const pendingHitClaims = new Map<number, number>();
     let killer = '';
     let hp = MAX_HP;
     const sound = createSound();
     const effects = createEffects(app);
+    const feedback = new CombatFeedbackDirector();
+    const cameraImpulses = new CameraImpulseController();
     let executionFrozen = false;
     const executionView = createExecutionView(app, camera, characters, (active) => {
         executionFrozen = active;
@@ -233,9 +240,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let poses = new Map<string, PlayerPose>();
     /** Recent eliminations per killer, for streak announcements. */
     const streaks = new Map<string, { count: number; at: number }>();
-    // Feel: FOV punch on release, camera shake when hit, in-hand disc that winds up and snaps forward.
+    // Feel: FOV punch on release, damped local camera impulses, in-hand disc that winds up and snaps forward.
     let punch = 0;
-    let shake = 0;
     const eyeOffset = camera.getLocalPosition().clone();
     const viewmodel = new Entity('viewmodel-disc');
     viewmodel.addComponent('render', { meshInstances: discs.meshInstances(colourFor('local')), castShadows: false });
@@ -524,11 +530,31 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
-        struck: (target, by, targetHp, out, head, at, scores, sniper, golden, final, execution) => {
+        struck: (throwId, target, by, targetHp, out, head, at, scores, sniper, golden, final, execution) => {
+            const goldKill = golden && out;
+            const feedbackKind =
+                target === selfId()
+                    ? 'personal-damage'
+                    : goldKill
+                      ? 'golden-elimination'
+                      : out
+                        ? 'elimination'
+                        : head
+                          ? 'headshot'
+                          : 'body-hit';
+            const eventId =
+                throwId === undefined
+                    ? `strike:${by}:${target}:${at.map((value) => Math.round(value * 100)).join(',')}:${targetHp}`
+                    : `strike:${by}:${throwId}`;
+            const presentation = feedback.submit({ id: eventId, kind: feedbackKind }, performance.now());
+            if (!presentation.accepted) return;
+            if (by === selfId() && throwId !== undefined) {
+                pendingHitClaims.delete(throwId);
+                hitsClaimed++;
+            }
             const entryFinal = roster.get(target);
             if (entryFinal && final) entryFinal.spectating = true;
             const snipe = sniper && head && out;
-            const goldKill = golden && out;
             if (goldKill) goldView.flourish(at);
             effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
             if (snipe) effects.snipe(at);
@@ -540,21 +566,20 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             if (entry) Object.assign(entry, { hp: targetHp, alive: !out });
             const me = selfId();
             avatars.flash(target, performance.now());
+            avatars.react(target, head, out, poses.get(target), performance.now());
             if (target === me) {
                 hp = targetHp;
                 sound.hurt(out);
                 const from = positionOf(by);
                 ui.damage(bearingTo(from));
-                shake = snipe ? 0.16 : out ? 0.12 : 0.07;
+                cameraImpulses.trigger(snipe ? 0.9 : out ? 0.65 : 0.35);
                 if (snipe) {
                     // Taken out by a sniper headshot: the view is thrown back hard.
-                    kickLook(player, 16, (Math.random() - 0.5) * 10);
-                    ui.popup('被狙击爆头', 'me');
+                    if (presentation.showHud) ui.popup('被狙击爆头', 'me');
                 }
                 if (head && !snipe) {
                     // Every head hit is lethal, with explicit victim feedback.
-                    kickLook(player, 9, (Math.random() - 0.5) * 4);
-                    ui.popup('被爆头淘汰', 'me');
+                    if (presentation.showHud) ui.popup('被爆头淘汰', 'me');
                 }
                 if (!out) {
                     // Knock-back away from the thrower (or along the disc's path).
@@ -581,37 +606,40 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     setAlive(false);
                     killer = nameOf(by);
                     deadUntil = performance.now() + RESPAWN_SECONDS * 1000;
-                } else {
+                } else if (presentation.showHud) {
                     ui.feed(`被 ${nameOf(by)} 命中 · 剩余生命 ${targetHp}`, 'me');
                 }
             } else if (by === me) {
                 if (goldKill) {
                     sound.snipeConfirm(head, true);
                     ui.hitMarker('snipe');
-                    ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
+                    if (presentation.showHud) ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
                     punch = Math.max(punch, 1.8);
-                    shake = Math.max(shake, 0.07);
+                    cameraImpulses.trigger(0.55);
                 } else if (snipe) {
                     sound.snipeConfirm();
                     ui.hitMarker('snipe');
-                    ui.popup(`狙击爆头 · ${nameOf(target)}  +1`, 'snipe');
+                    if (presentation.showHud) ui.popup(`狙击爆头 · ${nameOf(target)}  +1`, 'snipe');
                     punch = Math.max(punch, 1.8);
-                    shake = Math.max(shake, 0.06);
+                    cameraImpulses.trigger(0.5);
                 } else {
                     sound.hitConfirm(out, head);
                     ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
-                    ui.popup(
-                        out ? `${execution ? '处决淘汰' : head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1` : '命中！',
-                        out ? 'kill' : head ? 'head' : 'hit'
-                    );
+                    if (presentation.showHud)
+                        ui.popup(
+                            out
+                                ? `${execution ? '处决淘汰' : head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1`
+                                : '命中！',
+                            out ? 'kill' : head ? 'head' : 'hit'
+                        );
                     // Confirmation you can feel: a punch of the view, harder on eliminations.
                     punch = Math.max(punch, out ? 1.4 : head ? 1 : 0.7);
-                    if (out) shake = Math.max(shake, 0.05);
+                    if (out) cameraImpulses.trigger(0.4);
                     ui.crosshairKick(out ? 'kill' : head ? 'head' : 'hit');
                 }
             } else {
                 sound.impact(positionOf(target) ?? at);
-                if (!out) ui.feed(`${nameOf(by)} 命中 ${nameOf(target)}`);
+                if (!out && presentation.showHud) ui.feed(`${nameOf(by)} 命中 ${nameOf(target)}`);
             }
             if (out) {
                 const now = performance.now();
@@ -620,20 +648,27 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 streaks.set(by, { count: streak, at: now });
                 streaks.delete(target);
                 if (goldKill) {
-                    ui.goldKill(nameOf(by), nameOf(target), target === me ? 'me' : by === me ? 'mine' : 'neutral');
+                    if (presentation.showHud)
+                        ui.goldKill(nameOf(by), nameOf(target), target === me ? 'me' : by === me ? 'mine' : 'neutral');
                     if (by !== me) sound.goldChime();
                 } else {
-                    ui.broadcast(
-                        nameOf(by),
-                        nameOf(target),
-                        target === me ? 'me' : by === me ? 'mine' : 'neutral',
-                        streak,
-                        snipe
-                    );
+                    if (presentation.showHud)
+                        ui.broadcast(
+                            nameOf(by),
+                            nameOf(target),
+                            target === me ? 'me' : by === me ? 'mine' : 'neutral',
+                            streak,
+                            snipe
+                        );
                     if (target !== me && by !== me) sound.announce();
                 }
             }
             refreshBoard();
+        },
+        hitRejected: (throwId) => {
+            pendingHitClaims.delete(throwId);
+            feedback.submit({ id: `reject:${selfId()}:${throwId}`, kind: 'contact-rejected' }, performance.now());
+            ui.rejectHitPrediction(throwId);
         },
         healed: (id, healedHp) => {
             const entry = roster.get(id);
@@ -692,11 +727,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 if (entry) Object.assign(entry, { score, kills, deaths });
             }
             if (next.phase === 'ended') {
+                const result = feedback.submit({ id: `round:${next.nextAt}`, kind: 'round-result' }, performance.now());
                 const mine = next.winnerId === selfId();
-                sound.roundEnd(mine);
-                ui.broadcastText(
-                    mine ? '你守住了金飞盘，赢得本局！' : next.winner ? `${next.winner} 赢得本局` : '本局无人获胜'
-                );
+                if (result.accepted) sound.roundEnd(mine);
             } else if (was?.phase === 'ended') {
                 sound.roundStart();
                 ui.notify('新一局开始！争夺金飞盘');
@@ -828,8 +861,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         if (sniper) {
             sound.sniperThrow();
             punch = 1.6;
-            shake = Math.max(shake, 0.05);
-            kickLook(player, 1.8, (Math.random() - 0.5) * 0.8); // recoil
+            cameraImpulses.trigger(0.4);
         } else {
             sound.throw();
             punch = 1;
@@ -1071,7 +1103,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             aimReadyPlayed = true;
             sound.scopeReady();
         }
-        cam.fov = viewFov * fovFactor(aim) + punch * 2.5;
+        cam.fov = viewFov * fovFactor(aim) + punch * 2.5 * cameraImpulses.scale;
         const script = controller() as unknown as { lookSens?: number; speedGround?: number } | null;
         if (script) {
             script.lookSens = viewSens * sensitivityFactor(viewFov, aim);
@@ -1081,13 +1113,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 walkSpeed * (1 - (1 - SCOPE.moveScale) * aim) * (holdingGold() ? ROUND.goldSpeedFactor : 1);
         }
         ui.scope(aim, ready);
-        shake = Math.max(0, shake - deltaTime * 0.35);
-        const jitter = shake * shake * 4;
-        camera.setLocalPosition(
-            eyeOffset.x + (Math.random() - 0.5) * jitter,
-            eyeOffset.y + (Math.random() - 0.5) * jitter,
-            eyeOffset.z
-        );
+        const [impulseX, impulseY] = cameraImpulses.update(deltaTime);
+        camera.setLocalPosition(eyeOffset.x + impulseX, eyeOffset.y + impulseY, eyeOffset.z);
         // In-hand disc: visible when ready, pulled back while charging, gone during the cooldown after a throw.
         const sinceThrow = (now - lastThrowAt) / 1000;
         const inHand = Math.min(1, Math.max(0, (sinceThrow - THROW_COOLDOWN * 0.5) / (THROW_COOLDOWN * 0.5)));
@@ -1133,7 +1160,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             if (!caught && u >= routine.catchAt && inspectHold === null) {
                 caught = true;
                 punch = Math.max(punch, goldInspect ? 1.1 : 0.55);
-                shake = Math.max(shake, 0.05);
+                cameraImpulses.trigger(0.28);
                 if (goldInspect) {
                     const at = viewmodelWorld();
                     effects.ring(at, GOLD_COLOUR, 0.05, 0.45, 0.6);
@@ -1548,7 +1575,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             discs.update(
                 deltaTime,
                 targets,
-                (throwId, target, at) => {
+                (throwId, target, contact: DiscContact) => {
+                    const { at } = contact;
                     if (audioLab && target === labTargetId) {
                         if (labHp === 0) return;
                         const head = at[1] - labTargetPose.p[1] > HEAD_ABOVE;
@@ -1562,6 +1590,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                         else sound.hitConfirm(out, head);
                         effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
                         avatars.flash(target, performance.now());
+                        avatars.react(target, head, out, poses.get(target), performance.now());
                         ui.hitMarker(out ? 'kill' : 'hit');
                         ui.popup(
                             out && labGolden
@@ -1577,13 +1606,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                         hitsClaimed++;
                         return;
                     }
-                    // Instant local confirmation (the room's verdict follows within a round trip).
-                    ui.hitMarker('hit');
-                    hitsClaimed++;
+                    // Immediate local prediction is visually distinct; the room alone confirms a hit.
+                    feedback.submit(
+                        { id: `prediction:${selfId()}:${throwId}`, kind: 'contact-predicted' },
+                        performance.now()
+                    );
+                    pendingHitClaims.set(throwId, now + 8_500);
+                    hitsPredicted++;
+                    ui.hitPrediction(throwId);
                     net.hit(throwId, target, at.map(round) as V3);
                 },
                 (at, speed) => sound.bounce(at, speed),
-                (at, hue) => effects.tracer(at, hue),
+                (at, hue, speed) => effects.tracer(at, hue, speed),
                 (rest) => {
                     // The golden disc flies home but leaves an ordinary disc on the floor where it came down;
                     // an ordinary disc of ours now lies where it stopped.
@@ -1595,8 +1629,15 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                         const at = rest.gold ? [rest.at[0], 0.02, rest.at[2]] : rest.at;
                         net.landed(rest.throwId, at.map(round) as V3);
                     }
-                }
+                },
+                [camera.getPosition().x, camera.getPosition().y, camera.getPosition().z],
+                (at, speed) => sound.flyby(at, speed)
             );
+            for (const [throwId, expiresAt] of pendingHitClaims) {
+                if (now <= expiresAt) continue;
+                pendingHitClaims.delete(throwId);
+                ui.rejectHitPrediction(throwId);
+            }
             ground.update(now);
             executionView.update(roomNow(), selfId());
             if (labExecution && roomNow() >= labExecution.endsAt) {
@@ -1652,6 +1693,23 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             viewFov = fov;
             viewSens = lookSensitivity;
         },
+        setFeedbackSettings(settings: {
+            cameraMotion: CameraMotion;
+            effectsQuality: 'low' | 'medium' | 'high';
+            reducedFlashes: boolean;
+            masterVolume: number;
+            combatVolume: number;
+            confirmationVolume: number;
+        }) {
+            cameraImpulses.setMode(settings.cameraMotion);
+            effects.setQuality(settings.effectsQuality);
+            effects.setReducedFlashes(settings.reducedFlashes);
+            sound.setVolumes({
+                master: settings.masterVolume,
+                combat: settings.combatVolume,
+                confirmation: settings.confirmationVolume
+            });
+        },
         /** Call from a user gesture (a click or key) so the browser lets audio start. */
         unlockAudio: () => sound.unlock(),
         /** Joins again with the current account (after signing in or out from the pause screen). */
@@ -1685,6 +1743,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 discs: discs.count,
                 throws,
                 hitsClaimed,
+                hitsPredicted,
+                activeAudioVoices: sound.voiceCount(),
+                cameraMotionScale: cameraImpulses.scale,
                 practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
                 practiceExecution: labExecution ? { id: labExecution.id, endsAt: labExecution.endsAt } : null,
                 inspecting: inspectSince !== null,
@@ -1694,6 +1755,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 detained: performance.now() < detainedUntil,
                 power: { ...power, phase: powerPhase(roomNow(), power), dark, guard: { ...guard.pose } }
             }),
+            avatarAction: (id: string) => avatars.actionState(id),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,
             inspect: startInspect,

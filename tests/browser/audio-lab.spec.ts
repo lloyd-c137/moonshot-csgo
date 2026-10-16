@@ -95,9 +95,9 @@ test('practice dummy can be executed from behind and respawns at its fixed posit
     const initial = await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy);
     await page.keyboard.press('v');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions.length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]?.camera)).toBe(true);
     const paired = await page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]);
     expect(paired.role).toBe('attacker');
-    expect(paired.camera).toBe(true);
     expect(paired.actorsVisible).toBe(true);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toContainText('处决淘汰');

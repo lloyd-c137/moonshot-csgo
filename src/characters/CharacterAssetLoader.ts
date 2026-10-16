@@ -157,6 +157,9 @@ export class CharacterAssetLoader {
             get height() {
                 return CHARACTER_SOURCE_HEIGHT * visualScale;
             },
+            duration(name: string) {
+                return tracks.get(name)?.duration ?? 0;
+            },
             setScale(scale: number) {
                 visualScale = Math.max(0.2, Math.min(1.2, scale));
                 root.setLocalScale(visualScale, visualScale, visualScale);

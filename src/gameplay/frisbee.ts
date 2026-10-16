@@ -130,7 +130,95 @@ export const segmentDistance = (p0: V3, p1: V3, q0: V3, q1: V3) => {
 /** Player hit volume (slightly generous, favouring the thrower): capsule centre `c`, radius, core half-height. */
 export const PLAYER_HIT = { radius: 0.36, halfCore: 0.64 } as const;
 
+export type DiscContact = {
+    /** First point on the swept disc-centre segment that touches the player's existing hit capsule. */
+    at: V3;
+    /** Normalized distance along the frame's disc segment, from 0 to 1. */
+    fraction: number;
+    /** Direction of disc travel during the frame. */
+    impactDirection: V3;
+    /** Candidate region only; the room still makes the authoritative headshot decision. */
+    region: 'head' | 'body';
+};
+
+const capsuleDistanceSquared = (point: V3, centre: V3) => {
+    const nearestY = Math.max(centre[1] - PLAYER_HIT.halfCore, Math.min(centre[1] + PLAYER_HIT.halfCore, point[1]));
+    const dx = point[0] - centre[0];
+    const dy = point[1] - nearestY;
+    const dz = point[2] - centre[2];
+    return dx * dx + dy * dy + dz * dz;
+};
+
+/** Earliest swept-segment contact with the existing capsule, including its disc-radius allowance. */
+export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | null => {
+    const delta = sub(b, a);
+    const radius = PLAYER_HIT.radius + DISC.radius;
+    const radiusSquared = radius * radius;
+    const atFraction = (fraction: number): V3 => add(a, scale(delta, fraction));
+    if (capsuleDistanceSquared(a, centre) <= radiusSquared) {
+        const at = a;
+        return {
+            at,
+            fraction: 0,
+            impactDirection: normalise(delta),
+            region: at[1] - centre[1] > 0.45 ? 'head' : 'body'
+        };
+    }
+
+    // Distance from a point on a segment to a convex capsule is convex. Find its minimum,
+    // then binary-search the first boundary crossing on the monotonic approach to that minimum.
+    let low = 0;
+    let high = 1;
+    for (let iteration = 0; iteration < 36; iteration++) {
+        const left = (2 * low + high) / 3;
+        const right = (low + 2 * high) / 3;
+        if (capsuleDistanceSquared(atFraction(left), centre) <= capsuleDistanceSquared(atFraction(right), centre)) {
+            high = right;
+        } else {
+            low = left;
+        }
+    }
+    const minimum = (low + high) / 2;
+    if (capsuleDistanceSquared(atFraction(minimum), centre) > radiusSquared) return null;
+
+    low = 0;
+    high = minimum;
+    for (let iteration = 0; iteration < 36; iteration++) {
+        const middle = (low + high) / 2;
+        if (capsuleDistanceSquared(atFraction(middle), centre) <= radiusSquared) high = middle;
+        else low = middle;
+    }
+    const fraction = high;
+    const at = atFraction(fraction);
+    return {
+        at,
+        fraction,
+        impactDirection: normalise(delta),
+        region: at[1] - centre[1] > 0.45 ? 'head' : 'body'
+    };
+};
+
+/** Earliest eligible player contact on a frame segment; ties are stable across Map insertion order. */
+export const earliestDiscContact = (
+    a: V3,
+    b: V3,
+    targets: Map<string, V3>,
+    ignoreId?: string
+): { target: string; contact: DiscContact } | null => {
+    let earliest: { target: string; contact: DiscContact } | null = null;
+    for (const [target, centre] of targets) {
+        if (target === ignoreId) continue;
+        const contact = discContactWithPlayer(a, b, centre);
+        if (
+            contact &&
+            (!earliest ||
+                contact.fraction < earliest.contact.fraction ||
+                (contact.fraction === earliest.contact.fraction && target < earliest.target))
+        )
+            earliest = { target, contact };
+    }
+    return earliest;
+};
+
 /** Whether the disc moving from `a` to `b` touches a player capsule centred at `c`. */
-export const discHitsPlayer = (a: V3, b: V3, c: V3) =>
-    segmentDistance(a, b, [c[0], c[1] - PLAYER_HIT.halfCore, c[2]], [c[0], c[1] + PLAYER_HIT.halfCore, c[2]]) <=
-    PLAYER_HIT.radius + DISC.radius;
+export const discHitsPlayer = (a: V3, b: V3, c: V3) => discContactWithPlayer(a, b, c) !== null;

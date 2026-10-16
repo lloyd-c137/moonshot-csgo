@@ -27,6 +27,10 @@ type Avatar = {
     lastPosition: Vec3;
     lastMovedAt: number;
     locomotion: 'Idle_Loop' | 'Jog_Fwd_Loop' | 'Sprint_Loop';
+    action: string | null;
+    actionUntil: number;
+    heldPose: PlayerPose | null;
+    heldUntil: number;
 };
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -131,7 +135,11 @@ export const createAvatars = (
             opacity: '',
             lastPosition: new Vec3(),
             lastMovedAt: 0,
-            locomotion: 'Idle_Loop'
+            locomotion: 'Idle_Loop',
+            action: null,
+            actionUntil: 0,
+            heldPose: null,
+            heldUntil: 0
         });
         if (goldHolder === id) setGold(id);
     };
@@ -162,7 +170,15 @@ export const createAvatars = (
         const cameraComponent = camera.camera!;
         eye.copy(camera.getPosition());
         for (const [id, avatar] of avatars) {
-            const pose = poses.get(id);
+            let pose = poses.get(id);
+            let deathHold = false;
+            if (pose) {
+                avatar.heldPose = pose;
+                avatar.heldUntil = 0;
+            } else if (avatar.heldPose && now < avatar.heldUntil) {
+                pose = avatar.heldPose;
+                deathHold = true;
+            }
             if (!pose || hiddenIds.has(id)) {
                 avatar.root.enabled = false;
                 avatar.glint.enabled = false;
@@ -204,7 +220,8 @@ export const createAvatars = (
                 }
                 avatar.lastPosition.set(pose.p[0], pose.p[1], pose.p[2]);
                 avatar.lastMovedAt = now;
-                avatar.character.play(avatar.locomotion);
+                if (avatar.action && now >= avatar.actionUntil) avatar.action = null;
+                if (!avatar.action) avatar.character.play(avatar.locomotion);
             }
             head.set(pose.p[0], pose.p[1] - 0.9 + avatar.character.height + 0.06, pose.p[2]);
             const distance = head.distance(eye);
@@ -216,7 +233,7 @@ export const createAvatars = (
             }
             cameraComponent.worldToScreen(head, screen);
             const inFront = screen.z > 0;
-            const hidden = !avatar.visible || !inFront;
+            const hidden = deathHold || !avatar.visible || !inFront;
             if (avatar.tag.hidden !== hidden) avatar.tag.hidden = hidden;
             if (!hidden) {
                 // Whole pixels and two-decimal opacity: unchanged values skip the style write (and its restyle).
@@ -248,6 +265,22 @@ export const createAvatars = (
         update,
         setScale(id: string, scale: number) {
             avatars.get(id)?.character.setScale(scale);
+        },
+        react(id: string, head: boolean, eliminated: boolean, pose: PlayerPose | undefined, now: number) {
+            const avatar = avatars.get(id);
+            if (!avatar) return;
+            const action = eliminated ? 'Death01' : head ? 'Hit_Head' : 'Hit_Chest';
+            const duration = Math.max(0.35, avatar.character.duration(action));
+            avatar.action = action;
+            avatar.actionUntil = now + duration * 1000;
+            avatar.character.play(action, eliminated ? 0.06 : 0.08);
+            if (eliminated && pose) {
+                avatar.heldPose = pose;
+                avatar.heldUntil = now + duration * 1000;
+            }
+        },
+        actionState(id: string) {
+            return avatars.get(id)?.action ?? null;
         },
         setLeader,
         setGold,

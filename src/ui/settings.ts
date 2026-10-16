@@ -1,8 +1,28 @@
 import type { StorageLike } from '../app/storage';
 
-export type Settings = { lookSensitivity: number; fieldOfView: number };
+export type CameraMotion = 'off' | 'low' | 'normal';
+export type EffectsQuality = 'low' | 'medium' | 'high';
+export type Settings = {
+    lookSensitivity: number;
+    fieldOfView: number;
+    cameraMotion: CameraMotion;
+    effectsQuality: EffectsQuality;
+    reducedFlashes: boolean;
+    masterVolume: number;
+    combatVolume: number;
+    confirmationVolume: number;
+};
 
-export const DEFAULT_SETTINGS: Settings = { lookSensitivity: 0.08, fieldOfView: 78 };
+export const DEFAULT_SETTINGS: Settings = {
+    lookSensitivity: 0.08,
+    fieldOfView: 78,
+    cameraMotion: 'low',
+    effectsQuality: 'medium',
+    reducedFlashes: false,
+    masterVolume: 0.8,
+    combatVolume: 0.8,
+    confirmationVolume: 1
+};
 export const SETTING_RANGES = {
     lookSensitivity: { min: 0.03, max: 0.2, step: 0.005 },
     fieldOfView: { min: 60, max: 100, step: 1 }
@@ -22,7 +42,17 @@ export const loadSettings = (storage: StorageLike | null): Settings => {
                 SETTING_RANGES.lookSensitivity,
                 DEFAULT_SETTINGS.lookSensitivity
             ),
-            fieldOfView: clamp(saved.fieldOfView, SETTING_RANGES.fieldOfView, DEFAULT_SETTINGS.fieldOfView)
+            fieldOfView: clamp(saved.fieldOfView, SETTING_RANGES.fieldOfView, DEFAULT_SETTINGS.fieldOfView),
+            cameraMotion: ['off', 'low', 'normal'].includes(saved.cameraMotion ?? '')
+                ? (saved.cameraMotion as CameraMotion)
+                : DEFAULT_SETTINGS.cameraMotion,
+            effectsQuality: ['low', 'medium', 'high'].includes(saved.effectsQuality ?? '')
+                ? (saved.effectsQuality as EffectsQuality)
+                : DEFAULT_SETTINGS.effectsQuality,
+            reducedFlashes: typeof saved.reducedFlashes === 'boolean' ? saved.reducedFlashes : false,
+            masterVolume: clamp(saved.masterVolume, { min: 0, max: 1 }, DEFAULT_SETTINGS.masterVolume),
+            combatVolume: clamp(saved.combatVolume, { min: 0, max: 1 }, DEFAULT_SETTINGS.combatVolume),
+            confirmationVolume: clamp(saved.confirmationVolume, { min: 0, max: 1 }, DEFAULT_SETTINGS.confirmationVolume)
         };
     } catch {
         return { ...DEFAULT_SETTINGS };

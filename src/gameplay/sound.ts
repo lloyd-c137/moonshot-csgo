@@ -7,10 +7,14 @@ import { COMBAT_AUDIO } from '../config/combatAudio';
 
 type V3 = [number, number, number];
 export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce' | 'goldKill' | 'throw';
+type SoundBus = 'combat' | 'confirmation' | 'environment' | 'ui';
 
 export const createSound = () => {
     let ctx: AudioContext | null = null;
     let master: GainNode | null = null;
+    let buses: Record<SoundBus, GainNode> | null = null;
+    let activeBus: SoundBus = 'combat';
+    let mix = { master: 0.8, combat: 0.8, confirmation: 1 };
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
@@ -18,6 +22,35 @@ export const createSound = () => {
     const testVersions = new Map<TestSoundCue, number>();
     const testVoices = new Map<TestSoundCue, { source: AudioBufferSourceNode; gain: GainNode }>();
     const testCache = new Map<string, AudioBuffer>();
+    const voices: Record<SoundBus, Set<AudioScheduledSourceNode>> = {
+        combat: new Set(),
+        confirmation: new Set(),
+        environment: new Set(),
+        ui: new Set()
+    };
+    const voiceCaps: Record<SoundBus, number> = { combat: 24, confirmation: 16, environment: 8, ui: 8 };
+    const trackVoice = (source: AudioScheduledSourceNode, cleanup: () => void) => {
+        const group = activeBus;
+        const active = voices[group];
+        if (active.size >= voiceCaps[group]) {
+            const oldest = active.values().next().value;
+            if (oldest) active.delete(oldest);
+            try {
+                oldest?.stop();
+            } catch {
+                // It may have ended between the cap check and stop.
+            }
+        }
+        active.add(source);
+        source.addEventListener(
+            'ended',
+            () => {
+                active.delete(source);
+                cleanup();
+            },
+            { once: true }
+        );
+    };
 
     const loadClip = async (audio: AudioContext, name: string, url: string) => {
         try {
@@ -37,12 +70,12 @@ export const createSound = () => {
         gain.gain.value = volume;
         const destination = output(audio, at);
         source.connect(gain).connect(destination);
-        source.onended = () => {
+        source.start(0, start, Math.min(end, buffer.duration) - start);
+        trackVoice(source, () => {
             source.disconnect();
             gain.disconnect();
-            if (destination !== master) destination.disconnect();
-        };
-        source.start(0, start, Math.min(end, buffer.duration) - start);
+            if (at) destination.disconnect();
+        });
         return { source, gain };
     };
     const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO, at?: V3) => {
@@ -50,6 +83,7 @@ export const createSound = () => {
         return playClip(audio, cue, clip.gain, clip.start, clip.end, at);
     };
 
+    const bus = () => (buses?.[activeBus] ?? master)!;
     const ensure = () => {
         if (!ctx) {
             const Context =
@@ -58,8 +92,18 @@ export const createSound = () => {
             if (!Context) return null;
             ctx = new Context();
             master = ctx.createGain();
-            master.gain.value = 0.55;
+            master.gain.value = 0.55 * mix.master;
             master.connect(ctx.destination);
+            buses = {
+                combat: ctx.createGain(),
+                confirmation: ctx.createGain(),
+                environment: ctx.createGain(),
+                ui: ctx.createGain()
+            };
+            for (const [name, node] of Object.entries(buses)) {
+                node.gain.value = name === 'confirmation' ? mix.confirmation : name === 'combat' ? mix.combat : 0.8;
+                node.connect(master);
+            }
             noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
             const data = noise.getChannelData(0);
             for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
@@ -87,7 +131,7 @@ export const createSound = () => {
 
     /** Output node: centred, or a panner at a world position. */
     const output = (audio: AudioContext, at?: V3) => {
-        if (!at) return master!;
+        if (!at) return bus();
         const panner = audio.createPanner();
         panner.panningModel = 'equalpower';
         panner.distanceModel = 'inverse';
@@ -105,7 +149,8 @@ export const createSound = () => {
                 at[2]
             );
         }
-        panner.connect(master!);
+        panner.connect(bus());
+        window.setTimeout(() => panner.disconnect(), 2_000);
         return panner;
     };
 
@@ -130,6 +175,10 @@ export const createSound = () => {
         osc.connect(gain).connect(destination);
         osc.start(start);
         osc.stop(start + duration + 0.02);
+        trackVoice(osc, () => {
+            osc.disconnect();
+            gain.disconnect();
+        });
     };
 
     const hiss = (
@@ -156,11 +205,33 @@ export const createSound = () => {
         source.connect(filter).connect(gain).connect(destination);
         source.start(start, Math.random() * 0.5);
         source.stop(start + duration + 0.02);
+        trackVoice(source, () => {
+            source.disconnect();
+            filter.disconnect();
+            gain.disconnect();
+        });
     };
 
-    const play = (build: (audio: AudioContext, now: number) => void) => {
+    const play = (build: (audio: AudioContext, now: number) => void, group: SoundBus = 'combat') => {
         const audio = ensure();
-        if (audio) build(audio, audio.currentTime);
+        if (!audio) return;
+        const previous = activeBus;
+        activeBus = group;
+        try {
+            build(audio, audio.currentTime);
+            if (group === 'confirmation' && buses) {
+                const now = audio.currentTime;
+                for (const name of ['combat', 'environment'] as const) {
+                    const gain = buses[name].gain;
+                    const target = name === 'combat' ? mix.combat * 0.72 : 0.42;
+                    gain.cancelScheduledValues(now);
+                    gain.setTargetAtTime(target, now, 0.025);
+                    gain.setTargetAtTime(name === 'combat' ? mix.combat : 0.8, now + 0.28, 0.14);
+                }
+            }
+        } finally {
+            activeBus = previous;
+        }
     };
 
     /** Local audition overrides share the real event path; no replacement is active by default. */
@@ -175,17 +246,30 @@ export const createSound = () => {
         const destination = output(audio, at);
         source.connect(gain).connect(destination);
         testVoices.set(cue, { source, gain });
-        source.onended = () => {
+        source.start(0, clip.start, clip.end - clip.start);
+        trackVoice(source, () => {
             source.disconnect();
             gain.disconnect();
-            if (destination !== master) destination.disconnect();
+            if (at) destination.disconnect();
             if (testVoices.get(cue)?.source === source) testVoices.delete(cue);
-        };
-        source.start(0, clip.start, clip.end - clip.start);
+        });
         return true;
     };
 
     return {
+        setVolumes(values: { master: number; combat: number; confirmation: number }) {
+            mix = {
+                master: Math.max(0, Math.min(1, values.master)),
+                combat: Math.max(0, Math.min(1, values.combat)),
+                confirmation: Math.max(0, Math.min(1, values.confirmation))
+            };
+            if (!ctx || !master || !buses) return;
+            const now = ctx.currentTime;
+            master.gain.setTargetAtTime(0.55 * mix.master, now, 0.04);
+            buses.combat.gain.setTargetAtTime(mix.combat, now, 0.04);
+            buses.confirmation.gain.setTargetAtTime(mix.confirmation, now, 0.04);
+        },
+        voiceCount: () => Object.values(voices).reduce((count, active) => count + active.size, 0),
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;
@@ -248,7 +332,7 @@ export const createSound = () => {
          */
         inspect: (seconds: number, tossAt: number, catchAt: number) =>
             play((audio, now) => {
-                const out = master!;
+                const out = bus();
                 const at = (u: number) => now + u * seconds;
                 hiss(audio, out, at(0.02), 0.2, 0.08, 400, 900, 1.2);
                 // Flick: a rising whoosh with a finger snap.
@@ -272,15 +356,15 @@ export const createSound = () => {
         /** Starting to aim: a soft mechanical slide that rises with the zoom. */
         scopeIn: () =>
             play((audio, now) => {
-                hiss(audio, master!, now, 0.5, 0.07, 500, 2400, 2);
-                tone(audio, master!, 'sine', 220, 440, now, 0.6, 0.05);
+                hiss(audio, bus(), now, 0.5, 0.07, 500, 2400, 2);
+                tone(audio, bus(), 'sine', 220, 440, now, 0.6, 0.05);
             }),
         /** Fully aimed: a crisp lock click and a held high tone. */
         scopeReady: () =>
             play((audio, now) => {
-                tone(audio, master!, 'square', 1800, 1700, now, 0.03, 0.07);
-                tone(audio, master!, 'square', 2400, 2300, now + 0.05, 0.03, 0.06);
-                tone(audio, master!, 'sine', 880, 880, now + 0.06, 0.35, 0.05);
+                tone(audio, bus(), 'square', 1800, 1700, now, 0.03, 0.07);
+                tone(audio, bus(), 'square', 2400, 2300, now + 0.05, 0.03, 0.06);
+                tone(audio, bus(), 'sine', 880, 880, now + 0.06, 0.35, 0.05);
             }),
         /** Sniper release: a sharp crack and a fast, thin whoosh (positioned for other players' throws). */
         sniperThrow: (at?: V3) =>
@@ -297,11 +381,11 @@ export const createSound = () => {
                 if (golden && (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill'))) return;
                 const cue = head ? 'head' : 'kill';
                 if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
-                tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
-                tone(audio, master!, 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
-                tone(audio, master!, 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
-                hiss(audio, master!, now, 0.12, 0.3, 6000, 2000, 0.7);
-            }),
+                tone(audio, bus(), 'sine', 120, 40, now, 0.5, 0.7);
+                tone(audio, bus(), 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
+                tone(audio, bus(), 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
+                hiss(audio, bus(), now, 0.12, 0.3, 6000, 2000, 0.7);
+            }, 'confirmation'),
         /** The golden disc appears (or is dropped): a shimmering rising chime. */
         goldChime: (at?: V3) =>
             play((audio, now) => {
@@ -310,28 +394,28 @@ export const createSound = () => {
                     tone(audio, out, 'triangle', f, f, now + i * 0.07, 0.6, 0.12)
                 );
                 hiss(audio, out, now, 0.9, 0.06, 5000, 9000, 3);
-            }),
+            }, 'confirmation'),
         /** You took the golden disc: a short brass-like fanfare over a shimmer. */
         goldTaken: () =>
             play((audio, now) => {
-                const out = master!;
+                const out = bus();
                 [523, 659, 784, 1046].forEach((f, i) => {
                     tone(audio, out, 'sawtooth', f, f, now + i * 0.09, 0.22, 0.09);
                     tone(audio, out, 'triangle', f * 2, f * 2, now + i * 0.09, 0.3, 0.06);
                 });
                 tone(audio, out, 'sawtooth', 1046, 1046, now + 0.36, 0.7, 0.1);
                 hiss(audio, out, now + 0.3, 1, 0.07, 6000, 10000, 3);
-            }),
+            }, 'confirmation'),
         /** Someone else took the golden disc: a low warning swell. */
         goldLost: () =>
             play((audio, now) => {
-                tone(audio, master!, 'sawtooth', 220, 165, now, 0.5, 0.12);
-                tone(audio, master!, 'sawtooth', 277, 207, now + 0.05, 0.5, 0.08);
-            }),
+                tone(audio, bus(), 'sawtooth', 220, 165, now, 0.5, 0.12);
+                tone(audio, bus(), 'sawtooth', 277, 207, now + 0.05, 0.5, 0.08);
+            }, 'confirmation'),
         /** Golden disc inspect: a rising shimmer while it spins, then the bright catch. */
         goldInspect: (seconds: number, tossAt: number, catchAt: number) =>
             play((audio, now) => {
-                const out = master!;
+                const out = bus();
                 tone(audio, out, 'sine', 440, 1760, now + 0.1 * seconds, 0.28 * seconds, 0.07);
                 hiss(audio, out, now + 0.1 * seconds, 0.28 * seconds, 0.06, 3000, 12000, 4);
                 hiss(audio, out, now + tossAt * seconds - 0.05, 0.25, 0.18, 1200, 5000, 1.6);
@@ -343,36 +427,36 @@ export const createSound = () => {
         /** Lights out: a heavy power-down thud and a falling hum. */
         blackout: () =>
             play((audio, now) => {
-                tone(audio, master!, 'sine', 90, 30, now, 1.4, 0.8);
-                tone(audio, master!, 'sawtooth', 120, 40, now, 1.6, 0.12);
-                hiss(audio, master!, now, 0.3, 0.2, 2000, 300, 1);
-            }),
+                tone(audio, bus(), 'sine', 90, 30, now, 1.4, 0.8);
+                tone(audio, bus(), 'sawtooth', 120, 40, now, 1.6, 0.12);
+                hiss(audio, bus(), now, 0.3, 0.2, 2000, 300, 1);
+            }, 'environment'),
         /** 纪老师's whistle: two sharp blasts. */
         whistle: () =>
             play((audio, now) => {
                 for (const start of [0, 0.32]) {
-                    tone(audio, master!, 'square', 2900, 2850, now + start, 0.24, 0.09);
-                    tone(audio, master!, 'sine', 3100, 3050, now + start, 0.24, 0.06);
-                    hiss(audio, master!, now + start, 0.24, 0.05, 3000, 3200, 8);
+                    tone(audio, bus(), 'square', 2900, 2850, now + start, 0.24, 0.09);
+                    tone(audio, bus(), 'sine', 3100, 3050, now + start, 0.24, 0.06);
+                    hiss(audio, bus(), now + start, 0.24, 0.05, 3000, 3200, 8);
                 }
-            }),
+            }, 'environment'),
         /** Round over: a triumphant chord if you won, a falling one otherwise. */
         roundEnd: (won: boolean) =>
             play((audio, now) => {
                 const notes = won ? [523, 659, 784, 1046, 1318] : [392, 349, 311, 262];
-                notes.forEach((f, i) => tone(audio, master!, 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
-            }),
+                notes.forEach((f, i) => tone(audio, bus(), 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
+            }, 'confirmation'),
         /** A new round starts. */
         roundStart: () =>
             play((audio, now) => {
-                [0, 0.5, 1].forEach((t) => tone(audio, master!, 'square', 880, 880, now + t, 0.12, 0.06));
-                tone(audio, master!, 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
-            }),
+                [0, 0.5, 1].forEach((t) => tone(audio, bus(), 'square', 880, 880, now + t, 0.12, 0.06));
+                tone(audio, bus(), 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
+            }, 'confirmation'),
         /** Picked a disc up: a quick bright double click. */
         pickup: () =>
             play((audio, now) => {
-                tone(audio, master!, 'triangle', 880, 1320, now, 0.08, 0.12);
-                tone(audio, master!, 'triangle', 1320, 1760, now + 0.07, 0.1, 0.1);
+                tone(audio, bus(), 'triangle', 880, 1320, now, 0.08, 0.12);
+                tone(audio, bus(), 'triangle', 1320, 1760, now + 0.07, 0.1, 0.1);
             }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
@@ -381,6 +465,14 @@ export const createSound = () => {
                 const out = output(audio, at);
                 hiss(audio, out, now, 0.32, 0.5, 900, 2600, 1.6);
                 tone(audio, out, 'triangle', 240, 140, now, 0.08, 0.12);
+            }),
+        /** One short spatial fly-by cue per remote disc, so nearby trajectories are readable without looping noise. */
+        flyby: (at: V3, speed: number) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                const intensity = Math.max(0.1, Math.min(0.24, (speed - 6) * 0.012));
+                hiss(audio, out, now, 0.16, intensity, 1800, 5200, 1.4);
+                tone(audio, out, 'sine', 520, 260, now, 0.11, intensity * 0.45);
             }),
         /** Disc striking a wall or floor. */
         bounce: (at: V3, strength: number) =>
@@ -394,25 +486,25 @@ export const createSound = () => {
             play((audio, now) => {
                 const cue = head ? 'head' : eliminated ? 'kill' : 'hit';
                 if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
-                tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
-                tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
+                tone(audio, bus(), 'sine', 1320, 1250, now, 0.09, 0.32);
+                tone(audio, bus(), 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
                 // Head hits ring higher and longer.
-                if (head) tone(audio, master!, 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
+                if (head) tone(audio, bus(), 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
                 if (eliminated && !playClip(audio, 'legacy-kill', 1.1)) {
-                    tone(audio, master!, 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
-                    tone(audio, master!, 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
+                    tone(audio, bus(), 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
+                    tone(audio, bus(), 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
                 }
-            }),
+            }, 'confirmation'),
         /** You were hit: a thud with a low buzz; the "defeat" clip when it eliminates you. */
         hurt: (eliminated: boolean) =>
             play((audio, now) => {
-                tone(audio, master!, 'sine', 160, 55, now, 0.28, 0.75);
-                hiss(audio, master!, now, 0.18, 0.4, 600, 200, 0.8);
+                tone(audio, bus(), 'sine', 160, 55, now, 0.28, 0.75);
+                hiss(audio, bus(), now, 0.18, 0.4, 600, 200, 0.8);
                 if (eliminated) {
                     defeatVoice = playClip(audio, 'defeat', 0.9);
-                    if (!defeatVoice) tone(audio, master!, 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
+                    if (!defeatVoice) tone(audio, bus(), 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
                 }
-            }),
+            }, 'confirmation'),
         /** Fades out the defeat clip (on respawn). */
         endDefeat: () => {
             if (!ctx || !defeatVoice) return;
@@ -430,18 +522,18 @@ export const createSound = () => {
         /** Elimination announcement for other players' eliminations. */
         announce: () =>
             play((audio, now) => {
-                tone(audio, master!, 'triangle', 520, 520, now, 0.12, 0.12);
-                tone(audio, master!, 'triangle', 390, 390, now + 0.12, 0.18, 0.12);
-            }),
+                tone(audio, bus(), 'triangle', 520, 520, now, 0.12, 0.12);
+                tone(audio, bus(), 'triangle', 390, 390, now + 0.12, 0.18, 0.12);
+            }, 'confirmation'),
         respawn: () =>
             play((audio, now) => {
                 for (const [k, f] of [523, 659, 784].entries())
-                    tone(audio, master!, 'sine', f, f, now + k * 0.07, 0.2, 0.18);
-            }),
+                    tone(audio, bus(), 'sine', f, f, now + k * 0.07, 0.2, 0.18);
+            }, 'ui'),
         join: () =>
             play((audio, now) => {
-                tone(audio, master!, 'sine', 880, 880, now, 0.08, 0.06);
-            })
+                tone(audio, bus(), 'sine', 880, 880, now, 0.08, 0.06);
+            }, 'ui')
     };
 };
 

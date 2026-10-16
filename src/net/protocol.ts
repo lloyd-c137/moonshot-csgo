@@ -12,7 +12,7 @@ import type { Execution } from '../gameplay/execution.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -192,6 +192,8 @@ export type ServerMessage =
     | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
     | {
           type: 'struck';
+          /** Originating disc for hit acknowledgements; absent for non-disc eliminations. */
+          throwId?: number;
           target: string;
           by: string;
           hp: number;
@@ -207,6 +209,7 @@ export type ServerMessage =
           at: Vec3Tuple;
           scores: Scores;
       }
+    | { type: 'hitRejected'; throwId: number }
     | { type: 'chat'; line: ChatLine }
     | { type: 'king'; king: King; isNew: boolean }
     | { type: 'account'; account: AccountStats }

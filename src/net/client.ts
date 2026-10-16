@@ -44,6 +44,7 @@ type Handlers = {
     /** `ageMs`: how long ago (server clock) the throw happened, for latency compensation. */
     thrown: (from: string, record: ThrowRecord, ageMs: number) => void;
     struck: (
+        throwId: number | undefined,
         target: string,
         by: string,
         hp: number,
@@ -56,6 +57,7 @@ type Handlers = {
         final: boolean,
         execution: boolean
     ) => void;
+    hitRejected: (throwId: number) => void;
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
     account: (account: AccountStats) => void;
@@ -155,6 +157,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'struck':
                 if (message.out) history.delete(message.target);
                 handlers.struck(
+                    message.throwId,
                     message.target,
                     message.by,
                     message.hp,
@@ -167,6 +170,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.final === true,
                     message.execution === true
                 );
+                break;
+            case 'hitRejected':
+                handlers.hitRejected(message.throwId);
                 break;
             case 'chat':
                 handlers.chat(message.line);

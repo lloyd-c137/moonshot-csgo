@@ -1107,6 +1107,28 @@ legend {
     accent-color: var(--signal);
 }
 
+.slider select {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgb(15 24 34 / 0.72);
+    color: var(--paper);
+    font: inherit;
+}
+
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--step-0);
+}
+
+.check-row input {
+    accent-color: var(--signal);
+}
+
 /* ---------- full map ---------- */
 
 .full-map {
@@ -1355,6 +1377,26 @@ legend {
     color: var(--alert);
 }
 
+.hitmarker[data-kind='predicted'] {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: currentcolor;
+    color: rgb(238 242 244 / 0.72);
+    mask: none;
+    opacity: 0.72;
+    animation: predicted-hit 0.16s ease-out;
+}
+
+@keyframes predicted-hit {
+    from {
+        scale: 0.65;
+    }
+    to {
+        scale: 1;
+    }
+}
+
 .hitmarker.show {
     animation: hitmarker 0.35s ease-out;
 }
@@ -1382,6 +1424,16 @@ legend {
 
 .damage.show {
     animation: damage 0.6s ease-out;
+}
+
+#app-ui[data-reduced-flashes='true'] .damage.show {
+    animation: none;
+    opacity: 0.62;
+}
+
+#app-ui[data-reduced-flashes='true'] .damage-dir.show {
+    animation: none;
+    opacity: 0.52;
 }
 
 @keyframes damage {

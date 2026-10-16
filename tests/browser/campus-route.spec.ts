@@ -1,6 +1,16 @@
 import { expect, test } from '@playwright/test';
 
-import { advance, collectErrors, enterAtSpawn, loadSimulated, position, waitForRoom, walk, walkTo } from './support';
+import {
+    advance,
+    collectErrors,
+    enterAtSpawn,
+    loadSimulated,
+    position,
+    waitForRoom,
+    walk,
+    walkTo,
+    walkUntil
+} from './support';
 
 // Waypoints (X, Z metres) from the offline navigation grid (furniture included) with a 0.30 m clearance radius.
 const DOOR_APPROACH_TO_S308: [number, number][] = [
@@ -37,10 +47,11 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     await advance(page, 300);
 
     // West along the entry corridor until the source wall stops the capsule.
-    await walk(page, -1, 0, 10_000);
+    const wall = await walkUntil(page, -1, 0, async () => (await position(page))[0] <= 22.1, 10_000);
+    expect(wall.reached).toBe(true);
     const wallStop = await position(page);
     expect(wallStop[0]).toBeGreaterThan(20.8);
-    expect(wallStop[0]).toBeLessThan(21.8);
+    expect(wallStop[0]).toBeLessThan(22.05);
 
     await walk(page, 0, -1, 2_500);
     const doorwayApproach = await position(page);

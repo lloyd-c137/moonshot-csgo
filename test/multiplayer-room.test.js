@@ -337,7 +337,8 @@ test('discs are ammunition: throws spend them, landed discs are picked up, the P
     inbox.set('a', []);
     room.connect('a');
     room.message('a', { type: 'hello', version: PROTOCOL_VERSION, name: 'A' }, 0);
-    assert.equal(inbox.get('a')[0].ammo, AMMO.start);
+    assert.equal(inbox.get('a')[0].ammo, AMMO.max, 'a full load on joining');
+    room.players.get('a').ammo = 1; // down to the last disc
     const pose = (x, at) => room.message('a', { type: 'pose', pose: { p: [x, 0.92, 0], yaw: 0, pitch: 0 } }, at);
     pose(0, 100);
     const thrown = () => [...room.players.get('a').throws.keys()];

@@ -31,6 +31,12 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await expect(page.locator('#location')).toHaveAttribute('data-new', 'true');
     await expect(page.locator('#toast')).toContainText('南入口门厅');
 
+    // F inspects the disc in hand; it plays out and returns to the ready pose.
+    await page.keyboard.press('f');
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.state().inspecting)).toBe(true);
+    await advance(page, 2600);
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.state().inspecting)).toBe(false);
+
     await page.keyboard.press('m');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'open');
     await page.keyboard.press('m');

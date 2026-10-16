@@ -174,6 +174,17 @@ export const createSound = () => {
                 l.upZ.value = 0;
             }
         },
+        /** Weapon inspect: a soft lift, a flick for the twirl, a catch and the flip. */
+        inspect: () =>
+            play((audio, now) => {
+                const out = master!;
+                hiss(audio, out, now, 0.22, 0.12, 500, 1400, 1.4);
+                tone(audio, out, 'triangle', 1800, 1500, now + 0.42, 0.04, 0.05);
+                hiss(audio, out, now + 0.45, 0.5, 0.1, 1600, 4200, 3);
+                tone(audio, out, 'square', 420, 300, now + 1.12, 0.04, 0.035);
+                hiss(audio, out, now + 1.2, 0.3, 0.09, 900, 2200, 1.8);
+                tone(audio, out, 'square', 380, 260, now + 2.05, 0.05, 0.04);
+            }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {

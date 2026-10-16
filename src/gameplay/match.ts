@@ -19,6 +19,7 @@ import { createDiscs } from './discs';
 import { createEffects } from './effects';
 import type { V3 } from './frisbee';
 import { chargeSpeed, launchNormal, THROW } from './frisbee';
+import { INSPECT_SECONDS, inspectPose } from './inspect';
 import { createSound } from './sound';
 
 type Options = {
@@ -40,6 +41,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let alive = true;
     let deadUntil = 0;
     let chargingSince: number | null = null;
+    /** When the current weapon inspect started (performance.now ms), or null. */
+    let inspectSince: number | null = null;
+    /** Debug only: holds the inspect at a fixed progress (0–1) for screenshots. */
+    let inspectHold: number | null = null;
     let lastThrowAt = -Infinity;
     let throwCounter = 0;
     let started = false;
@@ -361,6 +366,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     window.addEventListener('mousedown', (event) => {
         if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
         chargingSince = performance.now();
+        inspectSince = null; // attacking cancels an inspect
     });
     window.addEventListener('mouseup', (event) => {
         if (event.button !== 0 || chargingSince === null) return;
@@ -369,6 +375,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         ui.charge(null);
         if (locked()) throwDisc(chargeSpeed(held));
     });
+    const startInspect = () => {
+        if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
+        const now = performance.now();
+        if ((now - lastThrowAt) / 1000 <= THROW_COOLDOWN) return false; // disc not back in hand yet
+        inspectSince = now;
+        sound.inspect();
+        return true;
+    };
     const showBoard = (show: boolean) => {
         if (!show) return ui.scoreboard(null);
         const me = selfId();
@@ -382,6 +396,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             event.preventDefault();
             showBoard(true);
         }
+        // F: inspect the disc in hand (only when it is in hand and not winding up).
+        if (event.code === 'KeyF' && !event.repeat && locked()) startInspect();
     });
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
@@ -404,6 +420,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         const ready = Math.min(1, Math.max(0, (sinceThrow - THROW_COOLDOWN * 0.5) / (THROW_COOLDOWN * 0.5)));
         const charge = chargingSince === null ? 0 : Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds);
         viewmodel.enabled = started && alive;
+        if (!alive) inspectSince = null;
+        if (inspectSince !== null || inspectHold !== null) {
+            const u = inspectHold ?? (now - inspectSince!) / 1000 / INSPECT_SECONDS;
+            if (u >= 1) inspectSince = null;
+            else {
+                const [p, e] = inspectPose(u);
+                viewmodel.setLocalPosition(p[0], p[1], p[2]);
+                viewmodel.setLocalEulerAngles(e[0], e[1], e[2]);
+                return;
+            }
+        }
         const bob = Math.sin(now / 260) * 0.004;
         viewmodel.setLocalPosition(
             0.3 + charge * 0.09,
@@ -497,8 +524,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 players: [...roster.values()].map((entry) => ({ ...entry })),
                 discs: discs.count,
                 throws,
-                hitsClaimed
+                hitsClaimed,
+                inspecting: inspectSince !== null
             }),
+            inspect: startInspect,
+            holdInspect: (u: number | null) => (inspectHold = u),
             chat: (text: string) => net.chat(text),
             throwAt: (x: number, y: number, z: number, speed: number = THROW.maxSpeed) => {
                 const eye = camera.getPosition();

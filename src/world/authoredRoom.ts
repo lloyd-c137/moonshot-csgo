@@ -37,6 +37,10 @@ const material = (name: string, spec: MaterialSpec) => {
         m.depthWrite = false;
         m.cull = CULLFACE_NONE;
     }
+    if (spec.decal) {
+        m.depthBias = -2;
+        m.slopeDepthBias = -2;
+    }
     m.update();
     return m;
 };

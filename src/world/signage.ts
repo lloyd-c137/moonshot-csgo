@@ -173,6 +173,9 @@ const material = (
     m.diffuse = new Color(...colour);
     if (map) m.diffuseMap = map;
     m.cull = cull;
+    // Plaques sit millimetres off the wall.
+    m.depthBias = -1;
+    m.slopeDepthBias = -1;
     m.update();
     return m;
 };

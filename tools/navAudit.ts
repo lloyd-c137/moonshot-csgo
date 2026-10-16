@@ -10,6 +10,7 @@ import { campusBarrierWalls, horizontalTrianglesAt } from '../src/physics/bounda
 import type { Doorway } from '../src/world/doorways.ts';
 import { doorwayContains } from '../src/world/doorways.ts';
 import { parseCampusRooms, pointInRoom } from '../src/world/roomIndex.ts';
+import { authoredRoomScenes } from '../src/world/rooms/index.ts';
 
 import { GlbScene } from './glb.ts';
 
@@ -178,7 +179,16 @@ export const loadCampusGeometry = () => {
         glazing,
         stands: [scene.triangles('Arena_StandBase'), ...SEAT_NODES.map((name) => scene.triangles(name))].flat(),
         topSeats: scene.triangles('Arena_Seats_Row07'),
-        furniture: furnitureFootprints(derived.furniture),
+        furniture: furnitureFootprints([
+            ...derived.furniture,
+            // Authored room interiors collide through their own footprint boxes.
+            ...authoredRoomScenes().flatMap((scene) =>
+                scene.colliders.map(
+                    ({ x, z, w, d, h, yaw }) =>
+                        ({ center: [x, z], size: [w, d], yaw, height: h, collide: true }) as FurnitureBox
+                )
+            )
+        ]),
         doorways: derived.doorways ?? [],
         wallTops,
         barrierWalls

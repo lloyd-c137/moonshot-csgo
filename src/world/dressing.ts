@@ -40,14 +40,18 @@ export type DerivedWorld = {
     }[];
     partitions: [Vec2Tuple, Vec2Tuple][];
     lights: [number, number, number, number][];
+    signs: { room: string; blade: SignMount; plaque: SignMount }[];
 };
+
+/** A point on the outside wall face; `yaw` turns local +X to the outward wall normal. */
+export type SignMount = { x: number; z: number; yaw: number };
 
 export const parseDerivedWorld = (value: unknown): DerivedWorld => {
     const world = value as DerivedWorld;
     if (!world || world.schema !== 1 || world.status !== 'GAMEPLAY_AUTHORED') {
         throw new Error('Derived world data has an unexpected schema; run npm run derive:world');
     }
-    for (const key of ['doors', 'doorways', 'furniture', 'partitions', 'lights'] as const) {
+    for (const key of ['doors', 'doorways', 'furniture', 'partitions', 'lights', 'signs'] as const) {
         if (!Array.isArray(world[key])) throw new Error(`Derived world data is missing ${key}`);
     }
     if (!Array.isArray(world.arena?.outline) || world.arena.outline.length < 3) {
@@ -159,7 +163,8 @@ export const buildDressing = (
     campus: Entity,
     world: DerivedWorld,
     rooms: CampusRoom[],
-    ceilingMask: Texture
+    ceilingMask: Texture,
+    authoredRooms: readonly string[] = []
 ) => {
     const device = app.graphicsDevice;
     const root = new Entity('GameplayAuthored_Dressing');
@@ -201,7 +206,8 @@ export const buildDressing = (
     for (const child of roomsNode.children as Entity[]) {
         const id = child.name.replace(/^(Room|Space)_/, '');
         const kind = kindOf.get(id) ?? 'room';
-        if (!child.render) continue;
+        // Authored interiors lay their own floor.
+        if (!child.render || authoredRooms.includes(id)) continue;
         const top = worldTriangles(child).filter((triangle) => isHorizontalAt(triangle, 0.02));
         if (!byKind.has(kind)) byKind.set(kind, new MeshBuilder());
         addHorizontal(byKind.get(kind)!, top, 0.02, false);

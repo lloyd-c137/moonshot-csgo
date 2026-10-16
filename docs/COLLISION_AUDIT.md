@@ -32,6 +32,7 @@ Barriers are a game boundary decision, not modelled doors or glass. Entrances re
 - The source `Walls`, `Walls_Top` and `Glazing` entities are scaled vertically by 3.6 / 2.8 before colliders are built (`src/world/presentation.ts`). Ammo logs that its build lacks `btScaledBvhTriangleMeshShape`; browser raycasts nevertheless hit `Walls` at 3.3 m and not at 3.75 m, so the scale is applied at collider creation. Rescaling at runtime is not supported and is not done.
 - `GameplayAuthored_ArenaWallCollider`: the 10 m arena perimeter wall along the derived arena outline (from 3.55 m), static mesh. Raycast at 8 m hits it.
 - `GameplayAuthored_FurnitureColliders`: tables and counters (≥0.7 m) from the derived furniture, static mesh. Seats, door leaves, lintels and partitions are visual only. With furniture rasterised into the static audit, reachable floor drops from 10,464 m² to 10,383 m² and the reachable room set is unchanged. With the per-room layouts (classroom desks, lab benches, library shelves, office desks, meeting and dining tables; 828 colliding items in total) every room stays reachable; reachable floor is 9,332 m².
+- `GameplayAuthored_M104_Colliders`: footprints of the authored M104 interior (desks, bookcases, sofas, armchair, TV stand, plants, bin, open door leaves, folding-partition stack). Chairs, stools and beanbags are visual only. `test/authored-rooms.test.js` and `tests/browser/campus-m104.spec.ts` check that both north doors lead into their half of the room and that the furniture blocks the player.
 
 ## Player capsule
 

@@ -178,3 +178,22 @@ test('players cannot be hit during spawn protection, and snapshots carry server 
     const thrown = inbox.get('b').find((message) => message.type === 'thrown');
     assert.equal(thrown.t, 10_200);
 });
+
+test('pose stamps follow the sender clock, not network jitter', async () => {
+    const { stampPose } = await import('../server/room.ts');
+    const player = { clockSamples: [], clockOffset: null, poseAt: 0 };
+    const stamps = [];
+    // Sent every 50 ms by the sender's clock; arrivals jitter by up to 40 ms on top of a 1000 ms clock gap.
+    const jitter = [0, 35, 5, 40, 12, 0, 28, 3, 39, 0, 20, 1];
+    for (let i = 0; i < jitter.length; i++) {
+        const ct = 5000 + i * 50;
+        const arrival = 6000 + i * 50 + jitter[i];
+        stamps.push(stampPose(player, ct, arrival));
+        player.poseAt = stamps[stamps.length - 1];
+    }
+    const gaps = stamps.slice(1).map((t, i) => t - stamps[i]);
+    for (const gap of gaps) assert.ok(gap > 45 && gap < 55, `even spacing (${gaps.join(',')})`);
+    // Never in the future of the arrival; a missing sender clock falls back to arrival time.
+    assert.ok(stamps.every((t, i) => t <= 6000 + i * 50 + jitter[i]));
+    assert.equal(stampPose({ clockSamples: [], clockOffset: null, poseAt: 0 }, undefined, 777), 777);
+});

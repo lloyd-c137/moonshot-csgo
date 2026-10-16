@@ -9,7 +9,16 @@ import { box, cylinder, merge, place, sphere } from '../render/shapes';
 
 import { hueColour } from './discs';
 
-type Avatar = { root: EntityType; tag: HTMLElement; name: string; visible: boolean; checkedAt: number };
+type Avatar = {
+    root: EntityType;
+    tag: HTMLElement;
+    name: string;
+    visible: boolean;
+    checkedAt: number;
+    /** Last written name-tag styles. */
+    transform: string;
+    opacity: string;
+};
 
 const meshOf = (app: AppBase, shape: Shape) => {
     const mesh = new Mesh(app.graphicsDevice);
@@ -84,7 +93,7 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
-        avatars.set(id, { root, tag, name, visible: false, checkedAt: 0 });
+        avatars.set(id, { root, tag, name, visible: false, checkedAt: 0, transform: '', opacity: '' });
     };
 
     const remove = (id: string) => {
@@ -119,10 +128,20 @@ export const createAvatars = (app: AppBase, camera: EntityType, layer: HTMLEleme
             }
             cameraComponent.worldToScreen(head, screen);
             const inFront = screen.z > 0;
-            avatar.tag.hidden = !avatar.visible || !inFront;
-            if (!avatar.tag.hidden) {
-                avatar.tag.style.transform = `translate(-50%, -100%) translate(${screen.x}px, ${screen.y}px)`;
-                avatar.tag.style.opacity = String(Math.max(0.35, 1 - distance / 50));
+            const hidden = !avatar.visible || !inFront;
+            if (avatar.tag.hidden !== hidden) avatar.tag.hidden = hidden;
+            if (!hidden) {
+                // Whole pixels and two-decimal opacity: unchanged values skip the style write (and its restyle).
+                const transform = `translate(-50%, -100%) translate(${Math.round(screen.x)}px, ${Math.round(screen.y)}px)`;
+                if (transform !== avatar.transform) {
+                    avatar.transform = transform;
+                    avatar.tag.style.transform = transform;
+                }
+                const opacity = Math.max(0.35, 1 - distance / 50).toFixed(2);
+                if (opacity !== avatar.opacity) {
+                    avatar.opacity = opacity;
+                    avatar.tag.style.opacity = opacity;
+                }
             }
         }
     };

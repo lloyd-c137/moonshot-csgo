@@ -202,9 +202,11 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         /** Sends the local pose at most POSE_HZ times a second. */
         pose(pose: PlayerPose, force = false) {
             const now = performance.now();
-            if (!force && now - lastPoseAt < 1000 / POSE_HZ) return;
-            lastPoseAt = now;
-            send({ type: 'pose', pose });
+            const interval = 1000 / POSE_HZ;
+            if (!force && now - lastPoseAt < interval) return;
+            // Keep an even cadence (frames rarely land exactly on the interval) without bursting after a stall.
+            lastPoseAt = now - lastPoseAt < interval * 2 ? lastPoseAt + interval : now;
+            send({ type: 'pose', pose, ct: Math.round(now) });
         },
         respawned(pose: PlayerPose) {
             send({ type: 'respawned', pose });

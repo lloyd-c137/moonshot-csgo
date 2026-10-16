@@ -2,6 +2,8 @@ import type { MatchDebug } from '../gameplay/match';
 
 // Development-only hooks used by the browser tests (installed when import.meta.env.DEV). Not in production builds.
 export type DebugHooks = {
+    /** Shader programs linked so far and total compile time (ms): a rise mid-game is a hitch. */
+    perf: () => { shadersLinked: number; compileMs: number; shaders: string[] };
     position: () => number[];
     cameraAngles: () => number[];
     recover: () => void;

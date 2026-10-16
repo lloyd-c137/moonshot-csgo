@@ -47,6 +47,9 @@ type Player = Omit<PlayerSummary, 'account'> & {
     /** Registered username when signed in; lifetime stats are recorded under it. */
     accountName: string | null;
     chatTimes: number[];
+    /** Recent (arrival − sender clock) samples and the smoothed offset that maps the sender's clock to room time. */
+    clockSamples: number[];
+    clockOffset: number | null;
     throws: Map<number, { record: ThrowRecord; at: number; scored: boolean }>;
 };
 
@@ -109,7 +112,7 @@ export class Room {
                     player.spawnedAt = now;
                 }
                 player.pose = message.pose;
-                player.poseAt = now;
+                player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 return;
             case 'throw':
                 return this.throw(player, message.throw, now);
@@ -198,6 +201,8 @@ export class Room {
             spawnedAt: now,
             accountName: account?.name ?? null,
             chatTimes: [],
+            clockSamples: [],
+            clockOffset: null,
             throws: new Map()
         };
         this.players.set(id, player);
@@ -321,6 +326,31 @@ export class Room {
         return this.spawnCursor;
     }
 }
+
+/**
+ * Room time for a pose sampled at the sender's clock `ct`. Arrival times jitter with the network, which made other
+ * players' motion uneven; the sender's own clock is even. The offset is the smallest recent (arrival − ct), i.e.
+ * the fastest delivery, eased so it never jumps; stamps stay increasing and never in the future.
+ */
+export const stampPose = (
+    player: { clockSamples: number[]; clockOffset: number | null; poseAt: number },
+    ct: number | undefined,
+    now: number
+) => {
+    if (ct === undefined || !Number.isFinite(ct)) return now;
+    player.clockSamples.push(now - ct);
+    if (player.clockSamples.length > 60) player.clockSamples.shift();
+    const best = Math.min(...player.clockSamples);
+    player.clockOffset = player.clockOffset === null ? best : player.clockOffset + (best - player.clockOffset) * 0.05;
+    let stamp = Math.min(now, ct + player.clockOffset);
+    // A stamp far behind arrival means the sender's clock jumped (tab sleep): start over from arrival time.
+    if (now - stamp > 1000) {
+        player.clockSamples.length = 0;
+        player.clockOffset = null;
+        stamp = now;
+    }
+    return Math.max(stamp, player.poseAt + 1);
+};
 
 const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const inBounds = ({ p: [x, y, z] }: PlayerPose) =>

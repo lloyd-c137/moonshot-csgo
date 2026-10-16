@@ -203,6 +203,27 @@ const describe = (location: CampusRoom | undefined) => {
     };
 };
 
+/**
+ * Restarts an element's CSS animation without forcing a synchronous layout (reading offsetWidth mid-frame stalls
+ * the game loop): running animations are rewound; otherwise the class is re-added on the next frame.
+ */
+const replay = (element: HTMLElement, className: string) => {
+    if (element.classList.contains(className)) {
+        const running = element.getAnimations();
+        if (running.length) {
+            for (const animation of running) {
+                animation.cancel();
+                animation.play();
+            }
+            return;
+        }
+        element.classList.remove(className);
+        requestAnimationFrame(() => element.classList.add(className));
+        return;
+    }
+    element.classList.add(className);
+};
+
 export const createUi = () => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -294,7 +315,8 @@ export const createUi = () => {
         item.append(who, document.createTextNode(line.text));
         chatLog.append(item);
         while (chatLog.children.length > 40) chatLog.firstElementChild!.remove();
-        chatLog.scrollTop = chatLog.scrollHeight;
+        // Scroll on the next frame so appending a line never forces a layout mid-frame.
+        requestAnimationFrame(() => (chatLog.scrollTop = chatLog.scrollHeight));
         // Fresh lines show briefly during play; the full log shows while typing.
         window.setTimeout(() => (item.dataset.old = 'true'), 9000);
     };
@@ -457,9 +479,7 @@ export const createUi = () => {
                 $('#king-line-name').textContent = king.name;
                 $('#king-line-kills').textContent = `${king.kills} 淘汰`;
                 if (isNew) {
-                    line.classList.remove('new');
-                    void line.offsetWidth;
-                    line.classList.add('new');
+                    replay(line, 'new');
                 }
             }
         },
@@ -504,9 +524,7 @@ export const createUi = () => {
             const popup = $('#popup');
             popup.textContent = text;
             popup.dataset.kind = kind;
-            popup.classList.remove('show');
-            void popup.offsetWidth;
-            popup.classList.add('show');
+            replay(popup, 'show');
         },
         /**
          * Offers a reload for a newer version. Shown as a dialog; during play (mouse captured) it waits on the
@@ -603,22 +621,16 @@ export const createUi = () => {
         hitMarker: (kind: 'hit' | 'head' | 'kill') => {
             const marker = $('#hitmarker');
             marker.dataset.kind = kind;
-            marker.classList.remove('show');
-            void marker.offsetWidth;
-            marker.classList.add('show');
+            replay(marker, 'show');
         },
         /** Red flash, plus an arc around the crosshair pointing toward the thrower (degrees, 0 = ahead, clockwise). */
         damage: (fromAngle: number | null = null) => {
             const damage = $('#damage');
-            damage.classList.remove('show');
-            void damage.offsetWidth;
-            damage.classList.add('show');
+            replay(damage, 'show');
             if (fromAngle === null) return;
             const arc = $('#damage-dir');
             arc.style.setProperty('--angle', `${fromAngle}deg`);
-            arc.classList.remove('show');
-            void arc.offsetWidth;
-            arc.classList.add('show');
+            replay(arc, 'show');
         },
         /** Elimination broadcast across the upper centre of the screen. */
         broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me', streak = 1) => {
@@ -636,9 +648,7 @@ export const createUi = () => {
                 banner.append(tag);
             }
             banner.hidden = false;
-            banner.classList.remove('show');
-            void banner.offsetWidth;
-            banner.classList.add('show');
+            replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
             broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
         },

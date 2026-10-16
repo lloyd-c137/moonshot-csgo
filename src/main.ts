@@ -118,6 +118,32 @@ const fetchJson = async (url: string, label: string) => {
     return response.json() as Promise<unknown>;
 };
 
+const createFpsMeter = () => {
+    const readout = document.createElement('div');
+    readout.style.cssText =
+        'position:fixed;left:8px;bottom:8px;z-index:50;padding:2px 8px;font:12px/1.6 ui-monospace,monospace;' +
+        'color:#eef2f4;background:rgb(15 24 34 / 0.7);pointer-events:none';
+    document.body.append(readout);
+    let frames = 0;
+    let elapsed = 0;
+    let worst = 0;
+    let last = performance.now();
+    // Measured with the wall clock: the engine clamps its own frame delta, which would hide long stalls.
+    return () => {
+        const now = performance.now();
+        const frame = (now - last) / 1000;
+        last = now;
+        frames++;
+        elapsed += frame;
+        worst = Math.max(worst, frame);
+        if (elapsed < 2) return;
+        readout.textContent = `${Math.round(frames / elapsed)} fps · 最慢一帧 ${Math.round(worst * 1000)} ms`;
+        frames = 0;
+        elapsed = 0;
+        worst = 0;
+    };
+};
+
 const boot = async () => {
     // Room data first: the location plate and room tracker need it.
     const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
@@ -249,7 +275,10 @@ const boot = async () => {
         });
     }
     window.addEventListener('blur', () => moveKeys.clear());
+    // ?fps=1: a small frame-time readout (average fps and the worst frame of the last two seconds), to diagnose hitches.
+    const fpsMeter = new URLSearchParams(window.location.search).get('fps') === '1' ? createFpsMeter() : null;
     app.on('update', (deltaTime: number) => {
+        fpsMeter?.();
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
@@ -387,6 +416,7 @@ const boot = async () => {
         true
     );
     rigidbodySystem.timeScale = 0;
+    await match.prewarm();
     shell.ready(
         {
             enter,
@@ -415,6 +445,17 @@ const boot = async () => {
 
     if (import.meta.env.DEV) {
         installDebugHooks({
+            perf: () => {
+                const stats = (
+                    app.graphicsDevice as unknown as { _shaderStats: { linked: number; compileTime: number } }
+                )._shaderStats;
+                const shaders = (app.graphicsDevice as unknown as { shaders: { name: string }[] }).shaders;
+                return {
+                    shadersLinked: stats.linked,
+                    compileMs: stats.compileTime,
+                    shaders: shaders.map((shader) => shader.name)
+                };
+            },
             position: () => player.getPosition().toArray(),
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover: () => recoverPlayer(player),

@@ -506,7 +506,43 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     };
 
     const targets = new Map<string, V3>();
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return {
+        /**
+         * Draws every gameplay visual once while the title screen still covers the canvas — thrown disc and its
+         * physics body, in-hand disc with stripe, inspect afterimages, hit sparks and ring, another player — so their
+         * shaders are compiled before play instead of on the first hit, inspect or opponent (a visible hitch).
+         */
+        async prewarm() {
+            const eye = camera.getPosition().clone();
+            const ahead = camera.forward.clone().mulScalar(1.6).add(eye);
+            const at: V3 = [ahead.x, ahead.y, ahead.z];
+            tintGhosts(colourFor('local'));
+            viewmodel.enabled = true;
+            ghosts.forEach((ghost, index) => {
+                ghost.entity.enabled = true;
+                ghost.entity.setLocalPosition(-0.25 + index * 0.25, 0, -1.2);
+            });
+            effects.burst(at, colourFor('local'), 'out');
+            effects.burst(at, colourFor('local'), 'head');
+            avatars.add('prewarm', '', colourFor('local'));
+            avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0 }]]), 0);
+            discs.launch({
+                owner: 'warm-up',
+                throwId: 0,
+                hue: colourFor('local'),
+                origin: at,
+                velocity: [0, 0, 0],
+                normal: [0, 1, 0],
+                local: false
+            });
+            for (let frame = 0; frame < 3; frame++) await nextFrame();
+            viewmodel.enabled = false;
+            for (const ghost of ghosts) ghost.entity.enabled = false;
+            avatars.remove('prewarm');
+            discs.clear();
+            effects.clear();
+        },
         /** Joins the shared world (first entry only). */
         start(name: string) {
             if (started) return;
@@ -514,18 +550,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             nickname = name;
             sound.unlock();
             viewmodel.enabled = true;
-            // Warm-up: create (and soon remove) one disc body so the first real throw does not pay for the physics
-            // shape and contact set-up; the in-hand disc already compiles the disc material's shader.
-            const eye = camera.getPosition();
-            discs.launch({
-                owner: 'warm-up',
-                throwId: 0,
-                hue: colourFor('local'),
-                origin: [eye.x, -2, eye.z],
-                velocity: [0, 0, 0],
-                normal: [0, 1, 0],
-                local: false
-            });
             refreshBoard();
             net.connect(name, auth.token);
             refreshCount();

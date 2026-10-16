@@ -85,7 +85,8 @@ export type ThrowRecord = {
 export type ClientMessage =
     | { type: 'hello'; version: number; name: string; token?: string }
     | { type: 'chat'; text: string }
-    | { type: 'pose'; pose: PlayerPose }
+    /** `ct`: the sender's own clock (ms) when the pose was sampled, so the room can stamp it without network jitter. */
+    | { type: 'pose'; pose: PlayerPose; ct?: number }
     | { type: 'throw'; throw: ThrowRecord }
     | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
     | { type: 'respawned'; pose: PlayerPose };
@@ -170,6 +171,9 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'chat':
             return typeof value.text === 'string' ? (value as ClientMessage) : null;
         case 'pose':
+            return isPose(value.pose) && (value.ct === undefined || isNumber(value.ct))
+                ? (value as ClientMessage)
+                : null;
         case 'respawned':
             return isPose(value.pose) ? (value as ClientMessage) : null;
         case 'throw': {

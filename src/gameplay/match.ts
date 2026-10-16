@@ -118,6 +118,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let lastGoldMine = false;
     const guard = createGuard(app, camera, ui.nameTagLayer());
     let teacherGraceUntil = 0;
+    let goldThrowCount = 0;
+    let goldCooldownUntil = 0;
     let dark = false;
     let spottedSent = false;
     /** Out for the rest of the round (after the lights went out): watching someone else. */
@@ -636,6 +638,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     const throwDisc = (speed: number, sniper = false) => {
         const now = performance.now();
         if (!alive || now - lastThrowAt < THROW_COOLDOWN * 1000) return false;
+        // The golden disc: a short cooldown after every burst of throws.
+        if (holdingGold()) {
+            if (now < goldCooldownUntil) {
+                ui.popup(`金飞盘冷却中 ${((goldCooldownUntil - now) / 1000).toFixed(1)} 秒`, 'hit');
+                return false;
+            }
+            goldThrowCount++;
+            if (goldThrowCount % ROUND.goldBurst === 0) {
+                goldCooldownUntil = now + ROUND.goldCooldown * 1000;
+                ui.feed(`金飞盘已连投 ${ROUND.goldBurst} 次 · 冷却 ${ROUND.goldCooldown} 秒`, 'me');
+            }
+        }
         if (!hasDisc()) {
             ui.notify('没有飞盘了：去捡回扔出去的飞盘，或到体育组办公室领取');
             return false;
@@ -781,6 +795,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         }
         // F: inspect the disc in hand (only when it is in hand and not winding up).
         if (event.code === 'KeyF' && !event.repeat && locked()) startInspect();
+        // Q while charging (or aiming): put the throw away.
+        if (event.code === 'KeyQ' && chargingSince !== null) {
+            cancelCharge();
+            ui.popup('已取消投掷', 'hit');
+        }
     });
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
@@ -808,7 +827,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         if (script) {
             script.lookSens = viewSens * sensitivityFactor(viewFov, aim);
             if (walkSpeed === null) walkSpeed = script.speedGround ?? 40;
-            script.speedGround = walkSpeed * (1 - (1 - SCOPE.moveScale) * aim);
+            // Aiming slows you down; so does carrying the golden disc.
+            script.speedGround =
+                walkSpeed * (1 - (1 - SCOPE.moveScale) * aim) * (holdingGold() ? ROUND.goldSpeedFactor : 1);
         }
         ui.scope(aim, ready);
         shake = Math.max(0, shake - deltaTime * 0.35);

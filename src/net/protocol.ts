@@ -55,7 +55,12 @@ export const ROUND = {
      */
     blackoutSecondsLeft: 240,
     /** Chance that a golden-disc throw leaves an ordinary disc where it comes down. */
-    goldDropChance: 0.35
+    goldDropChance: 0.35,
+    /** The golden disc's holder moves this much slower… */
+    goldSpeedFactor: 0.7,
+    /** …and after every `goldBurst` throws must wait `goldCooldown` seconds. */
+    goldBurst: 5,
+    goldCooldown: 3
 } as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).

@@ -159,6 +159,11 @@ export class Room {
             return this.out.close(id);
         }
         const account = this.accounts?.resolve(token, now) ?? null;
+        // With accounts enabled every player must be signed in (there is no guest entry).
+        if (this.accounts && !account) {
+            this.out.to(id, { type: 'rejected', reason: 'auth' });
+            return this.out.close(id);
+        }
         let name: string;
         if (account) {
             // One connection per account: a new sign-in replaces an older one.
@@ -170,10 +175,10 @@ export class Room {
             }
             name = account.name;
         } else {
+            // No account service (local practice rooms and tests): plain nicknames.
             const taken = new Set([...this.players.values()].map((player) => player.name));
             const base = cleanName(rawName) || randomName();
-            // Guests cannot appear under a registered username.
-            name = this.accounts?.isRegistered(base) ? `${base}·游客` : base;
+            name = base;
             for (let suffix = 2; taken.has(name); suffix++) name = `${base}·${suffix}`;
         }
         const player: Player = {

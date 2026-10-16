@@ -100,7 +100,7 @@ export type ServerMessage =
           king: King | null;
           chat: ChatLine[];
       }
-    | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' }
+    | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' | 'auth' }
     | { type: 'joined'; player: PlayerSummary }
     | { type: 'left'; id: string }
     | { type: 'snapshot'; t: number; poses: Record<string, StampedPose> }

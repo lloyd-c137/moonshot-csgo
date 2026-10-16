@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 
 import { collectErrors } from './support';
 
-// Two players join the local shared-world room (wrangler dev): one registers an account, the other plays as a guest.
-// They see each other, chat, and one eliminates the other with frisbees (a headshot, then a body hit); the server
+// Two players join the local shared-world room (wrangler dev) by typing a new username and password (one-step
+// sign-in registers them). They see each other, chat, and one eliminates the other with frisbees (a headshot, then a body hit); the server
 // scores it, records lifetime stats for the account, and respawns the target. Runs in real time.
 const SERVER = 'ws://127.0.0.1:8787/ws';
 const API = 'http://127.0.0.1:8787';
@@ -20,8 +20,13 @@ const open = async (browser: Browser) => {
     return { page, errors };
 };
 
-const enter = async (page: Page) => {
+/** Types a username and password and presses 进入校园: unknown names are registered on the spot. */
+const enter = async (page: Page, name: string, password: string) => {
+    await page.locator('#auth-name').fill(name);
+    await page.locator('#auth-password').fill(password);
     await page.getByRole('button', { name: '进入校园' }).click();
+    await expect(page.locator('#operator')).toHaveAttribute('data-mode', 'signed');
+    await expect(page.locator('#account-name')).toHaveText(name);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().net), { timeout: 20_000 })
         .toBe('online');
@@ -35,30 +40,34 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // A fresh local room has no 淘汰王 yet; a reused dev server may already have a record holder.
     const kingBefore = (await (await request.get(`${API}/api/king`, { headers: ORIGIN })).json()).king;
 
-    // A registers (username + password only) and is signed in on the title screen.
+    const nameB = `乙${stamp}`;
+    // There is no guest entry: the title only offers username + password.
     const a = await open(browser);
-    await a.page.locator('.operator-tabs button[data-mode="register"]').click();
+    await expect(a.page.locator('#nickname')).toHaveCount(0);
+    await expect(a.page.locator('.operator-tabs')).toHaveCount(0);
+    // Missing password: refused locally, nothing sent.
     await a.page.locator('#auth-name').fill(nameA);
-    await a.page.locator('#auth-password').fill('secret-123');
-    await a.page.locator('#auth-submit').click();
-    await expect(a.page.locator('#operator')).toHaveAttribute('data-mode', 'signed');
-    await expect(a.page.locator('#account-name')).toHaveText(nameA);
-    // Registering the same name again is refused.
-    const again = await request.post(`${API}/api/register`, {
+    await a.page.getByRole('button', { name: '进入校园' }).click();
+    await expect(a.page.locator('#auth-error')).toHaveText('请输入用户名和密码');
+    await enter(a.page, nameA, 'secret-123');
+    // The same name with another password is now refused; the right password signs in again.
+    const wrong = await request.post(`${API}/api/signin`, {
         data: { name: nameA, password: 'whatever1' },
         headers: ORIGIN
     });
-    expect(again.status()).toBe(400);
-    expect((await again.json()).error).toContain('已被注册');
-    await enter(a.page);
+    expect(wrong.status()).toBe(400);
+    expect((await wrong.json()).error).toContain('密码不正确');
+    const right = await request.post(`${API}/api/signin`, {
+        data: { name: nameA, password: 'secret-123' },
+        headers: ORIGIN
+    });
+    expect(await right.json()).toMatchObject({ created: false, account: { name: nameA } });
 
-    // B is a guest with a nickname.
     const b = await open(browser);
-    await b.page.locator('#nickname').fill('乙');
-    await enter(b.page);
+    await enter(b.page, nameB, 'secret-456');
     await expect
         .poll(async () => (await state(a.page)).players.map((p) => p.name).sort())
-        .toEqual(['乙', nameA].sort());
+        .toEqual([nameA, nameB].sort());
     const idB = (await state(b.page)).id;
 
     // World chat reaches everyone in real time.
@@ -87,7 +96,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
     await expect(b.page.locator('#eliminated')).toBeVisible();
-    await expect(a.page.locator('#broadcast')).toContainText(`${nameA} 淘汰了 乙`);
+    await expect(a.page.locator('#broadcast')).toContainText(`${nameA} 淘汰了 ${nameB}`);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
     const scores = (await state(a.page)).players;
     expect(scores.find((p) => p.name === nameA)).toMatchObject({ score: 4, kills: 1, deaths: 0 });

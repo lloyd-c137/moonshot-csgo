@@ -308,11 +308,32 @@ const boot = async () => {
             player.rigidbody.angularVelocity = Vec3.ZERO;
         }
     };
-    const enter = () => {
-        match.unlockAudio();
+    const lockPointer = () =>
         void canvas.requestPointerLock().catch(() => {
             shell.notify('浏览器没有允许锁定鼠标，请再点一次“进入校园”');
         });
+    let signingIn = false;
+    const enter = () => {
+        match.unlockAudio();
+        // Every player has an account (no guests): sign in first; an unknown username is registered on the spot.
+        if (hasEntered || !auth.available || auth.account) return lockPointer();
+        if (signingIn) return;
+        const { name, password } = shell.credentials();
+        if (!name || !password) return shell.authError('请输入用户名和密码');
+        signingIn = true;
+        shell.signingIn(true);
+        shell.authError(null);
+        auth.signIn(name, password)
+            .then(({ account, created }) => {
+                shell.account(account);
+                if (created) shell.notify(`已为你注册新账号：${account.name}`);
+                lockPointer();
+            })
+            .catch((error: Error) => shell.authError(error.message))
+            .finally(() => {
+                signingIn = false;
+                shell.signingIn(false);
+            });
     };
     const recover = () => {
         recoverPlayer(player);
@@ -321,7 +342,7 @@ const boot = async () => {
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
-            if (!hasEntered) match.start(shell.nickname());
+            if (!hasEntered) match.start('');
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
             shell.playing();
@@ -391,18 +412,9 @@ const boot = async () => {
                 applySettings(player, camera, next);
                 saveSettings(storage, next);
             },
-            login: async (name, password) => {
-                shell.account(await auth.login(name, password));
-                match.rejoin();
-            },
-            register: async (name, password) => {
-                shell.account(await auth.register(name, password));
-                match.rejoin();
-            },
             logout: async () => {
                 await auth.logout();
                 shell.account(null);
-                match.rejoin(shell.nickname());
             },
             loadBoard: async () => {
                 const board = await auth.board();

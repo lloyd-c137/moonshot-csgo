@@ -20,8 +20,6 @@ export type BoardView = { king: KingView | null; top: AccountView[]; online: num
 
 type Actions = {
     enter: () => void;
-    login: (name: string, password: string) => Promise<void>;
-    register: (name: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     loadBoard: () => Promise<BoardView>;
     recover: () => void;
@@ -53,21 +51,13 @@ const MARKUP = `
             <div><dt>规则</dt><dd>两次命中淘汰</dd></div>
             <div><dt>复活</dt><dd>2.5 秒 · 1.5 秒保护</dd></div>
           </dl>
-          <div class="operator" id="operator" data-mode="guest">
-            <div class="operator-tabs" role="tablist" aria-label="身份">
-              <button type="button" data-mode="guest" aria-selected="true">游客</button>
-              <button type="button" data-mode="login" aria-selected="false">登录</button>
-              <button type="button" data-mode="register" aria-selected="false">注册</button>
-            </div>
-            <div class="operator-guest">
-              <label class="field" for="nickname"><span>昵称</span><input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
-              <p class="operator-hint">游客的战绩不会保存。注册后累计淘汰会一直记录，并有机会成为淘汰王。</p>
-            </div>
+          <div class="operator" id="operator" data-mode="form">
             <form class="operator-auth" id="auth-form" novalidate>
               <label class="field" for="auth-name"><span>用户名</span><input id="auth-name" type="text" maxlength="16" autocomplete="username" spellcheck="false" placeholder="2–16 个字符" /></label>
               <label class="field" for="auth-password"><span>密码</span><input id="auth-password" type="password" maxlength="64" autocomplete="current-password" placeholder="至少 6 位" /></label>
-              <button class="secondary auth-submit" id="auth-submit" type="submit">登录</button>
+              <button type="submit" hidden></button>
             </form>
+            <p class="operator-hint" id="operator-hint">输入用户名和密码即可进入；新用户名会自动注册，战绩永久保存。</p>
             <div class="operator-signed">
               <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
               <dl class="operator-stats">
@@ -216,16 +206,9 @@ const describe = (location: CampusRoom | undefined) => {
     };
 };
 
-const NICKNAME_KEY = 'moonshot.nickname';
-
 export const createUi = (locations: CampusRoom[]) => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-    try {
-        $<HTMLInputElement>('#nickname').value = window.localStorage.getItem(NICKNAME_KEY) ?? '';
-    } catch {
-        /* storage unavailable */
-    }
     const root = $('#app-ui');
     const stagesList = $<HTMLOListElement>('.stages');
     for (const [stage, label] of STAGES) {
@@ -246,19 +229,7 @@ export const createUi = (locations: CampusRoom[]) => {
     const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
 
     // ---------- title: tabs, identity, board ----------
-    let authMode: 'guest' | 'login' | 'register' = 'guest';
     let signedIn = false;
-    const setAuthMode = (mode: 'guest' | 'login' | 'register') => {
-        authMode = mode;
-        const operator = $('#operator');
-        operator.dataset.mode = signedIn ? 'signed' : mode;
-        for (const button of operator.querySelectorAll<HTMLButtonElement>('.operator-tabs button')) {
-            button.setAttribute('aria-selected', String(button.dataset.mode === mode));
-        }
-        $('#auth-submit').textContent = mode === 'register' ? '注册并登录' : '登录';
-        $<HTMLInputElement>('#auth-password').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
-        $('#auth-error').hidden = true;
-    };
     const authError = (message: string) => {
         const error = $('#auth-error');
         error.textContent = message;
@@ -309,19 +280,10 @@ export const createUi = (locations: CampusRoom[]) => {
                 }
             });
         }
-        for (const button of document.querySelectorAll<HTMLButtonElement>('.operator-tabs button')) {
-            button.addEventListener('click', () => setAuthMode(button.dataset.mode as typeof authMode));
-        }
+        // Enter in either field starts the game (signing in or registering on the way).
         $<HTMLFormElement>('#auth-form').addEventListener('submit', (event) => {
             event.preventDefault();
-            const name = $<HTMLInputElement>('#auth-name').value.trim();
-            const password = $<HTMLInputElement>('#auth-password').value;
-            const submit = $<HTMLButtonElement>('#auth-submit');
-            submit.disabled = true;
-            (authMode === 'register' ? actions.register(name, password) : actions.login(name, password))
-                .then(() => ($<HTMLInputElement>('#auth-password').value = ''))
-                .catch((error: Error) => authError(error.message))
-                .finally(() => (submit.disabled = false));
+            actions.enter();
         });
         $('#logout-button').addEventListener('click', () => void actions.logout());
     };
@@ -426,7 +388,8 @@ export const createUi = (locations: CampusRoom[]) => {
                 }
             );
             setScreen('ready');
-            enterButton.focus();
+            const needsSignIn = !signedIn && $('#operator').dataset.accounts !== 'false';
+            (needsSignIn ? $('#auth-name') : enterButton).focus();
         },
         playing: () => setScreen('play'),
         paused: () => {
@@ -474,15 +437,20 @@ export const createUi = (locations: CampusRoom[]) => {
         },
         drawMaps: (x: number, z: number, forwardX: number, forwardZ: number) =>
             map.draw(x, z, forwardX, forwardZ, root.dataset.map === 'open'),
-        /** Nickname typed on the title screen (remembered in this browser only). */
-        nickname: () => {
-            const value = $<HTMLInputElement>('#nickname').value.trim();
-            try {
-                window.localStorage.setItem(NICKNAME_KEY, value);
-            } catch {
-                /* storage unavailable */
-            }
-            return value;
+        /** Username and password typed on the title screen. */
+        credentials: () => ({
+            name: $<HTMLInputElement>('#auth-name').value.trim(),
+            password: $<HTMLInputElement>('#auth-password').value
+        }),
+        /** Shows a sign-in problem under the form (null clears it). */
+        authError: (message: string | null) => {
+            if (message === null) $('#auth-error').hidden = true;
+            else authError(message);
+        },
+        /** Busy state of the play button while signing in. */
+        signingIn: (busy: boolean) => {
+            enterButton.disabled = busy;
+            $('#enter-label').textContent = busy ? '正在登录…' : '进入校园';
         },
         nameTagLayer: () => $('#name-tags'),
         /** Title status line before joining (online count from the server, or offline). */
@@ -491,21 +459,24 @@ export const createUi = (locations: CampusRoom[]) => {
             title.dataset.state = online === null ? 'offline' : 'online';
             $('#title-online').textContent = online === null ? '离线练习' : `服务器在线 · ${online} 人`;
         },
-        /** Signed-in account (title card), or null for guest. */
+        /** Signed-in account (title card), or null when signed out. */
         account: (account: AccountView | null) => {
             signedIn = !!account;
+            $('#operator').dataset.mode = signedIn ? 'signed' : 'form';
             if (account) {
+                $('#auth-error').hidden = true;
+                $<HTMLInputElement>('#auth-password').value = '';
                 $('#account-name').textContent = account.name;
                 $('#account-kills').textContent = String(account.kills);
                 $('#account-hits').textContent = String(account.hits);
                 $('#account-deaths').textContent = String(account.deaths);
                 $('#account-score').textContent = String(account.score);
             }
-            setAuthMode(authMode);
         },
         /** Whether account features are available (a server is configured). */
         accountsAvailable: (available: boolean) => {
             $('#operator').dataset.accounts = String(available);
+            if (!available) $('#operator-hint').textContent = '离线练习模式：无需登录，直接进入。';
         },
         /** The standing 淘汰王 (title card and HUD), shown whether or not they are online. */
         king: (king: KingView | null, isNew = false) => {

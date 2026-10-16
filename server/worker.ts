@@ -167,6 +167,7 @@ export class World extends DurableObject<Env> {
             case 'POST /api/logout':
                 this.accounts.logout(bearer);
                 return json({ ok: true });
+            case 'POST /api/signin':
             case 'POST /api/register':
             case 'POST /api/login': {
                 // Brute-force guard: at most 10 failed attempts per address per 10 minutes (memory only).
@@ -179,16 +180,20 @@ export class World extends DurableObject<Env> {
                 } catch {
                     return json({ error: '请求格式不正确' }, 400);
                 }
-                const result = url.pathname.endsWith('register')
-                    ? await this.accounts.register(body.name, body.password, now)
-                    : await this.accounts.login(body.name, body.password, now);
+                const kind = url.pathname.slice('/api/'.length);
+                const result =
+                    kind === 'signin'
+                        ? await this.accounts.signIn(body.name, body.password, now)
+                        : kind === 'register'
+                          ? await this.accounts.register(body.name, body.password, now)
+                          : await this.accounts.login(body.name, body.password, now);
                 if (!result.ok) {
                     recent.push(now);
                     this.failures.set(address, recent);
-                    return json({ error: result.error }, url.pathname.endsWith('register') ? 400 : 401);
+                    return json({ error: result.error }, kind === 'login' ? 401 : 400);
                 }
                 this.failures.delete(address);
-                return json({ token: result.token, account: result.account });
+                return json({ token: result.token, account: result.account, created: !!result.created });
             }
             default:
                 return json({ error: 'not found' }, 404);

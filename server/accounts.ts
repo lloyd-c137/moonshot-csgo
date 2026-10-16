@@ -71,7 +71,8 @@ const statsOf = (row: UserRow): AccountStats => ({
     score: row.score
 });
 
-export type AuthResult = { ok: true; token: string; account: AccountStats } | { ok: false; error: string };
+export type AuthResult =
+    { ok: true; token: string; account: AccountStats; created?: boolean } | { ok: false; error: string };
 
 export class Accounts {
     private readonly db: AccountDb;
@@ -103,6 +104,19 @@ export class Accounts {
         const hash = await hashPassword(typeof password === 'string' ? password : '', row?.salt ?? 'no-such-user');
         if (!row || !sameHex(hash, row.hash)) return { ok: false, error: '用户名或密码不正确' };
         return this.session(row.key, now);
+    }
+
+    /** One step sign-in: logs in when the username exists, otherwise registers it. */
+    async signIn(rawName: unknown, password: unknown, now: number): Promise<AuthResult> {
+        const name = typeof rawName === 'string' ? cleanName(rawName) : '';
+        if (name && this.db.findUser(usernameKey(name))) {
+            const result = await this.login(name, password, now);
+            return result.ok ? result : { ok: false, error: '密码不正确（该用户名已被注册）' };
+        }
+        const result = await this.register(rawName, password, now);
+        // Lost a race with a registration of the same name: treat it as a login.
+        if (!result.ok && name && this.db.findUser(usernameKey(name))) return this.login(name, password, now);
+        return result.ok ? { ...result, created: true } : result;
     }
 
     logout(token: string) {

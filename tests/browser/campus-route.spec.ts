@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { collectErrors, enterAtSpawn, loadSimulated, position, waitForRoom, walk, walkTo } from './support';
+import { advance, collectErrors, enterAtSpawn, loadSimulated, position, waitForRoom, walk, walkTo } from './support';
 
 // Waypoints (X, Z metres) from the offline navigation grid (furniture included) with a 0.30 m clearance radius.
 const DOOR_APPROACH_TO_S308: [number, number][] = [
@@ -29,6 +29,12 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     const errors = collectErrors(page);
     await loadSimulated(page);
     await enterAtSpawn(page);
+    // This route starts from the east entrance lobby (the spawn is now the south entrance).
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.teleport(50.85, 0.92, -2.86);
+        window.__MOONSHOT__!.setLook(0, 0);
+    });
+    await advance(page, 300);
 
     // West along the entry corridor until the source wall stops the capsule.
     await walk(page, -1, 0, 10_000);

@@ -11,6 +11,7 @@ export type DebugHooks = {
     teleport: (x: number, y: number, z: number) => void;
     recoveries: () => number;
     setLook: (pitch: number, yaw: number) => void;
+    stuckShown: () => boolean;
     raycast: (from: number[], to: number[]) => string | null;
     spawn: number[];
     roomId: () => string | null;

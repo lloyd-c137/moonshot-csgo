@@ -35,7 +35,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>), wait for the four loading stages to finish, then click **进入校园**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, M for the full-floor map, Escape to pause, and R to return to the east entrance (position and heading). Leaving the level (falling below Y = −3 m) returns the player there automatically.
+Open the URL printed by Vite (normally <http://localhost:5173>), wait for the four loading stages to finish, then click **进入校园**. Use WASD to walk, Shift to sprint, Space to jump, mouse to look, M for the full-floor map, Escape to pause, and R to return to the south entrance, the spawn (position and heading). Leaving the level (falling below Y = −3 m) returns the player there automatically. If movement keys are held for 2 s without progress (or the player sinks into the floor), a **脱离卡死** offer appears: press G (or click it when paused) to return to the spawn. A production build polls `/version.json` (written at build time with the Pages commit) every minute and offers a reload when a newer version is deployed; a room that rejects an outdated client does the same.
 
 The top-left plate names the current location (room number, name, kind colour). Entering a location for the first time marks it **新发现**, shows a toast and lifts the hatching from that room on the minimap and full map; the tally counts discovered locations out of 166 (165 source records plus the arena). Discoveries, mouse sensitivity and field of view (pause menu) are saved in the browser's local storage only.
 

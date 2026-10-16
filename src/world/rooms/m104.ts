@@ -17,6 +17,9 @@ export type MaterialSpec = {
     emissive?: [number, number, number];
     emissiveIntensity?: number;
     opacity?: number;
+    /** Thin surface laid on another (seams, paint, posters, notes, glass films): drawn with a depth bias so it
+     * does not z-fight or shimmer with the surface behind it at a distance. */
+    decal?: true;
 };
 
 export type ScenePart = { material: string; shape: Shape };
@@ -45,19 +48,19 @@ const CEILING_Y = 3.58;
 
 const MATERIALS: Record<string, MaterialSpec> = {
     floor: { colour: [0.74, 0.6, 0.45], gloss: 0.45 },
-    floorSeam: { colour: [0.52, 0.4, 0.29], gloss: 0.3 },
-    lavender: { colour: [0.73, 0.69, 0.83], gloss: 0.08 },
-    lavenderGrey: { colour: [0.7, 0.69, 0.76], gloss: 0.08 },
-    skirting: { colour: [0.86, 0.86, 0.85], gloss: 0.3 },
-    frosted: { colour: [0.9, 0.92, 0.93], gloss: 0.7 },
-    clearGlass: { colour: [0.42, 0.47, 0.5], gloss: 0.85 },
+    floorSeam: { colour: [0.64, 0.51, 0.37], gloss: 0.3, decal: true },
+    lavender: { colour: [0.73, 0.69, 0.83], gloss: 0.08, decal: true },
+    lavenderGrey: { colour: [0.7, 0.69, 0.76], gloss: 0.08, decal: true },
+    skirting: { colour: [0.86, 0.86, 0.85], gloss: 0.3, decal: true },
+    frosted: { colour: [0.9, 0.92, 0.93], gloss: 0.7, decal: true },
+    clearGlass: { colour: [0.42, 0.47, 0.5], gloss: 0.85, decal: true },
     mullion: { colour: [0.3, 0.31, 0.33], gloss: 0.5, metalness: 0.3 },
-    marker: { colour: [0.13, 0.17, 0.3], gloss: 0.2 },
-    markerRed: { colour: [0.62, 0.16, 0.14], gloss: 0.2 },
+    marker: { colour: [0.13, 0.17, 0.3], gloss: 0.2, decal: true },
+    markerRed: { colour: [0.62, 0.16, 0.14], gloss: 0.2, decal: true },
     ceiling: { colour: [0.93, 0.93, 0.92], gloss: 0.05 },
-    tbar: { colour: [0.97, 0.97, 0.96], gloss: 0.4 },
+    tbar: { colour: [0.97, 0.97, 0.96], gloss: 0.4, decal: true },
     vent: { colour: [0.8, 0.81, 0.82], gloss: 0.3 },
-    ventSlot: { colour: [0.3, 0.31, 0.33], gloss: 0.1 },
+    ventSlot: { colour: [0.3, 0.31, 0.33], gloss: 0.1, decal: true },
     chrome: { colour: [0.78, 0.79, 0.8], gloss: 0.8, metalness: 0.8 },
     aluminium: { colour: [0.72, 0.73, 0.75], gloss: 0.6, metalness: 0.6 },
     led: { colour: [1, 1, 1], emissive: [1, 0.97, 0.9], emissiveIntensity: 4 },
@@ -88,22 +91,22 @@ const MATERIALS: Record<string, MaterialSpec> = {
     wigBlonde: { colour: [0.86, 0.72, 0.43], gloss: 0.3 },
     wigBlack: { colour: [0.05, 0.04, 0.04], gloss: 0.3 },
     red: { colour: [0.72, 0.08, 0.07], gloss: 0.45 },
-    paper: { colour: [0.96, 0.96, 0.94], gloss: 0.1 },
+    paper: { colour: [0.96, 0.96, 0.94], gloss: 0.1, decal: true },
     kraft: { colour: [0.66, 0.5, 0.32], gloss: 0.1 },
-    noteOrange: { colour: [0.98, 0.55, 0.18], gloss: 0.1 },
-    noteGreen: { colour: [0.55, 0.85, 0.35], gloss: 0.1 },
-    noteBlue: { colour: [0.35, 0.68, 0.92], gloss: 0.1 },
-    noteYellow: { colour: [0.98, 0.88, 0.3], gloss: 0.1 },
-    posterDark: { colour: [0.1, 0.11, 0.14], gloss: 0.3 },
-    posterInk: { colour: [0.85, 0.82, 0.7], gloss: 0.2 },
-    posterRed: { colour: [0.78, 0.13, 0.13], gloss: 0.2 },
-    portraitA: { colour: [0.62, 0.52, 0.46], gloss: 0.2 },
-    portraitB: { colour: [0.35, 0.38, 0.44], gloss: 0.2 },
-    portraitC: { colour: [0.72, 0.66, 0.58], gloss: 0.2 },
+    noteOrange: { colour: [0.98, 0.55, 0.18], gloss: 0.1, decal: true },
+    noteGreen: { colour: [0.55, 0.85, 0.35], gloss: 0.1, decal: true },
+    noteBlue: { colour: [0.35, 0.68, 0.92], gloss: 0.1, decal: true },
+    noteYellow: { colour: [0.98, 0.88, 0.3], gloss: 0.1, decal: true },
+    posterDark: { colour: [0.1, 0.11, 0.14], gloss: 0.3, decal: true },
+    posterInk: { colour: [0.85, 0.82, 0.7], gloss: 0.2, decal: true },
+    posterRed: { colour: [0.78, 0.13, 0.13], gloss: 0.2, decal: true },
+    portraitA: { colour: [0.62, 0.52, 0.46], gloss: 0.2, decal: true },
+    portraitB: { colour: [0.35, 0.38, 0.44], gloss: 0.2, decal: true },
+    portraitC: { colour: [0.72, 0.66, 0.58], gloss: 0.2, decal: true },
     backpack: { colour: [0.72, 0.78, 0.18], gloss: 0.2 },
     backpackDark: { colour: [0.2, 0.22, 0.2], gloss: 0.2 },
     partition: { colour: [0.62, 0.63, 0.64], gloss: 0.15 },
-    doorLeaf: { colour: [0.86, 0.89, 0.9], gloss: 0.75 },
+    doorLeaf: { colour: [0.86, 0.89, 0.9], gloss: 0.75, decal: true },
     doorFrame: { colour: [0.27, 0.28, 0.3], gloss: 0.45, metalness: 0.3 },
     cabinetWhite: { colour: [0.95, 0.95, 0.94], gloss: 0.4 },
     snackYellow: { colour: [0.96, 0.78, 0.15], gloss: 0.3 },
@@ -629,13 +632,13 @@ export const m104Scene = (): AuthoredRoomScene => {
     const floorY = 0.024;
     s.cube('floor', frame(midX, midZ), 0, floorY - 0.006, 0, E - W, 0.006, S - N);
     for (let z = N + 0.19; z < S - 0.02; z += 0.19) {
-        s.cube('floorSeam', frame(midX, z), 0, floorY, 0, E - W, 0.0008, 0.005);
+        s.cube('floorSeam', frame(midX, z), 0, floorY, 0, E - W, 0.0015, 0.005);
     }
     for (let z = N; z < S - 0.05; z += 0.19) {
         const row = Math.min(0.19, S - z);
         let x = W + rng() * 1.4;
         while (x < E - 0.1) {
-            s.cube('floorSeam', frame(x, z + row / 2), 0, floorY, 0, 0.005, 0.0008, row);
+            s.cube('floorSeam', frame(x, z + row / 2), 0, floorY, 0, 0.005, 0.0015, row);
             x += 1.2 + rng() * 0.6;
         }
     }

@@ -47,7 +47,10 @@ test('the M104 scene is deterministic, untextured and stays inside the room', ()
     for (const [key, spec] of Object.entries(scene.materials)) {
         assert.deepEqual(
             Object.keys(spec).filter(
-                (field) => !['colour', 'gloss', 'metalness', 'emissive', 'emissiveIntensity', 'opacity'].includes(field)
+                (field) =>
+                    !['colour', 'gloss', 'metalness', 'emissive', 'emissiveIntensity', 'opacity', 'decal'].includes(
+                        field
+                    )
             ),
             [],
             `${key} uses flat material fields only (no maps)`

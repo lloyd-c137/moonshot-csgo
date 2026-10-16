@@ -31,6 +31,9 @@ export const setupAtmosphere = (app: AppBase, camera: Entity) => {
     const frame = camera.script!.create(CameraFrame) as CameraFrame | null;
     if (frame) {
         frame.rendering.toneMapping = 'aces';
+        // The frame renders into its own target, so the canvas antialias does not apply: without MSAA, fine
+        // repeating detail (ceiling grid, plank seams, court lines, mullions) aliases into moiré at a distance.
+        frame.rendering.samples = 4;
         // SSAO is left off: in testing it blacked out whole distant wall faces (both 'combine' and 'lighting').
         frame.bloom.enabled = true;
         frame.bloom.intensity = 0.004;

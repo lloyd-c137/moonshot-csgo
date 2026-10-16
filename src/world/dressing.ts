@@ -70,7 +70,7 @@ type MaterialOptions = {
     opacityMask?: Texture;
 };
 
-const makeMaterial = (name: string, options: MaterialOptions) => {
+const makeMaterial = (name: string, options: MaterialOptions & { decal?: boolean }) => {
     const m = new StandardMaterial();
     m.name = name;
     m.useMetalness = true;
@@ -88,6 +88,11 @@ const makeMaterial = (name: string, options: MaterialOptions) => {
         m.emissiveIntensity = options.emissiveIntensity ?? 1;
         m.diffuse = new Color(0, 0, 0);
         m.useLighting = false;
+    }
+    if (options.decal) {
+        // Markings laid on the floor: biased toward the camera so they do not z-fight at a distance.
+        m.depthBias = -2;
+        m.slopeDepthBias = -2;
     }
     if (options.opacityMask) {
         m.opacityMap = options.opacityMask;
@@ -170,7 +175,7 @@ export const buildDressing = (
     const root = new Entity('GameplayAuthored_Dressing');
     campus.addChild(root);
     const textures = Object.fromEntries(
-        ['terrazzo', 'wood', 'tile', 'carpet', 'ceiling', 'court', 'laminate'].map((name, index) => [
+        ['terrazzo', 'wood', 'tile', 'carpet', 'ceiling', 'court', 'laminate', 'epoxy'].map((name, index) => [
             name,
             createTexture(device, name, 11 + index)
         ])
@@ -196,7 +201,8 @@ export const buildDressing = (
         root,
         'Floor_Corridor',
         floorBuilder,
-        makeMaterial('floor-terrazzo', { texture: textures.terrazzo, gloss: 0.45 })
+        // Glossy grey-blue epoxy on every corridor (the slab outside the room patches); room floors are unchanged.
+        makeMaterial('floor-epoxy', { texture: textures.epoxy, gloss: 0.82 })
     );
     slab.render!.enabled = false;
 
@@ -477,15 +483,15 @@ export const buildDressing = (
         app,
         root,
         'Court_Lines',
-        markings('Lines_Court', 0.06, 0.022),
-        makeMaterial('court-lines', { colour: [0.97, 0.97, 0.95], gloss: 0.6 })
+        markings('Lines_Court', 0.06, 0.024),
+        makeMaterial('court-lines', { colour: [0.97, 0.97, 0.95], gloss: 0.6, decal: true })
     );
     addMesh(
         app,
         root,
         'Stair_Lines',
-        markings('Lines_Stairs', 0.025, 0.021),
-        makeMaterial('stair-lines', { colour: [0.35, 0.36, 0.38] })
+        markings('Lines_Stairs', 0.025, 0.024),
+        makeMaterial('stair-lines', { colour: [0.35, 0.36, 0.38], decal: true })
     );
 
     // Ceiling light fixtures (emissive panels); actual light comes from the pooled lights in atmosphere.ts.

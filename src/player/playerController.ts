@@ -28,7 +28,8 @@ export const createPlayer = (app: AppBase) => {
     camera.addComponent('camera', {
         clearColor: new Color(0.08, 0.12, 0.16),
         fov: 78,
-        nearClip: 0.08,
+        // 0.1 m keeps depth precision for thin surfaces at a distance while staying inside the 0.28 m capsule.
+        nearClip: 0.1,
         farClip: 180
     });
     camera.setLocalPosition(0, PLAYER.eyeOffset, 0);

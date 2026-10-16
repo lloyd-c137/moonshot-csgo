@@ -29,9 +29,6 @@ export const PAINTERS: Record<string, { metres: number; paint: Painter }> = {
             g.fillStyle = hex(0.8, 0.79, 0.76);
             g.fillRect(0, 0, size, size);
             speckle(g, size, random, 2600, 0.35);
-            g.strokeStyle = 'rgba(0,0,0,0.12)';
-            g.lineWidth = 2;
-            g.strokeRect(0, 0, size, size);
         }
     },
     wood: {
@@ -111,6 +108,40 @@ export const PAINTERS: Record<string, { metres: number; paint: Painter }> = {
             g.fillStyle = hex(0.94, 0.93, 0.9);
             g.fillRect(0, 0, size, size);
             speckle(g, size, random, 3000, 0.05);
+        }
+    },
+    // Corridor floor: grey-blue self-levelling epoxy (owner's reference photo) - smooth, faint mottling and scuffs,
+    // no tile joints. Low contrast so it reads as one continuous glossy surface at any distance.
+    epoxy: {
+        metres: 4,
+        paint: (g, size, random) => {
+            g.fillStyle = hex(0.5, 0.57, 0.62);
+            g.fillRect(0, 0, size, size);
+            for (let i = 0; i < 90; i++) {
+                const x = random() * size;
+                const y = random() * size;
+                const r = size * (0.04 + random() * 0.12);
+                const light = random() > 0.5;
+                const gradient = g.createRadialGradient(x, y, 0, x, y, r);
+                gradient.addColorStop(0, light ? 'rgba(255,255,255,0.035)' : 'rgba(40,55,70,0.035)');
+                gradient.addColorStop(1, 'rgba(0,0,0,0)');
+                g.fillStyle = gradient;
+                g.fillRect(x - r, y - r, 2 * r, 2 * r);
+            }
+            // Scuffs: short thin streaks, mostly along the walking direction.
+            for (let i = 0; i < 140; i++) {
+                const x = random() * size;
+                const y = random() * size;
+                const length = size * (0.01 + random() * 0.05);
+                const angle = Math.PI / 2 + (random() - 0.5) * 0.9;
+                g.strokeStyle = `rgba(45,52,60,${0.05 + random() * 0.12})`;
+                g.lineWidth = 0.6 + random() * 0.8;
+                g.beginPath();
+                g.moveTo(x, y);
+                g.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+                g.stroke();
+            }
+            speckle(g, size, random, 160, 0.1);
         }
     },
     laminate: {

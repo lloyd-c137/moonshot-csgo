@@ -47,10 +47,10 @@ export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const
 export const ROUND = { roundSeconds: 600, intermissionSeconds: 10, pickupRadius: 1.6, pickupDelay: 0.8 } as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).
- * Everyone carries at most `max`; respawning hands back `start`. The PE office puts out a fresh disc every
+ * Everyone carries at most `max`; joining and every respawn hand out a full load (`start`). The PE office puts out a fresh disc every
  * `officeSeconds` (at most `officeMax` lying there). The golden disc is never used up: it returns to its holder.
  */
-export const AMMO = { start: 1, max: 3, pickupRadius: 1.5, officeSeconds: 60, officeMax: 3 } as const;
+export const AMMO = { start: 3, max: 3, pickupRadius: 1.5, officeSeconds: 60, officeMax: 3 } as const;
 /** A disc lying on the floor, waiting to be picked up. */
 export type GroundDisc = { id: number; at: Vec3Tuple };
 /** 纪老师 catches a throw inside his view: the thrower stands still for this long. */

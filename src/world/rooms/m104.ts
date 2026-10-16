@@ -51,7 +51,7 @@ const MATERIALS: Record<string, MaterialSpec> = {
     skirting: { colour: [0.86, 0.86, 0.85], gloss: 0.3 },
     frosted: { colour: [0.9, 0.92, 0.93], gloss: 0.7 },
     clearGlass: { colour: [0.42, 0.47, 0.5], gloss: 0.85 },
-    mullion: { colour: [0.56, 0.58, 0.6], gloss: 0.55, metalness: 0.4 },
+    mullion: { colour: [0.3, 0.31, 0.33], gloss: 0.5, metalness: 0.3 },
     marker: { colour: [0.13, 0.17, 0.3], gloss: 0.2 },
     markerRed: { colour: [0.62, 0.16, 0.14], gloss: 0.2 },
     ceiling: { colour: [0.93, 0.93, 0.92], gloss: 0.05 },
@@ -75,7 +75,7 @@ const MATERIALS: Record<string, MaterialSpec> = {
     olive: { colour: [0.42, 0.44, 0.24], gloss: 0.08 },
     oliveDark: { colour: [0.32, 0.34, 0.18], gloss: 0.08 },
     beanBlue: { colour: [0.22, 0.38, 0.62], gloss: 0.25 },
-    beanGrey: { colour: [0.56, 0.57, 0.58], gloss: 0.15 },
+    beanGrey: { colour: [0.3, 0.35, 0.41], gloss: 0.2 },
     leather: { colour: [0.4, 0.23, 0.13], gloss: 0.55 },
     darkWood: { colour: [0.22, 0.14, 0.09], gloss: 0.4 },
     stoolGrey: { colour: [0.42, 0.43, 0.45], gloss: 0.3 },
@@ -103,7 +103,14 @@ const MATERIALS: Record<string, MaterialSpec> = {
     backpack: { colour: [0.72, 0.78, 0.18], gloss: 0.2 },
     backpackDark: { colour: [0.2, 0.22, 0.2], gloss: 0.2 },
     partition: { colour: [0.62, 0.63, 0.64], gloss: 0.15 },
-    doorLeaf: { colour: [0.84, 0.72, 0.56], gloss: 0.4 },
+    doorLeaf: { colour: [0.86, 0.89, 0.9], gloss: 0.75 },
+    doorFrame: { colour: [0.27, 0.28, 0.3], gloss: 0.45, metalness: 0.3 },
+    cabinetWhite: { colour: [0.95, 0.95, 0.94], gloss: 0.4 },
+    snackYellow: { colour: [0.96, 0.78, 0.15], gloss: 0.3 },
+    snackRed: { colour: [0.85, 0.2, 0.18], gloss: 0.3 },
+    snackBlue: { colour: [0.25, 0.45, 0.8], gloss: 0.3 },
+    crateGreen: { colour: [0.45, 0.78, 0.3], gloss: 0.35 },
+    bamboo: { colour: [0.35, 0.6, 0.22], gloss: 0.3 },
     clockFace: { colour: [0.97, 0.97, 0.96], gloss: 0.5 },
     bookRed: { colour: [0.62, 0.17, 0.15], gloss: 0.3 },
     bookBlue: { colour: [0.18, 0.3, 0.52], gloss: 0.3 },
@@ -140,6 +147,13 @@ const frame = (x: number, z: number, yaw = 0): Frame => ({ x, z, yaw });
 class SceneBuilder {
     parts: ScenePart[] = [];
     colliders: SceneCollider[] = [];
+    /** When set, everything placed is turned 180° about this X/Z point (see the layout section of m104Scene). */
+    turnAbout: [number, number] | null = null;
+
+    private turn(x: number, z: number, yaw: number): [number, number, number] {
+        if (!this.turnAbout) return [x, z, yaw];
+        return [2 * this.turnAbout[0] - x, 2 * this.turnAbout[1] - z, yaw + Math.PI];
+    }
 
     world(f: Frame, u: number, v: number): [number, number] {
         const c = Math.cos(f.yaw);
@@ -158,8 +172,8 @@ class SceneBuilder {
         o: { yaw?: number; pitch?: number; roll?: number; sx?: number; sy?: number; sz?: number } = {}
     ) {
         if (!MATERIALS[material]) throw new Error(`M104 scene: unknown material ${material}`);
-        const [x, z] = this.world(f, u, v);
-        this.parts.push({ material, shape: place(shape, { ...o, x, y, z, yaw: f.yaw + (o.yaw ?? 0) }) });
+        const [x, z, yaw] = this.turn(...this.world(f, u, v), f.yaw + (o.yaw ?? 0));
+        this.parts.push({ material, shape: place(shape, { ...o, x, y, z, yaw }) });
     }
 
     /** Box with its base at y0: `w` along u, `h` up, `d` along v. */
@@ -173,8 +187,8 @@ class SceneBuilder {
     }
 
     solid(f: Frame, u: number, v: number, w: number, d: number, h: number, yaw = 0) {
-        const [x, z] = this.world(f, u, v);
-        this.colliders.push({ x, z, w, d, h, yaw: f.yaw + yaw });
+        const [x, z, turned] = this.turn(...this.world(f, u, v), f.yaw + yaw);
+        this.colliders.push({ x, z, w, d, h, yaw: turned });
     }
 }
 
@@ -654,13 +668,19 @@ export const m104Scene = (): AuthoredRoomScene => {
 
     // Linear LED pendant bars (two rows per half) on thin cables.
     const bars: [number, number][] = [];
-    for (const x of [W + 1.4, W + 4.0, E - 3.6, E - 1.4]) for (const z of [N + 1.35, S - 1.35]) bars.push([x, z]);
+    // Photos: long continuous linear LEDs running the length of the room, two rows.
+    for (const x of [W + 1.75, midX, E - 1.75]) for (const z of [N + 1.35, S - 1.35]) bars.push([x, z]);
     for (const [x, z] of bars) {
         const f = frame(x, z);
-        s.cube('aluminium', f, 0, 2.95, 0, 1.5, 0.06, 0.07);
-        s.cube('led', f, 0, 2.945, 0, 1.47, 0.006, 0.05);
-        for (const end of [-1, 1]) s.post('cable', f, end * 0.6, 3.01, 0, 0.0035, CEILING_Y - 3.01, 6);
+        s.cube('aluminium', f, 0, 2.95, 0, 3.2, 0.06, 0.07);
+        s.cube('led', f, 0, 2.945, 0, 3.17, 0.006, 0.05);
+        for (const end of [-1, 1]) s.post('cable', f, end * 1.3, 3.01, 0, 0.0035, CEILING_Y - 3.01, 6);
     }
+    // Ceiling cassette air conditioner over the workspace.
+    const cassette = frame(-44.4, 43.0);
+    s.cube('vent', cassette, 0, CEILING_Y - 0.04, 0, 0.84, 0.04, 0.84);
+    s.cube('ventSlot', cassette, 0, CEILING_Y - 0.043, 0, 0.42, 0.004, 0.42);
+    s.put('blackPlastic', torus(0.31, 0.012, 32, 6), cassette, 0, CEILING_Y - 0.043, 0);
     const lights: [number, number, number, number][] = [W + 1.4, W + 4.0, E - 3.6, E - 1.4].map((x) => [
         x,
         midZ,
@@ -717,14 +737,15 @@ export const m104Scene = (): AuthoredRoomScene => {
         const width = door.to - door.from;
         const f = frame((door.from + door.to) / 2, N - 0.2, 0);
         s.cube('skirting', f, 0, 2.15, 0, width, CEILING_Y - 2.15, 0.42);
-        s.cube('aluminium', f, 0, 2.1, 0.205, width, 0.05, 0.03);
-        for (const side of [-1, 1]) s.cube('aluminium', f, side * (width / 2 - 0.025), 0, 0.205, 0.05, 2.15, 0.03);
+        s.cube('doorFrame', f, 0, 2.1, 0.205, width, 0.05, 0.03);
+        for (const side of [-1, 1]) s.cube('doorFrame', f, side * (width / 2 - 0.025), 0, 0.205, 0.05, 2.15, 0.03);
         // Leaf opened 90° into the room against the pier side, hinge on the pier.
         const side = door.hinge === door.to ? 1 : -1;
         const leaf = frame(door.hinge + side * 0.025, N + width / 2, Math.PI / 2);
-        s.cube('doorLeaf', leaf, 0, 0.01, 0, width - 0.04, 2.12, 0.04);
-        s.cube('glass', leaf, -0.05, 1.0, 0.0, 0.18, 0.9, 0.046);
-        s.post('chrome', leaf, width / 2 - 0.12, 1.0, side * 0.04, 0.012, 0.3, 8);
+        // Photos: frosted glass leaves in dark grey frames with a lever handle.
+        s.cube('doorFrame', leaf, 0, 0.01, 0, width - 0.04, 2.12, 0.04);
+        for (const face of [-1, 1]) s.cube('doorLeaf', leaf, 0, 0.09, face * 0.0205, width - 0.16, 1.96, 0.002);
+        for (const face of [-1, 1]) s.cube('chrome', leaf, width / 2 - 0.12, 1.02, face * 0.045, 0.14, 0.018, 0.02);
         s.solid(leaf, 0, 0, width - 0.04, 0.05, 2.1);
     }
 
@@ -740,7 +761,13 @@ export const m104Scene = (): AuthoredRoomScene => {
     s.cube('aluminium', stack, 0, CEILING_Y - 0.09, 0.8, 0.12, 0.04, 1.6);
     s.solid(stack, 0, 0.82, 0.34, 1.64, CEILING_Y - 0.1);
 
-    // ===== East half: lounge / presentation =====
+    // ===== Layout =====
+    // First drafted with the lounge in the east and the workspace in the west; the owner confirmed the real room is
+    // that draft turned 180°, so the drafted layout is placed through `turnAbout` (the doors, partition stack, column
+    // and long walls above are structure and are not turned). Items re-placed from the owner's second photo set
+    // follow in world coordinates after this block.
+    s.turnAbout = [midX, midZ];
+    // ----- drafted east half (lounge; lands in the west) -----
     const eastWall = frame(E, midZ, facing(-1, 0)); // faces west; u runs south
     paintedWall(s, eastWall, S - N, 'lavenderGrey');
     // Clock above the bookcases.
@@ -766,25 +793,14 @@ export const m104Scene = (): AuthoredRoomScene => {
     });
     // Olive floor sofas in front of the bookcases, facing west.
     for (const z of [43.0, 44.4]) floorSofa(s, frame(E - 0.86, z, facing(-1, 0)));
-    beanbag(s, frame(-42.9, 41.8, facing(-1, 0.5)), 'beanGrey', 0.95);
-    beanbag(s, frame(-42.9, 45.95, facing(-1, -0.6)), 'beanBlue');
-    armchair(s, frame(-44.05, 43.75, facing(1, 0)));
-    mobileTv(s, frame(-44.95, 45.3, facing(-1, -0.15)));
-    barStool(s, frame(-43.75, 45.15));
-    barStool(s, frame(-43.45, 44.55));
     coatTree(s, frame(-41.75, 46.2, facing(-1, -1)));
     plant(s, frame(-41.98, 41.62), rng, 1.7, 0.24);
-    plant(s, frame(-46.0, 46.2), rng, 1.3, 0.2);
-    trashBin(s, frame(-45.6, 46.3));
-    // Small standing desk by the north wall with a white chair.
-    desk(s, frame(-43.6, N + 0.32, 0), 0.9, 0.6, 1.02);
-    laptop(s, frame(-43.6, N + 0.32, 0), 1.02);
-    chair(s, frame(-43.6, N + 0.95, Math.PI));
-    // South wall: decorative glass door, "Habits of Mind" posters, fire-extinguisher box with a broom.
+    // Small standing desk with a white chair (lands by the south wall, beside the column).
+    desk(s, frame(-45.3, N + 0.32, 0), 0.9, 0.6, 1.02);
+    laptop(s, frame(-45.3, N + 0.32, 0), 1.02);
+    chair(s, frame(-45.3, N + 0.95, Math.PI));
+    // "Habits of Mind" posters and a fire-extinguisher box with a broom (land on the door wall).
     const southEast = frame(-42.45, S, Math.PI);
-    s.cube('aluminium', southEast, 0, 0, 0.02, 0.95, 2.15, 0.03);
-    s.cube('glass', southEast, 0, 0.05, 0.036, 0.85, 2.05, 0.008);
-    s.post('chrome', southEast, -0.36, 0.9, 0.06, 0.012, 0.35, 8);
     for (const [u, y] of [
         [0.95, 1.75],
         [0.95, 1.2],
@@ -802,7 +818,7 @@ export const m104Scene = (): AuthoredRoomScene => {
     s.put('stem', cylinder(0.012, 1.25, 8), fireBox, 0.38, 0.66, 0.1, { roll: 0.12 });
     s.put('blackPlastic', box(0.25, 0.08, 0.06), fireBox, 0.38, 0.06, 0.18, { roll: 0.12 });
 
-    // ===== West half: workspace =====
+    // ----- drafted west half (workspace; lands in the east) -----
     const westWall = frame(W, midZ, facing(1, 0));
     paintedWall(s, westWall, S - N, 'lavender');
     // Title strip (lettering abstracted as dark marks) above a 3 × 4 sticky-note grid.
@@ -856,7 +872,6 @@ export const m104Scene = (): AuthoredRoomScene => {
     laptop(s, frame(-50.4, N + 0.42, 0), 0.75);
     bottle(s, deskB, -0.5, 0.75, 0.15, 'bottleSteel');
     chair(s, frame(-50.55, N + 1.0, Math.PI));
-    backpack(s, frame(W + 0.35, 43.35, facing(1, 0.2)));
 
     // Side desk by the north wall with an "SF" cardboard box.
     const side = frame(-49.4, N + 0.27, Math.PI);
@@ -878,10 +893,10 @@ export const m104Scene = (): AuthoredRoomScene => {
     }
 
     // Cluttered four-desk block.
-    for (const x of [-48.55, -47.25]) {
+    for (const x of [-49.15, -47.85]) {
         for (const [z, yaw] of [
-            [44.95, Math.PI],
-            [45.65, 0]
+            [43.75, Math.PI],
+            [44.45, 0]
         ] as const) {
             const f = frame(x, z, yaw);
             desk(s, f, 1.3);
@@ -893,11 +908,10 @@ export const m104Scene = (): AuthoredRoomScene => {
             s.post('posterDark', f, -0.1, 0.75, -0.2, 0.025, 0.02, 10);
             if (yaw === 0) laptop(s, frame(x, z + 0.05, Math.PI), 0.75);
         }
-        chair(s, frame(x, 44.3, 0));
+        chair(s, frame(x, 43.1, 0));
     }
     backpack(s, frame(-49.5, 45.55, facing(1, 0)));
     plant(s, frame(W + 0.35, S - 0.35), rng, 1.6, 0.22);
-    plant(s, frame(-46.85, S - 0.3), rng, 1.1, 0.18);
     // Small succulent on desk A.
     s.put('potGrey', cylinder(0.05, 0.09, 12, true, 0.06), deskA, 0.55, 0.795, -0.2);
     for (let k = 0; k < 7; k++) {
@@ -918,6 +932,86 @@ export const m104Scene = (): AuthoredRoomScene => {
             }
         );
     }
+
+    s.turnAbout = null;
+
+    // ===== Re-placed from the second photo set (world coordinates) =====
+    // Lounge (west): the mobile TV stands in the middle facing the workspace, bar stools either side; a leather
+    // lounge chair, side table, plant and bin by the west door; slate beanbags; a white snack cabinet with a bamboo
+    // plant against the south wall west of the column.
+    mobileTv(s, frame(-48.6, 43.7, facing(1, 0)));
+    barStool(s, frame(-48.55, 42.35));
+    barStool(s, frame(-48.35, 45.15));
+    armchair(s, frame(-49.65, 41.68, 0));
+    desk(s, frame(-50.65, N + 0.3, 0), 0.6, 0.5, 0.62);
+    plant(s, frame(-48.25, N + 0.38), rng, 1.5, 0.22);
+    trashBin(s, frame(-48.75, N + 0.22));
+    beanbag(s, frame(-49.35, 44.95, facing(1, 0.3)), 'beanGrey');
+    beanbag(s, frame(-50.25, 45.6, facing(1, -0.4)), 'beanGrey', 0.9);
+    const snacks = frame(-50.4, S - 0.22, Math.PI);
+    s.cube('cabinetWhite', snacks, 0, 0, 0, 1.0, 0.85, 0.44);
+    s.cube('blackPlastic', snacks, 0, 0, 0.215, 0.98, 0.06, 0.012);
+    for (const [u, w, h, d, material] of [
+        [-0.35, 0.2, 0.3, 0.16, 'snackYellow'],
+        [-0.35, 0.2, 0.2, 0.16, 'snackRed'],
+        [-0.05, 0.3, 0.12, 0.25, 'snackYellow'],
+        [0.12, 0.16, 0.22, 0.12, 'kraft'],
+        [0.3, 0.16, 0.25, 0.1, 'snackBlue']
+    ] as const) {
+        const stacked = material === 'snackRed' ? 0.3 : 0;
+        s.cube(material, snacks, u, 0.85 + stacked, 0.02, w, h, d);
+    }
+    s.put('snackYellow', cylinder(0.11, 0.18, 16, true, 0.13), snacks, 0.42, 0.94, -0.08);
+    for (let k = 0; k < 7; k++) {
+        const a = k * 2.2;
+        s.put(
+            'bamboo',
+            cylinder(0.008, 0.7 + (k % 3) * 0.12, 6),
+            snacks,
+            0.42 + Math.cos(a) * 0.04,
+            1.4,
+            -0.08 + Math.sin(a) * 0.04,
+            {
+                roll: Math.sin(a) * 0.12,
+                pitch: Math.cos(a) * 0.12
+            }
+        );
+        s.put(
+            'leaf',
+            sphere(8, 5),
+            snacks,
+            0.42 + Math.cos(a) * 0.12,
+            1.6 + (k % 3) * 0.1,
+            -0.08 + Math.sin(a) * 0.12,
+            {
+                yaw: -a,
+                pitch: -0.5,
+                sx: 0.1,
+                sy: 0.01,
+                sz: 0.03
+            }
+        );
+    }
+    s.solid(snacks, 0, 0, 1.0, 0.44, 0.85);
+    // Workspace (east): stacked storage crates by the north-east plant and opened cardboard boxes along the wall.
+    const crates = frame(E - 0.25, N + 0.95, facing(-1, 0));
+    s.cube('crateGreen', crates, 0, 0.6, 0, 0.42, 0.3, 0.32);
+    s.cube('cabinetWhite', crates, 0, 0.3, 0, 0.42, 0.3, 0.32);
+    s.cube('cabinetWhite', crates, 0, 0, 0, 0.42, 0.3, 0.32);
+    s.solid(crates, 0, 0, 0.42, 0.32, 0.9);
+    for (const [z, w, h, d, tilt] of [
+        [42.7, 0.45, 0.3, 0.4, 0.1],
+        [43.15, 0.4, 0.22, 0.45, -0.15],
+        [43.55, 0.5, 0.28, 0.42, 0.05],
+        [44.0, 0.38, 0.18, 0.36, 0.3]
+    ] as const) {
+        const f = frame(E - 0.45, z, facing(-1, 0) + tilt);
+        s.cube('kraft', f, 0, 0, 0, w, h, d);
+        // Open flaps.
+        s.put('kraft', box(w, 0.004, 0.18), f, 0, h + 0.06, -d / 2 - 0.05, { roll: 0.9 });
+        s.put('kraft', box(w, 0.004, 0.18), f, 0, h + 0.06, d / 2 + 0.05, { roll: -0.9 });
+    }
+    s.solid(frame(E - 0.42, 43.35, 0), 0, 0, 0.66, 1.75, 0.3);
 
     return {
         room: 'M104',

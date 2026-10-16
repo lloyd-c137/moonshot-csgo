@@ -10,8 +10,8 @@ test('M104 is entered through either door and its furniture collides', async ({ 
     await enterAtSpawn(page);
 
     for (const [doorX, inside] of [
-        [-47.33, [-48.9, 43.6]],
-        [-45.33, [-45.1, 43.4]]
+        [-47.33, [-49.7, 42.9]],
+        [-45.33, [-43.2, 42.5]]
     ] as const) {
         await page.evaluate((x) => {
             window.__MOONSHOT__!.teleport(x, 0.92, 39.6);
@@ -19,7 +19,7 @@ test('M104 is entered through either door and its furniture collides', async ({ 
         }, doorX);
         await advance(page, 400);
         // Facing south (yaw 180): hold forward through the door, then steer with the camera reset to north.
-        await hold(page, ['w'], 700);
+        await hold(page, ['w'], 1_000);
         const [, , z] = await position(page);
         expect(z, `through the door at x ${doorX}`).toBeGreaterThan(41.6);
         await page.evaluate(() => window.__MOONSHOT__!.setLook(0, 0));
@@ -28,14 +28,14 @@ test('M104 is entered through either door and its furniture collides', async ({ 
         expect(await waitForRoom(page, 'M104')).toBe(true);
     }
 
-    // Walking east into the olive sofas stops in front of them.
+    // Walking west into the olive sofas (lounge end) stops in front of them.
     await page.evaluate(() => {
-        window.__MOONSHOT__!.teleport(-43.6, 0.92, 43.05);
-        window.__MOONSHOT__!.setLook(0, -90);
+        window.__MOONSHOT__!.teleport(-49.9, 0.92, 43.3);
+        window.__MOONSHOT__!.setLook(0, 90);
     });
     await advance(page, 400);
-    await walkTo(page, [-41.9, 43.05], 0.2, 2_500);
+    await walkTo(page, [-51.9, 43.3], 0.2, 2_500);
     const [x] = await position(page);
-    expect(x, 'stopped by the sofa').toBeLessThan(-42.4);
+    expect(x, 'stopped by the sofa').toBeGreaterThan(-50.5);
     expect(errors).toEqual([]);
 });

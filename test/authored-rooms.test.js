@@ -86,14 +86,14 @@ test('M104 colliders leave both north doors and a route into each half of the ro
     }
     const audit = auditFloor(loadCampusGeometry());
     const reached = ([x, z]) => audit.reached[audit.grid.index(x, z)] === 1;
-    // West workspace and east lounge, entered through their own doors.
+    // West lounge and east workspace, entered through their own doors.
     for (const point of [
         [-47.3, 42.4],
-        [-49.2, 42.6],
-        [-49.2, 43.9],
-        [-45.3, 42.6],
-        [-45.0, 43.6],
-        [-43.2, 43.2]
+        [-49.6, 42.7],
+        [-50.2, 43.9],
+        [-45.3, 42.5],
+        [-43.2, 45.3],
+        [-44.5, 44.9]
     ]) {
         assert.ok(reached(point), `reachable ${point}`);
     }

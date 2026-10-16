@@ -18,9 +18,12 @@ import { signedArea, simplifyRing } from '../src/world/geometry2d.ts';
 import type { CampusRoom } from '../src/world/roomIndex.ts';
 import { findRoomAt, pointInRoom } from '../src/world/roomIndex.ts';
 import { AUTHORED_ROOM_IDS } from '../src/world/rooms/index.ts';
+import { M104_BOUNDS, M104_DOORS } from '../src/world/rooms/m104.ts';
 
 import { auditFloor, CELL, Grid, loadCampusGeometry } from './navAudit.ts';
 import type { Image } from './png.ts';
+import type { SignRecord } from './signage.ts';
+import { deriveSigns } from './signage.ts';
 
 export const DERIVED_SCHEMA = 1;
 const GLB = new URL('../public/assets/campus/MAC_Campus_FF01.glb', import.meta.url);
@@ -73,6 +76,7 @@ export type DerivedWorld = {
     furniture: FurnitureRecord[];
     partitions: [Vec2, Vec2][];
     lights: LightRecord[];
+    signs: SignRecord[];
 };
 
 /** Rasterises polygons (with holes) of the given rooms into `cells`. */
@@ -942,6 +946,17 @@ export const deriveWorld = () => {
     const lights = deriveLights(geometry, grid, solid, roomCells, arena, courtyard, floor).filter(([x, z]) =>
         outsideAuthored([x, z])
     );
+    // Door signs at each room's main entrance; M104's doors are given explicitly (its outline is notched there).
+    const signs = deriveSigns(
+        geometry.rooms,
+        { grid: fine, solid: fineSolid, coarse: { grid, solid } },
+        doorways,
+        M104_DOORS.map((door) => ({
+            room: 'M104',
+            a: [door.from, M104_BOUNDS.north] as Vec2,
+            b: [door.to, M104_BOUNDS.north] as Vec2
+        }))
+    );
     const minimap = deriveMinimap(geometry, wallCells, glassCells, roomKind, kinds, floor, arena, grid);
 
     const world: DerivedWorld = {
@@ -956,7 +971,8 @@ export const deriveWorld = () => {
         doorways,
         furniture,
         partitions,
-        lights
+        lights,
+        signs
     };
     const sources = { glbSha256: sha256(readFileSync(GLB)), roomsSha256: sha256(readFileSync(ROOMS)) };
     return { world, ceilingMask, minimap, sources };

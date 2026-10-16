@@ -44,6 +44,7 @@ import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
 import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
+import { buildSigns } from './world/signage';
 
 let ui: Ui | null = null;
 
@@ -170,6 +171,7 @@ const boot = async () => {
     const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask, AUTHORED_ROOM_IDS);
     const authoredScenes = authoredRoomScenes();
     for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
+    buildSigns(app, campus.root, derivedWorld, rooms.rooms);
     const { player, camera } = createPlayer(app);
     setupAtmosphere(app, camera);
     const lightPool = createLightPool(app, [

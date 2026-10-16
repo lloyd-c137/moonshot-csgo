@@ -8,7 +8,10 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 6;
+import type { PowerState } from '../gameplay/power.ts';
+export type { PowerState } from '../gameplay/power.ts';
+
+export const PROTOCOL_VERSION = 7;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -153,6 +156,7 @@ export type ClientMessage =
     | { type: 'landed'; throwId: number; at: Vec3Tuple }
     /** The sender was caught in the night guard's flashlight. */
     | { type: 'spotted' }
+    | { type: 'pullBreaker' }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
@@ -169,6 +173,7 @@ export type ServerMessage =
           king: King | null;
           chat: ChatLine[];
           round: RoundState;
+          power: PowerState;
           gold: GoldState;
           ammo: number;
           discs: GroundDisc[];
@@ -208,7 +213,8 @@ export type ServerMessage =
     | { type: 'ammo'; ammo: number }
     /** Discs lying around changed (`added`: a fresh one appeared, e.g. at the PE office). */
     | { type: 'discs'; discs: GroundDisc[]; added?: { id: number; office: boolean } }
-    | { type: 'pong'; c: number };
+    | { type: 'pong'; c: number }
+    | { type: 'power'; power: PowerState };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
 export const cleanName = (raw: unknown) => {
@@ -269,6 +275,7 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'ping':
             return isNumber(value.c) ? (value as ClientMessage) : null;
         case 'spotted':
+        case 'pullBreaker':
             return value as ClientMessage;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;

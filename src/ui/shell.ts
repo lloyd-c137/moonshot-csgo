@@ -86,6 +86,7 @@ const MARKUP = `
             <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
             <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
+            <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
             <div><dt><span class="kbd">Enter</span></dt><dd>世界聊天</dd></div>
             <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
             <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
@@ -169,6 +170,7 @@ const MARKUP = `
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
     <span class="popup" id="popup" aria-hidden="true"></span>
+    <p class="interaction" id="interaction" hidden></p>
     <div class="chat" id="chat" data-open="false">
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <form class="chat-form" id="chat-form" hidden><span>全服</span><input id="chat-input" type="text" maxlength="120" autocomplete="off" placeholder="输入消息，Enter 发送，Esc 取消" /></form>
@@ -733,6 +735,11 @@ export const createUi = () => {
             const marker = $('#hitmarker');
             marker.dataset.kind = kind;
             replay(marker, 'show');
+        },
+        interaction: (text: string | null) => {
+            const prompt = $('#interaction');
+            prompt.hidden = text === null;
+            if (text !== null && prompt.textContent !== text) prompt.textContent = text;
         },
         /** Red flash, plus an arc around the crosshair pointing toward the thrower (degrees, 0 = ahead, clockwise). */
         damage: (fromAngle: number | null = null) => {

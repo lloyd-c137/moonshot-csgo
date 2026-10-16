@@ -18,6 +18,8 @@ import { box, cylinder, merge, place, sphere } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
 import { GUARD, guardAt, inBeam } from './guard';
+import { powerOut } from './power';
+import type { PowerState } from './power';
 import type { TeacherPose } from './teacher';
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -150,9 +152,9 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
             return pose;
         },
         /** Places him at room time `roomMs`; the torch is lit once the lights are out (`blackoutAt` reached). */
-        update(roomMs: number, blackoutAt: number | null) {
-            pose = guardAt(roomMs, blackoutAt);
-            on = blackoutAt !== null && roomMs >= blackoutAt;
+        update(roomMs: number, blackoutAt: number | null, power: PowerState) {
+            pose = guardAt(roomMs, blackoutAt, power);
+            on = (blackoutAt !== null && roomMs >= blackoutAt) || powerOut(roomMs, power);
             const bob = pose.walking ? Math.abs(Math.sin(roomMs / 260)) * 0.03 : 0;
             root.setPosition(pose.x, bob, pose.z);
             root.setEulerAngles(0, pose.yaw, 0);

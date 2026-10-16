@@ -1169,6 +1169,18 @@ legend {
     white-space: nowrap;
 }
 
+.interaction {
+    position: absolute;
+    bottom: 22%;
+    left: 50%;
+    translate: -50% 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    background: rgb(15 24 34 / 0.85);
+    color: var(--paper);
+    pointer-events: none;
+}
+
 .hitmarker {
     position: absolute;
     top: 50%;

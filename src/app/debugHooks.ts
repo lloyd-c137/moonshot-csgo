@@ -19,6 +19,7 @@ export type DebugHooks = {
     roomId: () => string | null;
     /** Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed. */
     match: MatchDebug;
+    lighting: () => { pooled: number[]; panels: number[] };
     setRendering: (enabled: boolean) => void;
     /** Current camera field of view (degrees). */
     fov: () => number;

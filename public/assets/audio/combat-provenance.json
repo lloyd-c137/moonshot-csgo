@@ -8,7 +8,7 @@
     "publication": {
         "status": "OWNER_CONFIRMED_AUTHORIZED",
         "date": "2026-10-16",
-        "basis": "Owner explicitly confirmed having public game-release authorization for clips 10, 12 and 16 in the project conversation. This records the owner's confirmation, not an independently verified license or a CC0 claim."
+        "basis": "Owner explicitly confirmed public game-release authorization for v10/v12/v16, and separately gold06-01 and whoosh-05 on 2026-10-16. Owner confirmation, not independently verified licenses; no CC0 claim."
     },
     "clips": [
         {
@@ -40,6 +40,35 @@
             "duration": 1.05299,
             "gain": 0.35,
             "sha256": "733e7555f939b6a2932159ce71c1d7ac3ca14c3a0bf6fdd96d53753b69fbf032"
+        },
+        {
+            "cue": "goldKill",
+            "sourceClip": "gold06-01",
+            "file": "gold-kill-06-01.wav",
+            "source": "video1-v06",
+            "sourceStart": 5.872,
+            "sourceEnd": 6.802,
+            "duration": 0.93,
+            "gain": 0.35,
+            "sha256": "33b4e6e20bdacf1a49294a4ab025decf1cd69b47197dd4d9c73f93c48226d7c1"
+        },
+        {
+            "cue": "throw",
+            "sourceClip": "whoosh-05",
+            "file": "throw-whoosh-05.wav",
+            "source": "video2",
+            "sourceStart": 5.77,
+            "sourceEnd": 7.03,
+            "duration": 1.26,
+            "gain": 0.35,
+            "sha256": "4c5f8edbc5a2c68de928ba274524102f8b2c86a1980431e3daf0b3c9681c423a"
+        }
+    ],
+    "additionalSources": [
+        {
+            "file": "513e788136a9bffa71f9741167f26cdf.mp4",
+            "sha256": "dba264a4ddf61b76d996d5fbef7a253f6eecb15cb39c8be671f7d094ddd27d6f",
+            "note": "User-supplied BOOM promotional video; event excerpts retain background mix."
         }
     ]
 }

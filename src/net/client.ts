@@ -9,6 +9,7 @@ import type {
     King,
     PlayerPose,
     PlayerSummary,
+    PowerState,
     RoundState,
     Scores,
     ServerMessage,
@@ -29,6 +30,7 @@ type Handlers = {
             king: King | null;
             chat: ChatLine[];
             round: RoundState;
+            power: PowerState;
             gold: GoldState;
             ammo: number;
             discs: GroundDisc[];
@@ -57,6 +59,7 @@ type Handlers = {
     respawn: (id: string, spawn: number) => void;
     gold: (gold: GoldState, event: 'spawned' | 'taken' | 'dropped') => void;
     round: (round: RoundState, scores: Scores) => void;
+    power: (power: PowerState) => void;
     caught: (id: string) => void;
     ammo: (ammo: number) => void;
     discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
@@ -102,6 +105,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     king: message.king,
                     chat: message.chat,
                     round: message.round,
+                    power: message.power,
                     gold: message.gold,
                     ammo: message.ammo,
                     discs: message.discs
@@ -188,6 +192,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 handlers.latency(Math.round(latency));
                 break;
             }
+            case 'power':
+                handlers.power(message.power);
+                break;
             case 'respawn':
                 handlers.respawn(message.id, message.spawn);
                 break;
@@ -286,6 +293,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         /** Tells the room the night guard's flashlight found this player. */
         spotted() {
             send({ type: 'spotted' });
+        },
+        pullBreaker() {
+            send({ type: 'pullBreaker' });
         },
         /** Estimated room clock (ms), or null before the first message. */
         serverNow() {

@@ -3,6 +3,8 @@
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
+import { nearBreaker } from '../src/gameplay/power.ts';
+import type { PowerState } from '../src/gameplay/power.ts';
 import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
     ChatLine,
@@ -92,6 +94,7 @@ export class Room {
     private chatId = 0;
     /** The current round and the golden disc (null while the room is empty). */
     round: RoundState | null = null;
+    power: PowerState = { pulledAt: null };
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
     /** Discs a newcomer carries (tests raise it to throw repeatedly). */
@@ -130,6 +133,7 @@ export class Room {
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
             this.round = null;
+            this.power = { pulledAt: null };
             this.roundParticipants.clear();
             this.discs = [];
             this.officeAt = null;
@@ -172,6 +176,22 @@ export class Room {
                 return this.landed(player, message.throwId, message.at);
             case 'spotted':
                 return this.spotted(player, now);
+            case 'pullBreaker':
+                if (
+                    this.round?.phase !== 'playing' ||
+                    this.blackout(now) ||
+                    this.power.pulledAt !== null ||
+                    !player.alive ||
+                    player.spectating ||
+                    !player.pose ||
+                    now - player.poseAt > 1000 ||
+                    !nearBreaker(player.pose.p)
+                )
+                    return;
+                this.power = { pulledAt: now };
+                this.out.all({ type: 'power', power: this.power });
+                this.system(`${player.name} 拉下了配电室总闸，保安正在前往恢复供电`, now);
+                return;
             case 'ping':
                 return this.out.to(player.id, { type: 'pong', c: message.c });
         }
@@ -287,6 +307,7 @@ export class Room {
             king: this.accounts?.king() ?? null,
             chat: this.chatLog.slice(-20),
             round: this.round!,
+            power: this.power,
             gold: this.gold,
             ammo: player.ammo,
             discs: this.discs,
@@ -391,7 +412,7 @@ export class Room {
     /** The guard's flashlight caught a player (checked against walls on their client; the room checks reach). */
     private spotted(player: Player, now: number) {
         if (!player.alive || !player.pose || !this.blackout(now)) return;
-        const guard = guardAt(now, this.blackoutAt());
+        const guard = guardAt(now, this.blackoutAt(), this.power);
         if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
         player.hp = 0;
         player.alive = false;
@@ -425,6 +446,7 @@ export class Room {
     // ---------- rounds and the golden disc ----------
 
     private startRound(now: number, announce = true) {
+        this.power = { pulledAt: null };
         this.roundParticipants.clear();
         for (const player of this.players.values()) {
             if (player.accountName) this.roundParticipants.add(player.accountName);
@@ -445,6 +467,7 @@ export class Room {
         this.goldDroppedAt = now;
         if (!announce) return; // the first arrival learns both from its welcome
         this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        this.out.all({ type: 'power', power: this.power });
         this.out.all({ type: 'gold', gold: this.gold, event: 'spawned' });
     }
 

@@ -17,7 +17,7 @@ import {
     WasmModule,
     createGraphicsDevice
 } from 'playcanvas';
-import type { Entity, Texture } from 'playcanvas';
+import type { Entity, StandardMaterial, Texture } from 'playcanvas';
 
 import { installDebugHooks } from './app/debugHooks';
 import { browserStorage } from './app/storage';
@@ -517,6 +517,15 @@ const boot = async () => {
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
             match: match.debug,
+            lighting: () => ({
+                pooled: lightPool.pool.map((light) => light.light!.intensity),
+                panels: app.root
+                    .findComponents('render')
+                    .flatMap((render) => render.meshInstances)
+                    .map((instance) => instance.material as StandardMaterial)
+                    .filter((material) => material.name === 'light-panel' || /^M104-(led|rgb)/.test(material.name))
+                    .map((material) => material.emissiveIntensity)
+            }),
             setRendering: (enabled: boolean) => {
                 app.autoRender = enabled;
                 app.renderNextFrame = true;

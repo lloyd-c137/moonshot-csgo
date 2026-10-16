@@ -28,24 +28,26 @@ export const createSound = () => {
             /* clip unavailable: the synthesised fallback plays instead */
         }
     };
-    const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity) => {
+    const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity, at?: V3) => {
         const buffer = clips.get(name);
         if (!buffer) return null;
         const source = audio.createBufferSource();
         source.buffer = buffer;
         const gain = audio.createGain();
         gain.gain.value = volume;
-        source.connect(gain).connect(master!);
+        const destination = output(audio, at);
+        source.connect(gain).connect(destination);
         source.onended = () => {
             source.disconnect();
             gain.disconnect();
+            if (destination !== master) destination.disconnect();
         };
         source.start(0, start, Math.min(end, buffer.duration) - start);
         return { source, gain };
     };
-    const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO) => {
+    const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO, at?: V3) => {
         const clip = COMBAT_AUDIO[cue];
-        return playClip(audio, cue, clip.gain, clip.start, clip.end);
+        return playClip(audio, cue, clip.gain, clip.start, clip.end, at);
     };
 
     const ensure = () => {
@@ -283,7 +285,7 @@ export const createSound = () => {
         /** Sniper release: a sharp crack and a fast, thin whoosh (positioned for other players' throws). */
         sniperThrow: (at?: V3) =>
             play((audio, now) => {
-                if (playTestClip(audio, 'throw', at)) return;
+                if (playTestClip(audio, 'throw', at) || playCombatClip(audio, 'throw', at)) return;
                 const out = output(audio, at);
                 hiss(audio, out, now, 0.08, 0.5, 4000, 1500, 0.8);
                 tone(audio, out, 'sawtooth', 900, 120, now, 0.12, 0.2);
@@ -292,7 +294,7 @@ export const createSound = () => {
         /** Sniper or golden elimination: use the selected head/kill clip, with the original synthesis as fallback. */
         snipeConfirm: (head = true, golden = false) =>
             play((audio, now) => {
-                if (golden && playTestClip(audio, 'goldKill')) return;
+                if (golden && (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill'))) return;
                 const cue = head ? 'head' : 'kill';
                 if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
                 tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
@@ -375,7 +377,7 @@ export const createSound = () => {
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {
-                if (playTestClip(audio, 'throw', at)) return;
+                if (playTestClip(audio, 'throw', at) || playCombatClip(audio, 'throw', at)) return;
                 const out = output(audio, at);
                 hiss(audio, out, now, 0.32, 0.5, 900, 2600, 1.6);
                 tone(audio, out, 'triangle', 240, 140, now, 0.08, 0.12);

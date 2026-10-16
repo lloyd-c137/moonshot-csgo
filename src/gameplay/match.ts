@@ -28,6 +28,7 @@ import type { AudioLabUi } from '../ui/audioLab';
 import type { Ui } from '../ui/shell';
 
 import { createAvatars } from './avatars';
+import { createBreakerView } from './breakerView';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
 import type { V3 } from './frisbee';
@@ -47,6 +48,8 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
+import { nearBreaker, powerOut, powerPhase } from './power';
+import type { PowerState } from './power';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
 import { createSound } from './sound';
 import { TEACHER } from './teacher';
@@ -151,6 +154,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let goldSparkAt = 0;
     let lastGoldMine = false;
     const guard = createGuard(app, camera, ui.nameTagLayer());
+    const breakerView = createBreakerView(app);
+    let power: PowerState = { pulledAt: null };
+    let wasPowerOut = false;
     let teacherGraceUntil = 0;
     // Final showdown floodlights over the 莲花球场, and a light that follows the golden disc in the dark.
     const floodlights = [0, 1, 2, 3, 4, 5].map((i) => {
@@ -182,6 +188,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let goldThrowCount = 0;
     let goldCooldownUntil = 0;
     let dark = false;
+    let wasNight = false;
     let spottedSent = false;
     /** Out for the rest of the round (after the lights went out): watching someone else. */
     let spectating = false;
@@ -400,6 +407,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
             }
             if (state !== 'online') {
+                power = { pulledAt: null };
                 roster.clear();
                 avatars.clear();
                 // Back to offline practice: no round, and a local golden disc will be laid out again.
@@ -416,6 +424,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             refreshCount();
         },
         welcome: (me, players, extra) => {
+            power = extra.power;
             roster.clear();
             if (me.spectating) startSpectating('灯已经灭了：本局观战，下一局开始时加入');
             else stopSpectating();
@@ -537,7 +546,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             } else if (by === me) {
                 if (goldKill) {
                     sound.snipeConfirm(head, true);
-                    sound.goldTaken();
                     ui.hitMarker('snipe');
                     ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
                     punch = Math.max(punch, 1.8);
@@ -661,6 +669,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             ui.feed(`纪老师抓到 ${nameOf(id)} 在室内打飞盘，罚站 ${DETENTION_SECONDS} 秒`);
         },
         latency: (ms) => ui.latency(ms),
+        power: (next) => {
+            power = next;
+        },
         ammo: (next) => {
             if (next > ammo) {
                 sound.pickup();
@@ -850,6 +861,27 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         ui.scoreboard(rows.length ? rows : [{ name: '离线练习', kills: 0, deaths: 0, me: true }]);
     };
     window.addEventListener('keydown', (event) => {
+        if (
+            event.code === 'KeyE' &&
+            !event.repeat &&
+            locked() &&
+            alive &&
+            !spectating &&
+            !inputPaused &&
+            performance.now() >= detainedUntil &&
+            nearBreaker(pose().p) &&
+            power.pulledAt === null &&
+            (net.state !== 'online' || roundState?.phase === 'playing')
+        ) {
+            const now = roomNow();
+            const nightAt = blackoutAt();
+            if (nightAt === null || now < nightAt) {
+                if (net.state === 'online') {
+                    net.pose(pose(), true);
+                    net.pullBreaker();
+                } else power = { pulledAt: now };
+            }
+        }
         if (event.code === 'Tab' && locked()) {
             event.preventDefault();
             showBoard(true);
@@ -1045,17 +1077,40 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         }
         // The night guard: at the south gate until the lights go out, then on his rounds with a flashlight.
         const lightsOut = blackoutAt();
-        guard.update(roomNow(), lightsOut);
-        const nowDark = net.state === 'online' && lightsOut !== null && roomNow() >= lightsOut;
-        if (nowDark !== dark) {
-            dark = nowDark;
-            if (dark) {
+        const time = roomNow();
+        const outage = powerOut(time, power);
+        const nightActive = net.state === 'online' && lightsOut !== null && time >= lightsOut;
+        guard.update(time, lightsOut, power);
+        breakerView.update(outage);
+        if (outage !== wasPowerOut) {
+            wasPowerOut = outage;
+            if (outage) {
                 sound.blackout();
-                ui.broadcastText('灯灭了！保安开始巡逻 · 被手电筒照到即出局');
-                ui.feed('从现在起被淘汰就不能复活，只剩最后一人时直接获胜', 'me');
+                ui.broadcastText('总闸被拉下！全校断电 · 保安前往配电室');
+            } else if (power.pulledAt !== null) {
+                ui.broadcastText(nightActive ? '保安已合闸 · 终局夜晚继续' : '保安已恢复供电，正在返回原位');
+                sound.pickup();
             }
         }
-        if (dark && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
+        ui.interaction(
+            started && alive && !spectating && nearBreaker(pose().p)
+                ? power.pulledAt === null
+                    ? nightActive
+                        ? '终局夜晚 · 无法拉闸'
+                        : 'E 拉闸 · 全服每局限一次'
+                    : outage
+                      ? '全校断电 · 保安正在恢复供电'
+                      : '本局已拉闸 · 无法再次使用'
+                : null
+        );
+        dark = nightActive || outage;
+        if (nightActive && !wasNight) {
+            if (!outage) sound.blackout();
+            ui.broadcastText('终局夜晚开始 · 被保安手电筒照到即出局');
+            ui.feed('从现在起被淘汰就不能复活，只剩最后一人时直接获胜', 'me');
+        }
+        wasNight = nightActive;
+        if (nightActive && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
             spottedSent = true;
             ui.popup('被保安的手电筒照到了！', 'me');
             net.spotted();
@@ -1436,7 +1491,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 aim,
                 gold: goldView.state,
                 round: roundState,
-                detained: performance.now() < detainedUntil
+                detained: performance.now() < detainedUntil,
+                power: { ...power, phase: powerPhase(roomNow(), power), dark, guard: { ...guard.pose } }
             }),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,

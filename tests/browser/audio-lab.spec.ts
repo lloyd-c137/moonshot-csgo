@@ -6,7 +6,7 @@ test('offline target stays visible after entry, uses selected defaults and respa
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.addInitScript(() => {
-        const played: { duration: number; gain: number; offset: number; length: number }[] = [];
+        const played: { duration: number; gain: number; offset: number; length: number; sampleRate: number }[] = [];
         Object.assign(window, { __combatPlayed: played });
         const gains = new WeakMap<AudioNode, GainNode>();
         const connect = AudioNode.prototype.connect;
@@ -20,7 +20,8 @@ test('offline target stays visible after entry, uses selected defaults and respa
                 duration: this.buffer?.duration ?? 0,
                 gain: gains.get(this)?.gain.value ?? -1,
                 offset,
-                length: duration ?? 0
+                length: duration ?? 0,
+                sampleRate: this.buffer?.sampleRate ?? 44100
             });
             start.call(this, when, offset, duration);
         };
@@ -51,20 +52,32 @@ test('offline target stays visible after entry, uses selected defaults and respa
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy))?.position).toEqual(
         initial?.position
     );
+    await page.keyboard.press('p');
+    await page.locator('[data-golden]').check();
+    await page.locator('[data-action="resume"]').click();
+    await shoot(1.6, 0);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
     const played = await page.evaluate(
         () =>
             (
                 window as unknown as {
-                    __combatPlayed: { duration: number; gain: number; offset: number; length: number }[];
+                    __combatPlayed: {
+                        duration: number;
+                        gain: number;
+                        offset: number;
+                        length: number;
+                        sampleRate: number;
+                    }[];
                 }
             ).__combatPlayed
     );
-    for (const duration of [0.54299, 0.74299, 1.05299]) {
+    for (const duration of [0.54299, 0.74299, 1.05299, 0.93, 1.26]) {
         const clip = played.find((entry) => Math.abs(entry.duration - duration) < 0.0001);
         expect(clip, `default clip duration ${duration}`).toBeDefined();
         expect(clip!.gain).toBeCloseTo(0.35, 5);
         expect(clip!.offset).toBe(0);
-        expect(clip!.length).toBeCloseTo(duration, 5);
+        // decodeAudioData resamples to the output device (44.1/48 kHz), with at most one frame of rounding.
+        expect(Math.abs(clip!.length - duration)).toBeLessThanOrEqual(1 / clip!.sampleRate + 1e-9);
     }
     await page.screenshot({ path: 'test-results/audio-lab-visible-target.png' });
     expect(errors).toEqual([]);
@@ -124,11 +137,11 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
     await expect(page.locator('.audio-lab-status')).toContainText('已应用');
     await expect(page.locator('[data-golden]')).toBeChecked();
     await page.locator('section[data-cue="goldKill"] [data-preview]').click();
-    await expect.poll(played).toContain(0.7429931972789116);
+    await expect.poll(async () => (await played()).some((v) => Math.abs(v - 0.74299) < 0.0001)).toBe(true);
     await page.locator('section[data-cue="throw"] select').selectOption('whoosh-fixture');
     await expect(page.locator('.audio-lab-status')).toContainText('飞盘破空');
     await page.locator('section[data-cue="throw"] [data-preview]').click();
-    await expect.poll(played).toContain(0.5429931972789116);
+    await expect.poll(async () => (await played()).some((v) => Math.abs(v - 0.54299) < 0.0001)).toBe(true);
     await page.locator('[data-golden]').check();
     await page.locator('[data-action="range"]').click();
     await expect(page.locator('.name-tag').filter({ hasText: '固定测试人偶' })).toBeVisible();
@@ -136,7 +149,10 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
     const before = (await played()).length;
     expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-8.7, 1.6, 42.3))).toBe(true);
     await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
-    expect((await played()).slice(before)).toEqual([0.5429931972789116, 0.7429931972789116]);
+    const actual = (await played()).slice(before);
+    expect(actual).toHaveLength(2);
+    expect(Math.abs(actual[0] - 0.54299)).toBeLessThan(0.0001);
+    expect(Math.abs(actual[1] - 0.74299)).toBeLessThan(0.0001);
     await page.keyboard.press('p');
     await page.locator('[data-action="reset"]').click();
     await expect(page.locator('[data-golden]')).not.toBeChecked();

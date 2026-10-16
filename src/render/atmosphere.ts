@@ -69,6 +69,14 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
     });
     let elapsed = POOL_REFRESH_SECONDS;
     let dark = false;
+    const fixtureMaterials = new Map<StandardMaterial, number>();
+    for (const render of app.root.findComponents('render')) {
+        for (const instance of render.meshInstances) {
+            const m = instance.material as StandardMaterial;
+            if (m.name === 'light-panel' || /^M104-(led|rgb)/.test(m.name))
+                fixtureMaterials.set(m, m.emissiveIntensity);
+        }
+    }
     const position = new Vec3();
     const update = (deltaTime: number, player: Vec3) => {
         elapsed += deltaTime;
@@ -99,6 +107,10 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
         elapsed = POOL_REFRESH_SECONDS; // re-apply on the next update
         app.scene.ambientLight = value ? new Color(0.07, 0.08, 0.12) : new Color(0.55, 0.54, 0.52);
         app.scene.exposure = value ? 0.9 : 1.1;
+        for (const [material, intensity] of fixtureMaterials) {
+            material.emissiveIntensity = value ? 0 : intensity;
+            material.update();
+        }
     };
     return { update, pool, setDark };
 };

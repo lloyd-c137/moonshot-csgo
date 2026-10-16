@@ -11,7 +11,7 @@ test('production combat clips match the approved selection, duration, gain and s
     assert.equal(manifest.publication.status, 'OWNER_CONFIRMED_AUTHORIZED');
     assert.deepEqual(
         manifest.clips.map((clip) => clip.sourceClip),
-        ['v10', 'v12', 'v16']
+        ['v10', 'v12', 'v16', 'gold06-01', 'whoosh-05']
     );
     for (const clip of manifest.clips) {
         const config = COMBAT_AUDIO[clip.cue];

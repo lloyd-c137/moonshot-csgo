@@ -17,6 +17,7 @@ const harness = () => {
         score: 0,
         wins: 0,
         rounds: 0,
+        losses: 0,
         ...stats.get(name)
     });
     const room = new Room(

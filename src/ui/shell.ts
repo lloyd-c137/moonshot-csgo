@@ -43,6 +43,7 @@ const MARKUP = `
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
         <button type="button" role="tab" data-tab="help" aria-selected="false">操作说明</button>
+        <button type="button" role="tab" data-tab="changelog" aria-selected="false">更新日志</button>
       </nav>
       <div class="title-status" id="title-status" data-state="offline"><i aria-hidden="true"></i><span id="title-online">离线练习</span></div>
     </header>
@@ -67,7 +68,7 @@ const MARKUP = `
               <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
               <dl class="operator-stats">
                 <div><dt>累计淘汰</dt><dd id="account-kills">0</dd></div>
-                <div><dt>胜率</dt><dd id="account-win-rate">—</dd></div>
+                <div><dt>胜率指数</dt><dd id="account-win-rate">—</dd></div>
                 <div><dt>被淘汰</dt><dd id="account-deaths">0</dd></div>
                 <div><dt>已结算局数</dt><dd id="account-rounds">0</dd></div>
               </dl>
@@ -77,8 +78,28 @@ const MARKUP = `
         </section>
         <section class="tab-panel" data-panel="board" hidden>
           <h2 class="panel-title">全服累计排行</h2>
-          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜率</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
-          <p class="fine-print">胜率初始为 100%；首局结算后按实际胜场 ÷ 参赛局数更新。中途离开仍计入已结算局，纯观战与中止局不计。</p>
+          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜率指数</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
+          <p class="fine-print">指数初始为 100%；每场明确落败后乘以 0.95，胜局与平局保持不变。实际胜负场数仍单独记录；这是按输局递减的展示指数，不是胜场比例。</p>
+        </section>
+        <section class="tab-panel changelog-panel" data-panel="changelog" hidden>
+          <h2 class="panel-title">更新日志</h2>
+          <p class="release-intro">按发布日期记录已上线的玩法与改进。</p>
+          <ol class="release-list">
+            <li class="release-entry" data-current="true">
+              <header><b>v0.0.0 · 2026.10.16</b><span>当前版本</span></header>
+              <h3>FF-01 自由漫游与多人飞盘玩法</h3>
+              <ul>
+                <li>接入 FF-01 校园模型、房间识别、第一人称移动和碰撞。</li>
+                <li>加入金飞盘回合、淘汰排行榜、聊天、夜间保安与配电室断电机制。</li>
+                <li>加入背后处决、同步动作、爆头淘汰，以及金飞盘击杀和飞盘破空音效。</li>
+                <li>开发测试模式提供固定自动复活人偶和 P 音效测试面板。</li>
+                <li>地图新增配电室、监控室、体育办公室标记。</li>
+                <li>监控室内新增电脑，瞄准后点击可查看其他玩家位置 30 秒。</li>
+                <li>胜率指数从 100% 起步；输局每次乘以 0.95，胜局和平局不改变该值。</li>
+                <li>更新日志加入首页菜单，罚站期间不会显示脱困提示。</li>
+              </ul>
+            </li>
+          </ol>
         </section>
         <section class="tab-panel" data-panel="help" hidden>
           <h2 class="panel-title">操作说明</h2>
@@ -87,6 +108,7 @@ const MARKUP = `
             <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
             <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
             <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
             <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
             <div><dt><span class="kbd">V</span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
@@ -202,7 +224,7 @@ const MARKUP = `
     </div>
     <p class="toast" id="toast" role="status" hidden></p>
     <div class="full-map" aria-label="全屏地图">
-      <div><canvas id="full-map"></canvas><p>按 M 关闭地图</p></div>
+      <div><canvas id="full-map"></canvas><p>配 配电室 · 监 监控室 · 体 体育办公室 · 按 M 关闭地图</p></div>
     </div>
   </section>
 

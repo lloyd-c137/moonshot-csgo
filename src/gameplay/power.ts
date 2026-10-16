@@ -1,12 +1,13 @@
 // GAMEPLAY_AUTHORED breaker in source-labelled SVC-10. Shared deterministic timing, not real electrical data.
 import { BREAKER_ROUTE } from '../config/breakerRoute.ts';
+import { BREAKER_CABINET } from '../config/specialLocations.ts';
 
 import type { TeacherPose } from './teacher.ts';
 
 export type PowerState = { pulledAt: number | null };
 export const BREAKER = {
     room: 'SVC-10',
-    cabinet: [-51.95, 1.25, -13.08],
+    cabinet: BREAKER_CABINET,
     reach: 1.1,
     speed: 2.8,
     repairSeconds: 3

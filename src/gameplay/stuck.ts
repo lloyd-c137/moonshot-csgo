@@ -19,7 +19,11 @@ export class StuckDetector {
     private sunk = 0;
 
     /** Feed one frame; returns whether the player looks stuck right now. */
-    update(deltaTime: number, t: number, position: [number, number, number], tryingToMove: boolean) {
+    update(deltaTime: number, t: number, position: [number, number, number], tryingToMove: boolean, suppressed = false) {
+        if (suppressed) {
+            this.reset();
+            return false;
+        }
         const [x, y, z] = position;
         this.samples.push({ t, x, z });
         while (this.samples.length && t - this.samples[0].t > STUCK.seconds) this.samples.shift();

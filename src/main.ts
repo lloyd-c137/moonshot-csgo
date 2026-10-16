@@ -310,20 +310,18 @@ const boot = async () => {
             return;
         }
         roomTracker.update([position.x, position.z], deltaTime);
-        if (match.detained) {
-            stuck.reset();
-            if (stuckShown) {
-                stuckShown = false;
-                shell.stuck(false);
-            }
-        } else if (document.pointerLockElement === canvas && match.alive) {
+        if (document.pointerLockElement === canvas && match.alive) {
             const isStuck = stuck.update(
                 deltaTime,
                 performance.now() / 1000,
                 [position.x, position.y, position.z],
-                moveKeys.size > 0
+                moveKeys.size > 0,
+                match.detained
             );
-            if (isStuck && !stuckShown) {
+            if (match.detained && stuckShown) {
+                stuckShown = false;
+                shell.stuck(false);
+            } else if (isStuck && !stuckShown) {
                 stuckShown = true;
                 stuckAt = [position.x, position.z];
                 shell.stuck(true);

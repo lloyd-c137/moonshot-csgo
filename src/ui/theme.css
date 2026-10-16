@@ -275,6 +275,72 @@ input {
     display: none;
 }
 
+.changelog-panel {
+    align-content: start;
+    max-height: min(62vh, 620px);
+    overflow: auto;
+    padding-right: 8px;
+}
+
+.release-intro {
+    margin: -4px 0 0;
+    color: var(--line);
+    font-size: var(--step-0);
+}
+
+.release-list {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.release-entry {
+    padding: 12px 14px;
+    border: 1px solid rgb(238 242 244 / 0.14);
+    border-radius: var(--radius-plate);
+    background: rgb(16 26 38 / 0.68);
+}
+
+.release-entry[data-current='true'] {
+    border-color: rgb(255 194 26 / 0.48);
+}
+
+.release-entry header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--line);
+    font-size: 12px;
+}
+
+.release-entry header b {
+    color: var(--paper);
+    font-variant-numeric: tabular-nums;
+}
+
+.release-entry header span {
+    color: var(--signal);
+}
+
+.release-entry h3 {
+    margin: 7px 0;
+    color: var(--paper);
+    font-size: var(--step-1);
+}
+
+.release-entry ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    color: rgb(238 242 244 / 0.8);
+    font-size: var(--step-0);
+    line-height: 1.5;
+}
+
 .mode-tag {
     display: flex;
     align-items: center;
@@ -700,11 +766,31 @@ input {
 @media (max-width: 640px) {
     .title-top {
         grid-template-columns: 1fr auto;
+        gap: 8px;
     }
 
-    .title-tabs,
     .brand span:last-child {
         display: none;
+    }
+
+    .title-tabs {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        justify-content: flex-start;
+        overflow-x: auto;
+    }
+
+    .title-tabs button {
+        flex: 0 0 auto;
+        padding: 7px 9px;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+    }
+
+    .title-tabs button[aria-selected='true']::after {
+        right: 9px;
+        bottom: -10px;
+        left: 9px;
     }
 
     .title-bottom {
@@ -1046,6 +1132,11 @@ legend {
     color: var(--line);
     font-size: var(--step-0);
     text-align: center;
+}
+
+.full-map > div {
+    max-width: calc(100vw - 2 * var(--gutter));
+    max-height: calc(100vh - 2 * var(--gutter));
 }
 
 @media (max-width: 640px) {

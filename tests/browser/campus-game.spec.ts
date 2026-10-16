@@ -139,6 +139,36 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(errors).toEqual([]);
 });
 
+test('special locations are pinned on the map and the S103 monitor requires a focused click', async ({ page }) => {
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    const locations = await page.evaluate(() => window.__MOONSHOT__!.match.markers().specialLocations);
+    expect(locations.map(({ id }) => id)).toEqual(['breaker', 'monitor', 'pe-office']);
+
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.teleport(-43.6, 0.92, 11.169);
+    });
+    await advance(page, 500);
+    await page.evaluate(() => {
+        const [x, y, z] = window.__MOONSHOT__!.match.cameraPosition();
+        const dx = -41.875 - x;
+        const dy = 1.2 - y;
+        const dz = 11.169 - z;
+        const yaw = (Math.atan2(-dx, -dz) * 180) / Math.PI;
+        const pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+        window.__MOONSHOT__!.setLook(pitch, yaw);
+    });
+    await advance(page, 100);
+    await expect(page.locator('#location-code')).toHaveText('S103');
+    await expect(page.locator('#radar')).toBeHidden();
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.monitorFocused())).toBe(true);
+    await expect(page.locator('#interaction')).toContainText('点击电脑');
+    await page.mouse.click(640, 360);
+    await advance(page, 100);
+    await expect(page.locator('#radar')).toBeVisible();
+    await expect(page.locator('#radar')).toContainText('监控画面');
+});
+
 test('open entrances and the top seat row do not lead out of the level; a fall is recovered', async ({ page }) => {
     const errors = collectErrors(page);
     await loadSimulated(page);

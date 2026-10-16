@@ -6,7 +6,7 @@ import { sqlAccountDb } from '../server/accountDb.ts';
 import { Accounts } from '../server/accounts.ts';
 import { formatWinRate } from '../src/ui/formatStats.ts';
 
-test('SQLite migration preserves old accounts and is repeatable; round stats survive reopening the adapter', () => {
+test('SQLite migration preserves accounts; round stats and loss ordering survive reopening the adapter', () => {
     const sqlite = new DatabaseSync(':memory:');
     try {
         sqlite.exec(`CREATE TABLE users (key TEXT PRIMARY KEY, name TEXT, salt TEXT, hash TEXT,
@@ -33,13 +33,15 @@ test('SQLite migration preserves old accounts and is repeatable; round stats sur
                 score: 100,
                 created: 1,
                 wins: 0,
-                rounds: 0
+                rounds: 0,
+                losses: 0
             }
         );
         new Accounts(db).record('Old', { wins: 1, rounds: 2 });
         db = sqlAccountDb(sql);
         assert.equal(db.findUser('old').rounds, 2);
         assert.equal(db.findUser('old').wins, 1);
+        new Accounts(db).record('Old', { losses: 1 });
         db.insertUser({
             key: 'new',
             name: 'New',
@@ -51,26 +53,26 @@ test('SQLite migration preserves old accounts and is repeatable; round stats sur
             score: 5,
             wins: 2,
             rounds: 2,
+            losses: 0,
             created: 2
         });
         assert.deepEqual(
             db.top(2).map((row) => row.name),
             ['New', 'Old']
         );
-        assert.equal(formatWinRate(db.findUser('old')), '50.0%');
+        assert.equal(formatWinRate(db.findUser('old')), '95.0%');
     } finally {
         sqlite.close();
     }
 });
 
-test('win rate starts at 100%, then follows actual rounds; malformed payloads remain unknown', () => {
+test('the loss-only display starts at 100%, losses reduce it, and wins do not change it', () => {
     assert.equal(formatWinRate({}), '—');
-    assert.equal(formatWinRate({ wins: 0, rounds: 0 }), '100.0%');
-    assert.equal(formatWinRate({ wins: 0, rounds: 3 }), '0.0%');
-    assert.equal(formatWinRate({ wins: 1, rounds: 3 }), '33.3%');
-    assert.equal(formatWinRate({ wins: 3, rounds: 3 }), '100.0%');
-    assert.equal(formatWinRate({ wins: 4, rounds: 3 }), '—');
-    assert.equal(formatWinRate({ wins: NaN, rounds: 3 }), '—');
+    assert.equal(formatWinRate({ losses: 0 }), '100.0%');
+    assert.equal(formatWinRate({ losses: 1 }), '95.0%');
+    assert.equal(formatWinRate({ losses: 2 }), '90.3%');
+    assert.equal(formatWinRate({ losses: -1 }), '—');
+    assert.equal(formatWinRate({ losses: NaN }), '—');
 });
 
 test('owner reset backs up old round stats once and preserves new results after reinitialization', () => {
@@ -87,17 +89,20 @@ test('owner reset backs up old round stats once and preserves new results after 
         };
         let db = sqlAccountDb(sql);
         assert.equal(formatWinRate(db.findUser('old')), '100.0%');
-        assert.deepEqual([db.findUser('old').wins, db.findUser('old').rounds], [0, 0]);
+        assert.deepEqual([db.findUser('old').wins, db.findUser('old').rounds, db.findUser('old').losses], [0, 0, 0]);
         assert.deepEqual([db.findUser('old').kills, db.findUser('old').deaths, db.findUser('old').hits], [8, 3, 12]);
         const backup = db.getMeta('winrate-reset-100-v1');
         assert.deepEqual(JSON.parse(backup).previous, [{ key: 'old', wins: 2, rounds: 5 }]);
-        new Accounts(db).record('Old', { rounds: 1 });
-        assert.equal(formatWinRate(db.findUser('old')), '0.0%');
+        const lossBackup = db.getMeta('winrate-loss-only-v1');
+        assert.deepEqual(JSON.parse(lossBackup).previous, [{ key: 'old', losses: 0 }]);
+        new Accounts(db).record('Old', { rounds: 1, losses: 1 });
+        assert.equal(formatWinRate(db.findUser('old')), '95.0%');
         db = sqlAccountDb(sql);
         assert.equal(db.findUser('old').rounds, 1, 'a restart must not reset new play');
         assert.equal(db.getMeta('winrate-reset-100-v1'), backup);
+        assert.equal(db.getMeta('winrate-loss-only-v1'), lossBackup);
         new Accounts(db).record('Old', { wins: 1, rounds: 1 });
-        assert.equal(formatWinRate(db.findUser('old')), '50.0%');
+        assert.equal(formatWinRate(db.findUser('old')), '95.0%', 'a win leaves the display unchanged');
         db.insertUser({
             key: 'new',
             name: 'New',
@@ -109,6 +114,7 @@ test('owner reset backs up old round stats once and preserves new results after 
             score: 0,
             wins: 0,
             rounds: 0,
+            losses: 0,
             created: 2
         });
         assert.deepEqual(

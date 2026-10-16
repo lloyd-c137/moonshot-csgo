@@ -12,6 +12,8 @@ export type MapMarkers = {
     teacher: { x: number; z: number; yaw: number; range: number } | null;
     /** Other players, shown while the monitoring room's radar is on. */
     players: { x: number; z: number; colour: number }[];
+    /** Authored campus interactions, always visible on the full map. */
+    specialLocations: readonly { id: string; short: string; name: string; x: number; z: number; colour: string }[];
 };
 
 export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasElement) => {
@@ -56,7 +58,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.restore();
     };
 
-    let markers: MapMarkers = { gold: null, teacher: null, players: [] };
+    let markers: MapMarkers = { gold: null, teacher: null, players: [], specialLocations: [] };
     /** A player dot in their colour (monitoring-room radar). */
     const playerDot = (g: CanvasRenderingContext2D, x: number, y: number, size: number, hue: number) => {
         g.beginPath();
@@ -85,6 +87,42 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.shadowBlur = size;
         g.fill();
         g.stroke();
+        g.restore();
+    };
+    const specialPin = (
+        g: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        short: string,
+        name: string,
+        colour: string,
+        size: number
+    ) => {
+        g.save();
+        g.fillStyle = colour;
+        g.strokeStyle = '#101817';
+        g.lineWidth = size * 0.3;
+        g.beginPath();
+        g.arc(x, y, size, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.fillStyle = '#101817';
+        g.font = `800 ${size * 1.05}px system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(short, x, y + 0.4);
+        if (size >= 7) {
+            const labelWidth = g.measureText(name).width + 12 * (size / 7);
+            const labelHeight = 19 * (size / 7);
+            g.fillStyle = 'rgba(12, 19, 17, 0.92)';
+            g.beginPath();
+            g.roundRect(x + size + 4, y - labelHeight / 2, labelWidth, labelHeight, 5 * (size / 7));
+            g.fill();
+            g.fillStyle = '#f3f2e9';
+            g.font = `600 ${10 * (size / 7)}px system-ui, sans-serif`;
+            g.textAlign = 'left';
+            g.fillText(name, x + size + 10, y + 0.5);
+        }
         g.restore();
     };
     /** 纪老师: a red dot with his view wedge. */
@@ -145,6 +183,11 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 if (Math.hypot(tx - w / 2, ty - w / 2) < w / 2 + markers.teacher.range * metre)
                     teacherIcon(g, tx, ty, markers.teacher.yaw, markers.teacher.range * metre, 4 * ratio);
             }
+            for (const location of markers.specialLocations) {
+                const [lx, ly] = toDock(location.x, location.z);
+                if (Math.hypot(lx - w / 2, ly - w / 2) <= w / 2 - 5 * ratio)
+                    specialPin(g, lx, ly, location.short, location.name, location.colour, 5 * ratio);
+            }
         }
         g.restore();
         // Radar (monitoring room): every player, pinned to the rim when off the dock.
@@ -201,6 +244,18 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.fillStyle = '#1b2a3a';
         g.fillRect(0, 0, full.width, full.height);
         g.drawImage(image, 0, 0, full.width, full.height);
+        for (const location of markers.specialLocations) {
+            const [lx, lz] = toPixel(location.x, location.z);
+            specialPin(
+                g,
+                lx * scale * ratio,
+                lz * scale * ratio,
+                location.short,
+                location.name,
+                location.colour,
+                8 * ratio
+            );
+        }
         if (markers.teacher) {
             const [tx, tz] = toPixel(markers.teacher.x, markers.teacher.z);
             teacherIcon(
@@ -232,7 +287,9 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 next.teacher
                     ? `${next.teacher.x.toFixed(1)},${next.teacher.z.toFixed(1)},${Math.round(next.teacher.yaw)}`
                     : ''
-            }|${next.players.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
+            }|${next.players.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}|${next.specialLocations
+                .map((p) => `${p.id}:${p.x.toFixed(1)},${p.z.toFixed(1)}`)
+                .join(';')}`;
             const markersChanged = key !== last.markers;
             last.markers = key;
             markers = next;

@@ -15,6 +15,7 @@ export type UserRow = {
     score: number;
     wins: number;
     rounds: number;
+    losses: number;
     created: number;
 };
 
@@ -23,7 +24,15 @@ export type AccountDb = {
     insertUser(row: UserRow): void;
     addStats(
         key: string,
-        delta: { kills: number; deaths: number; hits: number; score: number; wins: number; rounds: number }
+        delta: {
+            kills: number;
+            deaths: number;
+            hits: number;
+            score: number;
+            wins: number;
+            rounds: number;
+            losses: number;
+        }
     ): void;
     insertSession(token: string, key: string, expires: number): void;
     findSession(token: string): { key: string; expires: number } | null;
@@ -75,7 +84,8 @@ const statsOf = (row: UserRow): AccountStats => ({
     hits: row.hits,
     score: row.score,
     wins: row.wins,
-    rounds: row.rounds
+    rounds: row.rounds,
+    losses: row.losses ?? 0
 });
 
 export type AuthResult =
@@ -111,6 +121,7 @@ export class Accounts {
             score: 0,
             wins: 0,
             rounds: 0,
+            losses: 0,
             created: now
         });
         return this.session(key, now);
@@ -162,10 +173,18 @@ export class Accounts {
     /** Adds to an account's lifetime stats; returns the new totals. */
     record(
         name: string,
-        delta: { kills?: number; deaths?: number; hits?: number; score?: number; wins?: number; rounds?: number }
+        delta: {
+            kills?: number;
+            deaths?: number;
+            hits?: number;
+            score?: number;
+            wins?: number;
+            rounds?: number;
+            losses?: number;
+        }
     ) {
         const key = usernameKey(name);
-        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0, ...delta });
+        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0, losses: 0, ...delta });
         const row = this.db.findUser(key);
         return row ? statsOf(row) : null;
     }
@@ -213,11 +232,19 @@ export class MemoryAccountDb implements AccountDb {
         return this.users.get(key) ?? null;
     }
     insertUser(row: UserRow) {
-        this.users.set(row.key, { ...row });
+        this.users.set(row.key, { ...row, losses: row.losses ?? 0 });
     }
     addStats(
         key: string,
-        delta: { kills: number; deaths: number; hits: number; score: number; wins: number; rounds: number }
+        delta: {
+            kills: number;
+            deaths: number;
+            hits: number;
+            score: number;
+            wins: number;
+            rounds: number;
+            losses: number;
+        }
     ) {
         const row = this.users.get(key);
         if (!row) return;
@@ -227,6 +254,7 @@ export class MemoryAccountDb implements AccountDb {
         row.score += delta.score;
         row.wins += delta.wins;
         row.rounds += delta.rounds;
+        row.losses += delta.losses;
     }
     insertSession(token: string, key: string, expires: number) {
         this.sessions.set(token, { key, expires });
@@ -245,12 +273,7 @@ export class MemoryAccountDb implements AccountDb {
     }
     top(limit: number) {
         return [...this.users.values()]
-            .sort(
-                (a, b) =>
-                    b.kills - a.kills ||
-                    (b.rounds === 0 ? 1 : b.wins / b.rounds) - (a.rounds === 0 ? 1 : a.wins / a.rounds) ||
-                    a.key.localeCompare(b.key)
-            )
+            .sort((a, b) => b.kills - a.kills || (a.losses ?? 0) - (b.losses ?? 0) || a.key.localeCompare(b.key))
             .slice(0, limit);
     }
 }

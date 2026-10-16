@@ -1,11 +1,5 @@
-/** Owner-requested initial 100%; after the first completed round use the actual win ratio. */
-export const formatWinRate = ({ wins, rounds }: { wins?: number; rounds?: number }): string =>
-    typeof wins === 'number' &&
-    typeof rounds === 'number' &&
-    Number.isFinite(wins) &&
-    Number.isFinite(rounds) &&
-    rounds >= 0 &&
-    wins >= 0 &&
-    wins <= rounds
-        ? `${(rounds === 0 ? 100 : (wins / rounds) * 100).toFixed(1)}%`
+/** Loss-only index requested by the owner: wins/draws do not move it; each loss applies a 5% multiplicative penalty. */
+export const formatWinRate = ({ losses }: { losses?: number }): string =>
+    typeof losses === 'number' && Number.isFinite(losses) && Number.isInteger(losses) && losses >= 0
+        ? `${(100 * 0.95 ** losses).toFixed(1)}%`
         : '—';

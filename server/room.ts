@@ -598,7 +598,11 @@ export class Room {
         if (this.round?.phase !== 'playing') return;
         this.cancelAllExecutions('本局结束');
         for (const name of this.roundParticipants) {
-            const account = this.accounts?.record(name, { rounds: 1, wins: name === winner?.accountName ? 1 : 0 });
+            const account = this.accounts?.record(name, {
+                rounds: 1,
+                wins: name === winner?.accountName ? 1 : 0,
+                losses: winner && name !== winner.accountName ? 1 : 0
+            });
             if (account) {
                 const connected = [...this.players.values()].find((player) => player.accountName === name);
                 if (connected) this.out.to(connected.id, { type: 'account', account });

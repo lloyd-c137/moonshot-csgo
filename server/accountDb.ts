@@ -13,7 +13,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
             .toArray()
             .map((row) => row.name)
     );
-    for (const column of ['wins', 'rounds']) {
+    for (const column of ['wins', 'rounds', 'losses']) {
         if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
     }
     sql.exec('CREATE INDEX IF NOT EXISTS users_kills ON users (kills DESC, score DESC)');
@@ -33,6 +33,18 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
             JSON.stringify({ initialWinRate: 100, previous })
         );
     }
+    // Start the owner-requested loss-only display at 100% for every existing account while preserving factual
+    // wins/rounds. Future defeats decrement this separate counter; victories and draws leave it unchanged.
+    const lossRateKey = 'winrate-loss-only-v1';
+    if (!sql.exec('SELECT value FROM meta WHERE key = ?', lossRateKey).toArray().length) {
+        const previous = sql.exec('SELECT key, losses FROM users').toArray();
+        sql.exec('UPDATE users SET losses = 0');
+        sql.exec(
+            'INSERT INTO meta (key, value) VALUES (?, ?)',
+            lossRateKey,
+            JSON.stringify({ initialRate: 100, previous })
+        );
+    }
     const one = <T>(cursor: SqlStorageCursor<Record<string, SqlStorageValue>>) => {
         const rows = cursor.toArray();
         return (rows[0] as T | undefined) ?? null;
@@ -41,7 +53,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
         findUser: (key) => one<UserRow>(sql.exec('SELECT * FROM users WHERE key = ?', key)),
         insertUser: (row) =>
             void sql.exec(
-                'INSERT INTO users (key, name, salt, hash, kills, deaths, hits, score, wins, rounds, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO users (key, name, salt, hash, kills, deaths, hits, score, wins, rounds, losses, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 row.key,
                 row.name,
                 row.salt,
@@ -52,17 +64,19 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
                 row.score,
                 row.wins,
                 row.rounds,
+                row.losses,
                 row.created
             ),
         addStats: (key, d) =>
             void sql.exec(
-                'UPDATE users SET kills = kills + ?, deaths = deaths + ?, hits = hits + ?, score = score + ?, wins = wins + ?, rounds = rounds + ? WHERE key = ?',
+                'UPDATE users SET kills = kills + ?, deaths = deaths + ?, hits = hits + ?, score = score + ?, wins = wins + ?, rounds = rounds + ?, losses = losses + ? WHERE key = ?',
                 d.kills,
                 d.deaths,
                 d.hits,
                 d.score,
                 d.wins,
                 d.rounds,
+                d.losses,
                 key
             ),
         insertSession: (token, key, expires) =>
@@ -79,10 +93,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
             ),
         top: (limit) =>
             sql
-                .exec(
-                    'SELECT * FROM users ORDER BY kills DESC, (CASE WHEN rounds = 0 THEN 1.0 ELSE 1.0 * wins / rounds END) DESC, key ASC LIMIT ?',
-                    limit
-                )
+                .exec('SELECT * FROM users ORDER BY kills DESC, losses ASC, key ASC LIMIT ?', limit)
                 .toArray() as unknown as UserRow[]
     };
 };

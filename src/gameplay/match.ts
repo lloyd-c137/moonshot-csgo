@@ -6,6 +6,7 @@ import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-contr
 
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
+import { MONITOR_CONSOLE, SPECIAL_LOCATIONS } from '../config/specialLocations';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
@@ -51,6 +52,7 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
+import { createMonitorView } from './monitorView';
 import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
@@ -172,6 +174,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let lastGoldMine = false;
     const guard = createGuard(app, camera, ui.nameTagLayer());
     const breakerView = createBreakerView(app);
+    const monitorView = createMonitorView(app);
     let power: PowerState = { pulledAt: null };
     let wasPowerOut = false;
     let teacherGraceUntil = 0;
@@ -847,10 +850,30 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         aimReadyPlayed = false;
         ui.charge(null);
     };
+    const lookingAtMonitor = () => {
+        const eye = camera.getPosition();
+        const dx = MONITOR_CONSOLE.x - eye.x;
+        const dy = MONITOR_CONSOLE.y - eye.y;
+        const dz = MONITOR_CONSOLE.z - eye.z;
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance > 3 || distance < 0.1) return false;
+        const forward = camera.forward;
+        return (dx * forward.x + dy * forward.y + dz * forward.z) / distance > 0.94;
+    };
+    const activateMonitor = () => {
+        if (!started || !alive || spectating || inputPaused || performance.now() < detainedUntil || !lookingAtMonitor())
+            return false;
+        radarUntil = performance.now() + RADAR_SECONDS * 1000;
+        sound.scopeReady();
+        ui.popup('监控画面已开启', 'gold');
+        ui.feed(`监控画面 · ${RADAR_SECONDS} 秒内地图显示其他玩家位置`, 'mine');
+        return true;
+    };
     window.addEventListener('mousedown', (event) => {
         // Right button while charging or aiming: stand down without throwing.
         if (event.button === 2 && chargingSince !== null) return cancelCharge();
         if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
+        if (activateMonitor()) return;
         if (performance.now() < detainedUntil) return; // standing still for 纪老师
         if (!hasDisc()) {
             ui.notify('没有飞盘了：去捡回扔出去的飞盘，或到体育组办公室领取');
@@ -1208,6 +1231,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         const nightActive = net.state === 'online' && lightsOut !== null && time >= lightsOut;
         guard.update(time, lightsOut, power);
         breakerView.update(outage);
+        monitorView.setActive(performance.now() < radarUntil);
         if (outage !== wasPowerOut) {
             wasPowerOut = outage;
             if (outage) {
@@ -1219,15 +1243,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             }
         }
         ui.interaction(
-            started && alive && !spectating && nearBreaker(pose().p)
-                ? power.pulledAt === null
-                    ? nightActive
-                        ? '终局夜晚 · 无法拉闸'
-                        : 'E 拉闸 · 全服每局限一次'
-                    : outage
-                      ? '全校断电 · 保安正在恢复供电'
-                      : '本局已拉闸 · 无法再次使用'
-                : null
+            started && alive && !spectating && lookingAtMonitor()
+                ? '点击电脑查看其他玩家位置（30 秒）'
+                : started && alive && !spectating && nearBreaker(pose().p)
+                  ? power.pulledAt === null
+                      ? nightActive
+                          ? '终局夜晚 · 无法拉闸'
+                          : 'E 拉闸 · 全服每局限一次'
+                      : outage
+                        ? '全校断电 · 保安正在恢复供电'
+                        : '本局已拉闸 · 无法再次使用'
+                  : null
         );
         dark = nightActive || outage;
         if (nightActive && !wasNight) {
@@ -1405,7 +1431,19 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     /** Everyone else's position, while the monitoring room's radar is on. */
     const radarPlayers = () => {
         if (performance.now() >= radarUntil) return [];
-        return [...poses].map(([id, each]) => ({ x: each.p[0], z: each.p[2], colour: roster.get(id)?.colour ?? 0 }));
+        return [...poses]
+            .filter(([id]) => id !== selfId())
+            .map(([id, each]) => ({ x: each.p[0], z: each.p[2], colour: roster.get(id)?.colour ?? 0 }));
+    };
+    const mapMarkers = () => {
+        const at = goldPosition();
+        const teacherPose = teacher.pose;
+        return {
+            gold: at ? { x: at[0], z: at[2], held: goldHolder() !== null } : null,
+            teacher: { x: teacherPose.x, z: teacherPose.z, yaw: teacherPose.yaw, range: TEACHER.range },
+            players: radarPlayers(),
+            specialLocations: SPECIAL_LOCATIONS
+        };
     };
     const targets = new Map<string, V3>();
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -1589,25 +1627,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         get dark() {
             return dark;
         },
-        /** The player walked into a room (or the corridor, null): the monitoring room switches on the radar. */
-        enteredRoom(id: string | null) {
-            const now = performance.now();
-            if (id !== MONITOR_ROOM || !started || now < radarUntil) return;
-            radarUntil = now + RADAR_SECONDS * 1000;
-            sound.scopeReady();
-            ui.popup('监控室：全图玩家位置', 'gold');
-            ui.feed(`调取监控 · ${RADAR_SECONDS} 秒内地图上显示所有玩家位置`, 'mine');
+        /** Entering the room does not reveal player positions; those require clicking the console. */
+        enteredRoom(_id: string | null) {
+            // Entering the room does not grant access to the camera feed.
         },
         /** The golden disc and 纪老师 for the maps. */
-        markers() {
-            const at = goldPosition();
-            const teacherPose = teacher.pose;
-            return {
-                gold: at ? { x: at[0], z: at[2], held: goldHolder() !== null } : null,
-                teacher: { x: teacherPose.x, z: teacherPose.z, yaw: teacherPose.yaw, range: TEACHER.range },
-                players: radarPlayers()
-            };
-        },
+        markers: mapMarkers,
         get online() {
             return net.state === 'online';
         },
@@ -1635,6 +1660,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             }
         },
         debug: {
+            markers: mapMarkers,
+            monitorFocused: lookingAtMonitor,
+            cameraPosition: () => camera.getPosition().toArray(),
             state: () => ({
                 net: net.state,
                 id: net.id,
@@ -1676,8 +1704,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     };
 };
 
-/** The monitoring room (监控室) and how long its view of every player lasts. */
-const MONITOR_ROOM = 'S103';
+/** Duration of the player-activated monitoring console feed. */
 const RADAR_SECONDS = 30;
 
 const round = (value: number) => Math.round(value * 1000) / 1000;

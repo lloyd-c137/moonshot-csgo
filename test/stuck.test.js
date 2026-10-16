@@ -42,3 +42,20 @@ test('sinking below the floor counts as stuck even without input; reset clears i
     detector.reset();
     assert.equal(detector.update(1 / 60, 10, [0, 0.9, 0], false), false);
 });
+
+test('detention suppresses and resets the stuck timer, so release starts a fresh window', () => {
+    const detector = new StuckDetector();
+    let stuck = false;
+    for (let t = 0; t < 8; t += 1 / 60) {
+        stuck = detector.update(1 / 60, t, [0, 0.92, 0], true, true);
+    }
+    assert.equal(stuck, false);
+    for (let t = 8; t < 9.5; t += 1 / 60) {
+        stuck = detector.update(1 / 60, t, [0, 0.92, 0], true);
+    }
+    assert.equal(stuck, false, 'the pre-detention timer must not resume');
+    for (let t = 9.5; t < 10.2; t += 1 / 60) {
+        stuck = detector.update(1 / 60, t, [0, 0.92, 0], true);
+    }
+    assert.equal(stuck, true, 'the normal 2 s window resumes after release');
+});

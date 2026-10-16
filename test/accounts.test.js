@@ -17,7 +17,8 @@ test('register, log in, resolve sessions; names are unique case-insensitively; b
         hits: 0,
         score: 0,
         wins: 0,
-        rounds: 0
+        rounds: 0,
+        losses: 0
     });
     assert.equal((await accounts.register('lloyd', 'another1', 1000)).ok, false, 'taken');
     assert.equal((await accounts.register('x', 'secret1', 1000)).ok, false, 'too short');
@@ -64,6 +65,7 @@ test('the 淘汰王 stands until someone has strictly more lifetime eliminations
             score: 0,
             wins: 0,
             rounds: 0,
+            losses: 0,
             created: 0
         });
     const a = accounts.record('甲', { kills: 3 });
@@ -127,7 +129,9 @@ test('round stats persist once, deduplicate reconnects, include leavers and excl
     assert.equal(room.round.winner, 'winner');
     const stats = (name) => accounts.resolve(tokens[name], end + 2);
     assert.deepEqual([stats('winner').wins, stats('winner').rounds], [1, 1]);
-    for (const name of ['leaver', 'loser']) assert.deepEqual([stats(name).wins, stats(name).rounds], [0, 1]);
+    for (const name of ['leaver', 'loser'])
+        assert.deepEqual([stats(name).wins, stats(name).rounds, stats(name).losses], [0, 1, 1]);
+    assert.equal(stats('winner').losses, 0, 'winning leaves the display baseline unchanged');
     assert.deepEqual([stats('viewer').wins, stats('viewer').rounds], [0, 0]);
     assert.equal(
         inbox
@@ -140,7 +144,7 @@ test('round stats persist once, deduplicate reconnects, include leavers and excl
     room.tick(end + ROUND.intermissionSeconds * 1000);
     room.gold.holder = null;
     room.tick(room.round.endsAt);
-    assert.deepEqual([stats('winner').wins, stats('winner').rounds], [1, 2]);
+    assert.deepEqual([stats('winner').wins, stats('winner').rounds, stats('winner').losses], [1, 2, 0]);
     assert.deepEqual([stats('viewer').wins, stats('viewer').rounds], [0, 1]);
     assert.equal(stats('leaver').rounds, 1);
     // Persistence survives an Accounts service being reconstructed.
@@ -170,7 +174,16 @@ test('only signed-in players may join; they play under their username, keep stat
     const { room, join, inbox, closed } = harness(accounts);
     const a = join('a', 'ignored nickname', token);
     assert.equal(a[0].name, '甲同学');
-    assert.deepEqual(a[0].account, { name: '甲同学', kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0 });
+    assert.deepEqual(a[0].account, {
+        name: '甲同学',
+        kills: 0,
+        deaths: 0,
+        hits: 0,
+        score: 0,
+        wins: 0,
+        rounds: 0,
+        losses: 0
+    });
     assert.equal(a[0].king, null);
     // No guests: a hello without a valid session is refused.
     assert.deepEqual(join('guest', '甲同学'), [{ type: 'rejected', reason: 'auth' }]);
@@ -200,7 +213,8 @@ test('only signed-in players may join; they play under their username, keep stat
         hits: 2,
         score: 1,
         wins: 0,
-        rounds: 0
+        rounds: 0,
+        losses: 0
     });
     assert.deepEqual(inbox.get('b').find((message) => message.type === 'king').king.name, '甲同学');
     assert.ok(inbox.get('b').some((message) => message.type === 'chat' && message.line.system));

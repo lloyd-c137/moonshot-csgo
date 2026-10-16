@@ -125,6 +125,8 @@ export type AccountStats = {
     score: number;
     wins: number;
     rounds: number;
+    /** Losses recorded since the loss-only display baseline was initialized. */
+    losses: number;
 };
 
 /** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */

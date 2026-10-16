@@ -208,7 +208,16 @@ const boot = async () => {
     const serverUrl = multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
     const auth = createAuth(apiBase(serverUrl));
     shell.accountsAvailable(auth.available);
-    const match = createMatch({ app, player, camera, canvas, ui: shell, url: serverUrl, auth });
+    const match = createMatch({
+        app,
+        player,
+        camera,
+        canvas,
+        ui: shell,
+        url: serverUrl,
+        auth,
+        arenaCenter: derivedWorld.arena.center as [number, number]
+    });
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {
         void auth.restore().then((account) => shell.account(account));
@@ -367,7 +376,16 @@ const boot = async () => {
             });
     };
     // R: straight to the middle of the 莲花球场 (the open-air arena).
+    let recoverAt = -Infinity;
+    const RECOVER_COOLDOWN = 180_000;
     const recover = () => {
+        const wait = recoverAt + RECOVER_COOLDOWN - performance.now();
+        if (wait > 0) {
+            const seconds = Math.ceil(wait / 1000);
+            shell.notify(`传送冷却中：还需 ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+            return;
+        }
+        recoverAt = performance.now();
         const [x, z] = derivedWorld.arena.center;
         player.rigidbody!.teleport(x, 0.92, z, 0, 0, 0);
         player.rigidbody!.linearVelocity = Vec3.ZERO;

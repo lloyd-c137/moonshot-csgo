@@ -268,6 +268,13 @@ export const createSound = () => {
                 );
                 tone(audio, out, 'sine', 140, 60, now + catchAt * seconds, 0.3, 0.4);
             }),
+        /** Lights out: a heavy power-down thud and a falling hum. */
+        blackout: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'sine', 90, 30, now, 1.4, 0.8);
+                tone(audio, master!, 'sawtooth', 120, 40, now, 1.6, 0.12);
+                hiss(audio, master!, now, 0.3, 0.2, 2000, 300, 1);
+            }),
         /** 纪老师's whistle: two sharp blasts. */
         whistle: () =>
             play((audio, now) => {

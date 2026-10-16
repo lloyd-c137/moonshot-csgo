@@ -2351,3 +2351,40 @@ legend {
         translate: -50% -12px;
     }
 }
+
+.spectate {
+    position: absolute;
+    bottom: 22%;
+    left: 50%;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 10px 22px;
+    border: 1px solid rgb(238 242 244 / 0.25);
+    background: rgb(15 24 34 / 0.75);
+    translate: -50% 0;
+}
+
+.spectate[hidden] {
+    display: none;
+}
+
+.spectate strong {
+    color: #ff6b76;
+    letter-spacing: 0.3em;
+}
+
+.spectate small {
+    color: rgb(238 242 244 / 0.6);
+    font-size: 11px;
+}
+
+.guard-tag {
+    border-left-color: #5aa0ff;
+    background: rgb(10 20 40 / 0.8);
+}
+
+.guard-tag b {
+    margin-right: 4px;
+    color: #fff;
+}

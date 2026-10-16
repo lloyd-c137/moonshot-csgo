@@ -1,6 +1,6 @@
 // Sun, ambient, post-processing and the pooled interior lights. Uses the engine's upstream CameraFrame script;
 // pooled omni lights follow the player so hundreds of fixtures cost a fixed light budget.
-import type { AppBase } from 'playcanvas';
+import type { AppBase , StandardMaterial } from 'playcanvas';
 import { Color, Entity, Vec3 } from 'playcanvas';
 import { CameraFrame } from 'playcanvas/scripts/esm/camera-frame.mjs';
 
@@ -15,7 +15,7 @@ export const setupAtmosphere = (app: AppBase, camera: Entity) => {
     app.scene.ambientLight = new Color(0.55, 0.54, 0.52);
     app.scene.exposure = 1.1;
     camera.camera!.clearColor = new Color(0.56, 0.72, 0.9);
-    createSkyDome(app, camera);
+    const sky = createSkyDome(app, camera);
 
     const sun = new Entity('sun');
     sun.addComponent('light', {
@@ -40,7 +40,14 @@ export const setupAtmosphere = (app: AppBase, camera: Entity) => {
         frame.vignette.enabled = true;
         frame.vignette.intensity = 0.25;
     }
-    return { sun };
+    /** Night: the sky darkens to a deep blue (emissive tint over the sky texture). */
+    const setNight = (night: boolean) => {
+        const material = sky.render!.meshInstances[0].material as StandardMaterial;
+        material.emissive.set(...((night ? [0.08, 0.1, 0.18] : [1, 1, 1]) as [number, number, number]));
+        material.update();
+        camera.camera!.clearColor = night ? new Color(0.02, 0.03, 0.06) : new Color(0.56, 0.72, 0.9);
+    };
+    return { sun, setNight };
 };
 
 /**
@@ -61,6 +68,7 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
         return light;
     });
     let elapsed = POOL_REFRESH_SECONDS;
+    let dark = false;
     const position = new Vec3();
     const update = (deltaTime: number, player: Vec3) => {
         elapsed += deltaTime;
@@ -81,8 +89,16 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
             position.set(x, height - 0.35, z);
             light.setPosition(position);
             light.light!.range = kind === 1 ? 8 : 7;
-            light.light!.intensity = 1.4;
+            light.light!.intensity = dark ? 0 : 1.4;
         });
     };
-    return { update, pool };
+    /** Lights out (the blackout before the round's end) or back on. */
+    const setDark = (value: boolean) => {
+        if (value === dark) return;
+        dark = value;
+        elapsed = POOL_REFRESH_SECONDS; // re-apply on the next update
+        app.scene.ambientLight = value ? new Color(0.07, 0.08, 0.12) : new Color(0.55, 0.54, 0.52);
+        app.scene.exposure = value ? 0.9 : 1.1;
+    };
+    return { update, pool, setDark };
 };

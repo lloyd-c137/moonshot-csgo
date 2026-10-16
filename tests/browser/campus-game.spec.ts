@@ -60,7 +60,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(await fov()).toBeCloseTo(normalFov, 0);
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).throws).toBe(throwsBefore);
 
-    // 纪老师: throwing inside his view means standing still for 4 s, with a warning.
+    // 纪老师: just stepping into his circle means standing still for 4 s, with a warning (no throw needed).
     const teacher = await page.evaluate(() => window.__MOONSHOT__!.match.teacher());
     const facing = (teacher.yaw * Math.PI) / 180;
     await page.evaluate(
@@ -71,9 +71,6 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
         [teacher.x - Math.sin(facing) * 3, teacher.z - Math.cos(facing) * 3, teacher.yaw + 180]
     );
     await advance(page, 300);
-    expect(await page.evaluate(([x, z]) => window.__MOONSHOT__!.match.throwAt(x, 1.3, z), [teacher.x, teacher.z])).toBe(
-        true
-    );
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).detained).toBe(true);
     await advance(page, 100);
     await expect(page.locator('#detention')).toBeVisible();
@@ -131,9 +128,12 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
     await enterCampus(page);
 
+    // R teleports to the middle of the 莲花球场.
     await page.keyboard.press('r');
     await advance(page, 100);
-    expect(horizontal(await position(page), initial.position)).toBeLessThan(0.2);
+    await expect(page.locator('#toast')).toContainText('莲花球场');
+    await advance(page, 600);
+    await expect(page.locator('#location-code')).toContainText('莲花球场');
     expect(errors).toEqual([]);
 });
 

@@ -137,6 +137,7 @@ const MARKUP = `
       <strong id="round-end-title"></strong>
       <span id="round-end-detail"></span>
     </div>
+    <div class="spectate" id="spectate" hidden><strong>观战中</strong><span id="spectate-detail"></span><small>点击左键切换观看对象</small></div>
     <span class="latency" id="latency" data-quality="none">离线</span>
     <div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div>
     <p class="watch-warning" id="watch-warning" hidden><b>纪老师在附近</b>禁止打飞盘</p>
@@ -515,6 +516,15 @@ export const createUi = () => {
                   ? `${result.winner} 赢得本局`
                   : '本局无人守住金飞盘';
             $('#round-end-detail').textContent = `${Math.ceil(result.nextIn)} 秒后开始新一局 · 金飞盘将重新刷新`;
+        },
+        /** Watching mode (out for the round): who is being watched, or why; null hides it. */
+        spectate: (state: { reason: string | null; watching: string | null } | null) => {
+            const element = $('#spectate');
+            element.hidden = state === null;
+            if (!state) return;
+            const text = state.watching ? `正在观看 ${state.watching}` : (state.reason ?? '');
+            const detail = $('#spectate-detail');
+            if (detail.textContent !== text) detail.textContent = text;
         },
         /** Round-trip time to the room, bottom left (null when offline). */
         latency: (ms: number | null) => {

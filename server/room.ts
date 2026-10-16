@@ -2,6 +2,7 @@
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
+import { guardAt, GUARD } from '../src/gameplay/guard.ts';
 import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
     ChatLine,
@@ -58,6 +59,8 @@ type Player = Omit<PlayerSummary, 'account'> & {
     chatTimes: number[];
     /** Discs in hand. */
     ammo: number;
+    /** Eliminated after the lights went out: out until the next round. */
+    spectating: boolean;
     /** Recent (arrival − sender clock) samples and the smoothed offset that maps the sender's clock to room time. */
     clockSamples: number[];
     clockOffset: number | null;
@@ -118,6 +121,7 @@ export class Room {
         if (this.gold.holder === id) this.dropGold(player, now);
         this.players.delete(id);
         this.out.all({ type: 'left', id });
+        this.checkLastStanding(now);
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
             this.round = null;
@@ -160,6 +164,8 @@ export class Room {
                 return this.caught(player, now);
             case 'landed':
                 return this.landed(player, message.throwId, message.at);
+            case 'spotted':
+                return this.spotted(player, now);
             case 'ping':
                 return this.out.to(player.id, { type: 'pong', c: message.c });
         }
@@ -170,11 +176,11 @@ export class Room {
         this.advanceRound(now);
         this.officeTick(now);
         for (const player of this.players.values()) {
-            if (!player.alive && player.respawnAt > 0 && now >= player.respawnAt) {
+            if (!player.alive && !player.spectating && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
                 player.hp = MAX_HP;
-                if (player.ammo < AMMO.start) {
-                    player.ammo = AMMO.start;
+                if (player.ammo < this.startAmmo) {
+                    player.ammo = this.startAmmo;
                     this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
                 }
                 this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
@@ -250,12 +256,18 @@ export class Room {
             accountName: account?.name ?? null,
             chatTimes: [],
             ammo: this.startAmmo,
+            spectating: false,
             clockSamples: [],
             clockOffset: null,
             throws: new Map()
         };
         this.players.set(id, player);
         if (!this.round) this.startRound(now, false);
+        // Arriving after the lights went out: watch until the next round.
+        if (this.blackout(now)) {
+            player.alive = false;
+            player.spectating = true;
+        }
         this.out.to(id, {
             type: 'welcome',
             id,
@@ -318,6 +330,8 @@ export class Room {
             target.deaths++;
             target.alive = false;
             target.respawnAt = now + RESPAWN_SECONDS * 1000;
+            // After the lights go out an elimination is final for the round.
+            if (this.blackout(now)) target.spectating = true;
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
@@ -330,12 +344,66 @@ export class Room {
             head,
             sniper,
             gold: entry.golden,
+            final: out && target.spectating,
             at,
             scores
         });
         this.persist(player, target, out, now);
-        // An eliminated holder drops the golden disc where they fell.
-        if (out && this.gold.holder === target.id) this.dropGold(target, now);
+        if (out) this.fallen(target, now);
+    }
+
+    /** Someone was eliminated: the golden disc (if theirs) and a spare disc drop where they fell. */
+    private fallen(target: Player, now: number) {
+        if (this.gold.holder === target.id) this.dropGold(target, now);
+        if (target.pose) {
+            this.discs.push({ id: ++this.discId, at: [target.pose.p[0], 0.02, target.pose.p[2]] });
+            this.out.all({ type: 'discs', discs: this.discs });
+        }
+        this.checkLastStanding(now);
+    }
+
+    /** Room time when the lights go out this round (null: not playing). */
+    blackoutAt(): number | null {
+        return this.round?.phase === 'playing' ? this.round.endsAt - ROUND.blackoutSecondsLeft * 1000 : null;
+    }
+
+    private blackout(now: number) {
+        const at = this.blackoutAt();
+        return at !== null && now >= at;
+    }
+
+    /** The guard's flashlight caught a player (checked against walls on their client; the room checks reach). */
+    private spotted(player: Player, now: number) {
+        if (!player.alive || !player.pose || !this.blackout(now)) return;
+        const guard = guardAt(now, this.blackoutAt());
+        if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
+        player.hp = 0;
+        player.alive = false;
+        player.deaths++;
+        player.spectating = true;
+        player.respawnAt = 0;
+        this.out.all({
+            type: 'struck',
+            target: player.id,
+            by: 'guard',
+            hp: 0,
+            out: true,
+            head: false,
+            sniper: false,
+            gold: false,
+            final: true,
+            at: [player.pose.p[0], player.pose.p[1] + 0.5, player.pose.p[2]],
+            scores: this.scores()
+        });
+        this.fallen(player, now);
+    }
+
+    /** After the lights go out: when one player (or nobody) is left standing, the round ends at once. */
+    private checkLastStanding(now: number) {
+        if (!this.blackout(now) || this.round?.phase !== 'playing') return;
+        const standing = [...this.players.values()].filter((each) => !each.spectating);
+        if (standing.length > 1 || this.players.size < 2) return;
+        this.endRound(now, standing[0] ?? null, standing[0] ? `${standing[0].name} 是最后的幸存者，赢得本局！` : null);
     }
 
     // ---------- rounds and the golden disc ----------
@@ -345,6 +413,12 @@ export class Room {
             player.score = 0;
             player.kills = 0;
             player.deaths = 0;
+            // Everyone watching from the last round's blackout plays again.
+            if (player.spectating || !player.alive) {
+                player.spectating = false;
+                player.alive = false;
+                player.respawnAt = now; // the next tick respawns them at full health with a full load
+            }
         }
         this.officeAt = now;
         this.round = { phase: 'playing', endsAt: now + ROUND.roundSeconds * 1000 };
@@ -360,17 +434,21 @@ export class Room {
         if (!this.round || !this.players.size) return;
         if (this.round.phase === 'playing' && now >= this.round.endsAt) {
             const holder = this.gold.holder ? this.players.get(this.gold.holder) : undefined;
-            this.round = {
-                phase: 'ended',
-                winner: holder?.name ?? null,
-                winnerId: holder?.id ?? null,
-                nextAt: now + ROUND.intermissionSeconds * 1000
-            };
-            this.out.all({ type: 'round', round: this.round, scores: this.scores() });
-            this.system(holder ? `${holder.name} 守住了金飞盘，赢得本局！` : '本局结束：金飞盘无人持有，没有胜者', now);
+            this.endRound(now, holder ?? null, holder ? `${holder.name} 守住了金飞盘，赢得本局！` : null);
         } else if (this.round.phase === 'ended' && now >= this.round.nextAt) {
             this.startRound(now);
         }
+    }
+
+    private endRound(now: number, winner: Player | null, line: string | null) {
+        this.round = {
+            phase: 'ended',
+            winner: winner?.name ?? null,
+            winnerId: winner?.id ?? null,
+            nextAt: now + ROUND.intermissionSeconds * 1000
+        };
+        this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        this.system(line ?? '本局结束：没有胜者', now);
     }
 
     private tryPickup(player: Player, now: number) {
@@ -396,6 +474,8 @@ export class Room {
         // Golden throws count too: the golden disc flies home, but leaves an ordinary disc where it came down.
         if (!entry || entry.landed) return;
         entry.landed = true;
+        // A golden-disc throw only sometimes leaves a disc behind.
+        if (entry.golden && this.random() >= ROUND.goldDropChance) return;
         // Plausibility: within reach of the launch, inside the campus, and laid on the floor.
         const reach = Math.hypot(...entry.record.v) * DISC_REST_SECONDS + 5;
         if (distance(entry.record.o, at) > reach || !inBounds({ p: at, yaw: 0, pitch: 0 })) return;
@@ -549,12 +629,24 @@ const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[
 const inBounds = ({ p: [x, y, z] }: PlayerPose) =>
     x >= BOUNDS.x0 && x <= BOUNDS.x1 && y >= BOUNDS.y0 && y <= BOUNDS.y1 && z >= BOUNDS.z0 && z <= BOUNDS.z1;
 
-const summary = ({ id, name, accountName, colour, alive, hp, score, kills, deaths }: Player): PlayerSummary => ({
+const summary = ({
+    id,
+    name,
+    accountName,
+    colour,
+    alive,
+    spectating,
+    hp,
+    score,
+    kills,
+    deaths
+}: Player): PlayerSummary => ({
     id,
     name,
     account: accountName !== null,
     colour,
     alive,
+    spectating,
     hp,
     score,
     kills,

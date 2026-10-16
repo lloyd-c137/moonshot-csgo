@@ -8,7 +8,7 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -44,7 +44,19 @@ export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const
  * Rounds: the 金飞盘 (golden disc) appears at a random spawn point; walk within `pickupRadius` to take it; whoever
  * holds it when the `roundSeconds` clock runs out wins. Holders drop it where they are eliminated (or leave).
  */
-export const ROUND = { roundSeconds: 600, intermissionSeconds: 10, pickupRadius: 1.6, pickupDelay: 0.8 } as const;
+export const ROUND = {
+    roundSeconds: 600,
+    intermissionSeconds: 10,
+    pickupRadius: 1.6,
+    pickupDelay: 0.8,
+    /**
+     * With this long left the lights go out and the night guard starts his rounds: from then on an elimination (by
+     * disc or by his flashlight) is final for the round, and if only one player is left standing they win at once.
+     */
+    blackoutSecondsLeft: 240,
+    /** Chance that a golden-disc throw leaves an ordinary disc where it comes down. */
+    goldDropChance: 0.35
+} as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).
  * Everyone carries at most `max`; joining and every respawn hand out a full load (`start`). The PE office puts out a fresh disc every
@@ -82,6 +94,8 @@ export type PlayerSummary = {
     account: boolean;
     colour: number;
     alive: boolean;
+    /** Out for the rest of the round (eliminated after the lights went out): watching only. */
+    spectating?: boolean;
     hp: number;
     score: number;
     kills: number;
@@ -122,6 +136,8 @@ export type ClientMessage =
     | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
     /** The sender's own disc came to rest at `at` (it now lies there for anyone to pick up). */
     | { type: 'landed'; throwId: number; at: Vec3Tuple }
+    /** The sender was caught in the night guard's flashlight. */
+    | { type: 'spotted' }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
@@ -160,6 +176,8 @@ export type ServerMessage =
           sniper: boolean;
           /** Thrown by the golden disc's holder. */
           gold: boolean;
+          /** Out for the rest of the round (after the lights went out): no respawn, watch instead. */
+          final?: boolean;
           at: Vec3Tuple;
           scores: Scores;
       }
@@ -235,6 +253,8 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
             return value as ClientMessage;
         case 'ping':
             return isNumber(value.c) ? (value as ClientMessage) : null;
+        case 'spotted':
+            return value as ClientMessage;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':

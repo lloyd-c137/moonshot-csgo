@@ -102,12 +102,16 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 180, pitch: 0 };
     let labHp: number = MAX_HP;
     let labRespawnAt = 0;
+    let labGolden = false;
     let labUi: AudioLabUi | undefined;
     if (audioLab) {
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
                 sound,
                 canvas,
+                setGolden: (value) => {
+                    labGolden = value;
+                },
                 position: () => {
                     const p = camera.getPosition();
                     return [p.x, p.y, p.z];
@@ -532,7 +536,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 }
             } else if (by === me) {
                 if (goldKill) {
-                    sound.snipeConfirm(head);
+                    sound.snipeConfirm(head, true);
                     sound.goldTaken();
                     ui.hitMarker('snipe');
                     ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
@@ -1324,15 +1328,22 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                             labRespawnAt = now + RESPAWN_SECONDS * 1000;
                             targets.delete(labTargetId);
                         }
-                        sound.hitConfirm(out, head);
+                        if (out && labGolden) sound.snipeConfirm(head, true);
+                        else sound.hitConfirm(out, head);
                         effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
                         avatars.flash(target, performance.now());
                         ui.hitMarker(out ? 'kill' : 'hit');
                         ui.popup(
-                            head ? '人偶 · 爆头淘汰' : out ? '人偶 · 击杀' : '人偶 · 身体命中（1/2）',
+                            out && labGolden
+                                ? '人偶 · 金飞盘击杀'
+                                : head
+                                  ? '人偶 · 爆头淘汰'
+                                  : out
+                                    ? '人偶 · 击杀'
+                                    : '人偶 · 身体命中（1/2）',
                             out ? 'kill' : 'hit'
                         );
-                        labUi?.hit(head, out);
+                        labUi?.hit(head, out, labGolden);
                         hitsClaimed++;
                         return;
                     }

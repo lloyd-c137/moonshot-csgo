@@ -69,3 +69,77 @@ test('offline target stays visible after entry, uses selected defaults and respa
     await page.screenshot({ path: 'test-results/audio-lab-visible-target.png' });
     expect(errors).toEqual([]);
 });
+
+test('gold-kill and whoosh candidates preview and follow real practice throws', async ({ page }) => {
+    // CI has no private video files. Authorized production WAVs stand in for two local candidates here.
+    await page.route('**/.audio-lab-local/manifest.json', (route) =>
+        route.fulfill({
+            json: {
+                clips: [
+                    {
+                        id: 'gold-fixture',
+                        label: '06 split fixture',
+                        url: 'clips/gold.wav',
+                        duration: 0.74299,
+                        mixed: true,
+                        cues: ['goldKill']
+                    },
+                    {
+                        id: 'whoosh-fixture',
+                        label: 'Whoosh fixture',
+                        url: 'clips/whoosh.wav',
+                        duration: 0.54299,
+                        mixed: true,
+                        cues: ['throw']
+                    }
+                ]
+            }
+        })
+    );
+    await page.route('**/.audio-lab-local/clips/gold.wav', (route) =>
+        route.fulfill({ path: 'public/assets/audio/kill-v12.wav', contentType: 'audio/wav' })
+    );
+    await page.route('**/.audio-lab-local/clips/whoosh.wav', (route) =>
+        route.fulfill({ path: 'public/assets/audio/body-hit-v10.wav', contentType: 'audio/wav' })
+    );
+    await page.addInitScript(() => {
+        const durations: number[] = [];
+        Object.assign(window, { __candidateDurations: durations });
+        const start = AudioBufferSourceNode.prototype.start;
+        AudioBufferSourceNode.prototype.start = function (when = 0, offset = 0, duration?: number) {
+            durations.push(this.buffer?.duration ?? 0);
+            start.call(this, when, offset, duration);
+        };
+    });
+    const played = () =>
+        page.evaluate(() => (window as unknown as { __candidateDurations: number[] }).__candidateDurations);
+    await page.goto('/?audioLab=1&offline=1');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab section')).toHaveCount(6);
+    await expect(page.locator('section[data-cue="goldKill"] option')).toHaveCount(2);
+    await expect(page.locator('section[data-cue="throw"] option')).toHaveCount(2);
+    await expect(page.locator('section[data-cue="hit"] option')).toHaveCount(1);
+    await page.locator('section[data-cue="goldKill"] select').selectOption('gold-fixture');
+    await expect(page.locator('.audio-lab-status')).toContainText('已应用');
+    await expect(page.locator('[data-golden]')).toBeChecked();
+    await page.locator('section[data-cue="goldKill"] [data-preview]').click();
+    await expect.poll(played).toContain(0.7429931972789116);
+    await page.locator('section[data-cue="throw"] select').selectOption('whoosh-fixture');
+    await expect(page.locator('.audio-lab-status')).toContainText('飞盘破空');
+    await page.locator('section[data-cue="throw"] [data-preview]').click();
+    await expect.poll(played).toContain(0.5429931972789116);
+    await page.locator('[data-golden]').check();
+    await page.locator('[data-action="range"]').click();
+    await expect(page.locator('.name-tag').filter({ hasText: '固定测试人偶' })).toBeVisible();
+    await page.waitForTimeout(600);
+    const before = (await played()).length;
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-8.7, 1.6, 42.3))).toBe(true);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
+    expect((await played()).slice(before)).toEqual([0.5429931972789116, 0.7429931972789116]);
+    await page.keyboard.press('p');
+    await page.locator('[data-action="reset"]').click();
+    await expect(page.locator('[data-golden]')).not.toBeChecked();
+    await expect(page.locator('section[data-cue="goldKill"] select')).toHaveValue('original');
+    await expect(page.locator('section[data-cue="throw"] select')).toHaveValue('original');
+});

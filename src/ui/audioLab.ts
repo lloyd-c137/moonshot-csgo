@@ -1,23 +1,30 @@
 // Development-only local audition panel. User video/derived clips stay outside public/ and Git.
-import type { Sound } from '../gameplay/sound';
+import type { Sound, TestSoundCue } from '../gameplay/sound';
 
 import './audioLab.css';
 
-type Clip = { id: string; label: string; url: string; duration: number; mixed: boolean };
-type Options = { sound: Sound; canvas: HTMLCanvasElement; range: () => void; position: () => [number, number, number] };
+type Clip = { id: string; label: string; url: string; duration: number; mixed: boolean; cues?: TestSoundCue[] };
+type Options = {
+    sound: Sound;
+    canvas: HTMLCanvasElement;
+    range: () => void;
+    position: () => [number, number, number];
+    setGolden: (value: boolean) => void;
+};
 
-export const mountAudioLab = async ({ sound, canvas, range, position }: Options) => {
+export const mountAudioLab = async ({ sound, canvas, range, position, setGolden }: Options) => {
     const host = document.createElement('div');
     host.innerHTML = `
       <button class="audio-lab-toggle" type="button">音效配置 · P</button>
       <dialog class="audio-lab" aria-labelledby="audio-lab-title">
         <header><div><small>MOONSHOT · LOCAL AUDIO LAB</small><h2 id="audio-lab-title">拆分音效 · 游戏内对比</h2></div><button data-action="close" type="button">关闭</button></header>
-        <p>每段视频音效都是独立选项。分别替换命中、击杀、爆头、碰撞声；选“原有音效”即可对比。按 P 暂停并切换，完成后继续游戏。</p>
+        <p>金飞盘击杀候选来自第一段视频的片段 06；破空候选来自新视频，作用于普通与狙击投掷释放声。选“原有音效”使用生产默认配置。按 P 暂停并切换。</p>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
+        <label class="audio-lab-loop"><input data-golden type="checkbox">金飞盘试音：人偶淘汰时使用“金飞盘击杀”候选</label>
         <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
-        <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰，死亡后 2.5 秒在原位置复活，不记录战绩。向附近墙面投掷测试碰撞。原视频有混合声音；可调起止点。本地素材未上传。</p>
+        <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰，2.5 秒原地复活，不记录战绩。新候选保留视频中的背景混音，未做声源分离，可调起止点；仅供本地评估。生产默认的 10／12／16 不受候选库精简影响。</p>
       </dialog>
       <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 2/2 · 死亡后原地复活</span></div>`;
     document.body.append(host);
@@ -25,6 +32,9 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
     const status = host.querySelector<HTMLElement>('[role="status"]')!;
     const rows = host.querySelector('.audio-lab-rows')!;
     const loop = host.querySelector<HTMLInputElement>('[data-loop]')!;
+    host.querySelector<HTMLInputElement>('[data-golden]')!.addEventListener('change', (event) => {
+        setGolden((event.target as HTMLInputElement).checked);
+    });
     let timer = 0;
     const stop = () => {
         window.clearTimeout(timer);
@@ -88,7 +98,11 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
                 !/^clips\/[a-zA-Z0-9_-]+\.wav$/.test(clip.url) ||
                 !Number.isFinite(clip.duration) ||
                 clip.duration <= 0 ||
-                clip.duration > 30
+                clip.duration > 30 ||
+                (clip.cues !== undefined &&
+                    (!Array.isArray(clip.cues) ||
+                        !clip.cues.length ||
+                        clip.cues.some((cue) => !['hit', 'head', 'kill', 'bounce', 'goldKill', 'throw'].includes(cue))))
             )
                 throw new Error('片段路径、ID 或时长无效');
             ids.add(clip.id);
@@ -96,6 +110,8 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
         });
         const resets: (() => void)[] = [];
         for (const [cue, label] of [
+            ['goldKill', '金飞盘击杀'],
+            ['throw', '飞盘破空'],
             ['hit', '身体命中'],
             ['kill', '击杀确认'],
             ['head', '爆头确认'],
@@ -107,7 +123,8 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
               <div class="audio-lab-trim"><label>起点（秒）<input data-start type="number" min="0" step="0.01" value="0"></label><label>终点（秒）<input data-end type="number" min="0" step="0.01" value="1"></label></div>
               <label class="audio-lab-volume">候选音量<input data-gain type="range" min="0" max="1" step="0.01" value="0.35"><output>35%</output></label><button data-preview type="button">试听${label}</button>`;
             const select = row.querySelector('select')!;
-            for (const clip of clips) select.add(new Option(`${clip.label} · ${clip.duration.toFixed(2)}s`, clip.id));
+            for (const clip of clips.filter((entry) => !entry.cues || entry.cues.includes(cue)))
+                select.add(new Option(`${clip.label} · ${clip.duration.toFixed(2)}s`, clip.id));
             const start = row.querySelector<HTMLInputElement>('[data-start]')!;
             const end = row.querySelector<HTMLInputElement>('[data-end]')!;
             const gain = row.querySelector<HTMLInputElement>('[data-gain]')!;
@@ -141,6 +158,10 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
                 start.value = '0';
                 end.value = String(clip?.duration ?? 1);
                 start.disabled = end.disabled = gain.disabled = !clip;
+                if (cue === 'goldKill') {
+                    host.querySelector<HTMLInputElement>('[data-golden]')!.checked = !!clip;
+                    setGolden(!!clip);
+                }
                 void apply();
             });
             for (const input of [start, end, gain])
@@ -151,6 +172,8 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
                 stop();
                 if (!(await apply())) return;
                 if (cue === 'bounce') sound.bounce(position(), 10);
+                else if (cue === 'throw') sound.throw();
+                else if (cue === 'goldKill') sound.snipeConfirm(false, true);
                 else sound.hitConfirm(cue === 'head' || cue === 'kill', cue === 'head');
                 if (loop.checked && dialog.open)
                     timer = window.setTimeout(
@@ -174,16 +197,18 @@ export const mountAudioLab = async ({ sound, canvas, range, position }: Options)
         host.querySelector('[data-action="reset"]')!.addEventListener('click', () => {
             stop();
             resets.forEach((reset) => reset());
+            host.querySelector<HTMLInputElement>('[data-golden]')!.checked = false;
+            setGolden(false);
         });
-        status.textContent = `已载入 ${clips.length} 个独立片段。人偶在出生点正前方；P 随时切换音效。`;
+        status.textContent = `已载入 ${clips.length} 个选项，按用途分栏；片段 06 完整版仅供对照。人偶在出生点正前方；P 随时切换。`;
     } catch (error) {
         status.textContent = `${(error as Error).message}。请在本机提供 .audio-lab-local/manifest.json 和 clips/。`;
     }
     const dummyState = host.querySelector<HTMLElement>('[data-dummy-state]')!;
     const dummyHud = host.querySelector<HTMLElement>('.audio-lab-dummy')!;
     return {
-        hit(head: boolean, eliminated: boolean) {
-            status.textContent = `实际投掷已触发${head ? '爆头' : eliminated ? '击杀' : '身体命中'}音效；按 P 切换后可继续对比。`;
+        hit(head: boolean, eliminated: boolean, golden = false) {
+            status.textContent = `实际投掷已触发${golden && eliminated ? '金飞盘击杀' : head ? '爆头' : eliminated ? '击杀' : '身体命中'}音效；按 P 切换后可继续对比。`;
         },
         dummy(hp: number, respawnSeconds: number) {
             const text =

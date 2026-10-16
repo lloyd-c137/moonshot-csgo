@@ -6,7 +6,7 @@
 import { COMBAT_AUDIO } from '../config/combatAudio';
 
 type V3 = [number, number, number];
-export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce';
+export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce' | 'goldKill' | 'throw';
 
 export const createSound = () => {
     let ctx: AudioContext | null = null;
@@ -283,14 +283,16 @@ export const createSound = () => {
         /** Sniper release: a sharp crack and a fast, thin whoosh (positioned for other players' throws). */
         sniperThrow: (at?: V3) =>
             play((audio, now) => {
+                if (playTestClip(audio, 'throw', at)) return;
                 const out = output(audio, at);
                 hiss(audio, out, now, 0.08, 0.5, 4000, 1500, 0.8);
                 tone(audio, out, 'sawtooth', 900, 120, now, 0.12, 0.2);
                 hiss(audio, out, now + 0.03, 0.45, 0.35, 2600, 6000, 2.4);
             }),
         /** Sniper or golden elimination: use the selected head/kill clip, with the original synthesis as fallback. */
-        snipeConfirm: (head = true) =>
+        snipeConfirm: (head = true, golden = false) =>
             play((audio, now) => {
+                if (golden && playTestClip(audio, 'goldKill')) return;
                 const cue = head ? 'head' : 'kill';
                 if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
                 tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
@@ -373,6 +375,7 @@ export const createSound = () => {
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {
+                if (playTestClip(audio, 'throw', at)) return;
                 const out = output(audio, at);
                 hiss(audio, out, now, 0.32, 0.5, 900, 2600, 1.6);
                 tone(audio, out, 'triangle', 240, 140, now, 0.08, 0.12);

@@ -1,4 +1,4 @@
-// Account calls to the room Worker's /api (register, login, logout, me) plus the public 淘汰王 / leaderboard.
+// Account calls to the room Worker's /api (one-step sign-in, logout, me) plus the public 淘汰王 / leaderboard.
 // The session token is kept in this browser only (localStorage) and sent with the WebSocket hello.
 import type { AccountStats, King } from './protocol';
 
@@ -45,15 +45,16 @@ export const createAuth = (base: string | null) => {
         if (!response.ok) throw new Error(body.error ?? `请求失败（${response.status}）`);
         return body;
     };
-    const signIn = async (path: '/api/login' | '/api/register', name: string, password: string) => {
-        const result = await call<{ token: string; account: AccountStats }>(path, {
+    /** Logs in, or registers the username when it is not taken yet. */
+    const signIn = async (name: string, password: string) => {
+        const result = await call<{ token: string; account: AccountStats; created: boolean }>('/api/signin', {
             method: 'POST',
             body: JSON.stringify({ name, password })
         });
         token = result.token;
         account = result.account;
         storage.set(token);
-        return account;
+        return { account, created: result.created };
     };
     return {
         get available() {
@@ -80,8 +81,7 @@ export const createAuth = (base: string | null) => {
             }
             return account;
         },
-        login: (name: string, password: string) => signIn('/api/login', name, password),
-        register: (name: string, password: string) => signIn('/api/register', name, password),
+        signIn,
         async logout() {
             const old = token;
             token = null;

@@ -25,6 +25,22 @@ test('register, log in, resolve sessions; names are unique case-insensitively; b
     assert.equal(validUsername('a b'), null);
 });
 
+test('one-step sign-in registers unknown names and logs in known ones', async () => {
+    const accounts = new Accounts(new MemoryAccountDb());
+    const first = await accounts.signIn('飞盘手', 'secret1', 0);
+    assert.equal(first.ok, true);
+    assert.equal(first.created, true);
+    const again = await accounts.signIn('飞盘手', 'secret1', 10);
+    assert.equal(again.ok, true);
+    assert.equal(again.created, undefined);
+    assert.notEqual(again.token, first.token);
+    const wrong = await accounts.signIn('飞盘手', 'nope123', 20);
+    assert.equal(wrong.ok, false);
+    assert.match(wrong.error, /密码不正确/);
+    assert.equal((await accounts.signIn('x', 'secret1', 0)).ok, false, 'invalid name');
+    assert.equal((await accounts.signIn('新人', '12', 0)).ok, false, 'weak password');
+});
+
 test('the 淘汰王 stands until someone has strictly more lifetime eliminations', () => {
     const db = new MemoryAccountDb();
     const accounts = new Accounts(db);
@@ -66,15 +82,19 @@ const harness = (accounts) => {
     return { room, inbox, closed, join };
 };
 
-test('signed-in players play under their username, keep stats, crown the king; guests cannot borrow names', async () => {
+test('only signed-in players may join; they play under their username, keep stats and crown the king', async () => {
     const accounts = new Accounts(new MemoryAccountDb());
     const { token } = await accounts.register('甲同学', 'secret1', 0);
+    const { token: tokenB } = await accounts.register('乙同学', 'secret2', 0);
     const { room, join, inbox, closed } = harness(accounts);
     const a = join('a', 'ignored nickname', token);
     assert.equal(a[0].name, '甲同学');
     assert.deepEqual(a[0].account, { name: '甲同学', kills: 0, deaths: 0, hits: 0, score: 0 });
     assert.equal(a[0].king, null);
-    assert.equal(join('b', '甲同学')[0].name, '甲同学·游客');
+    // No guests: a hello without a valid session is refused.
+    assert.deepEqual(join('guest', '甲同学'), [{ type: 'rejected', reason: 'auth' }]);
+    assert.ok(closed.has('guest'));
+    assert.equal(join('b', 'whatever', tokenB)[0].name, '乙同学');
     room.message('a', { type: 'pose', pose: { p: [0, 0.9, 0], yaw: 0, pitch: 0 } }, 3000);
     room.message('b', { type: 'pose', pose: { p: [6, 0.9, 0], yaw: 0, pitch: 0 } }, 3000);
     for (const [id, at, contact] of [

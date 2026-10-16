@@ -146,6 +146,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             if (state === 'rejected' && detail === 'version') {
                 ui.updateAvailable('联机服务器已经升级，刷新页面后才能继续多人对战。');
             }
+            if (state === 'rejected' && detail === 'auth') {
+                // The saved session expired or was revoked: back to signing in.
+                auth.account = null;
+                ui.account(null);
+                ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
+            }
             if (state !== 'online') {
                 roster.clear();
                 avatars.clear();
@@ -164,10 +170,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             if (extra.account) {
                 auth.account = extra.account;
                 ui.account(extra.account);
-            } else if (auth.token) {
-                // The saved session was not accepted by the room: play as a guest.
-                auth.account = null;
-                ui.account(null);
             }
             for (const each of players) {
                 roster.set(each.id, each);

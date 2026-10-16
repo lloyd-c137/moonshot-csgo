@@ -395,7 +395,9 @@ test("the golden disc's throws leave an ordinary disc where they come down, with
             },
             close: () => undefined
         },
-        24
+        24,
+        null,
+        () => 0 // the drop chance always hits
     );
     inbox.set('a', []);
     room.connect('a');

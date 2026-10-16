@@ -61,6 +61,9 @@ type Player = Omit<PlayerSummary, 'account'> & {
     ammo: number;
     /** Eliminated after the lights went out: out until the next round. */
     spectating: boolean;
+    /** Golden throws so far, and when the golden disc may be thrown again after a burst. */
+    goldThrows: number;
+    goldCooldownUntil: number;
     /** Recent (arrival − sender clock) samples and the smoothed offset that maps the sender's clock to room time. */
     clockSamples: number[];
     clockOffset: number | null;
@@ -257,6 +260,8 @@ export class Room {
             chatTimes: [],
             ammo: this.startAmmo,
             spectating: false,
+            goldThrows: 0,
+            goldCooldownUntil: 0,
             clockSamples: [],
             clockOffset: null,
             throws: new Map()
@@ -295,7 +300,13 @@ export class Room {
         if (record.sniper && speed < SNIPER.minSpeed) record.sniper = false;
         // Every throw spends a disc, except the golden one (it comes back).
         const golden = this.gold.holder === player.id;
-        if (!golden) {
+        if (golden) {
+            // Every ROUND.goldBurst golden throws, a cooldown (a little slack for latency).
+            if (now < player.goldCooldownUntil) return;
+            player.goldThrows++;
+            if (player.goldThrows % ROUND.goldBurst === 0)
+                player.goldCooldownUntil = now + ROUND.goldCooldown * 1000 * 0.85;
+        } else {
             if (player.ammo <= 0) return;
             player.ammo--;
             this.out.to(player.id, { type: 'ammo', ammo: player.ammo });

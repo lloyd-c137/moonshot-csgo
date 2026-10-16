@@ -1,7 +1,9 @@
-// Combat sounds: synthesised with the Web Audio API, plus two clips supplied by the owner (public/assets/audio:
-// defeat.mp3 when you are eliminated, kill.mp3 when you eliminate someone). Remote throws and hits are positioned
+// Combat sounds: Web Audio synthesis plus owner-selected hit/kill/head clips in public/assets/audio.
+// defeat.mp3 plays when you are eliminated; kill.mp3 remains a load-failure fallback. Remote events are positioned
 // in 3D relative to the camera (equal-power panning: cheap, no HRTF start-up hitch); the local player's own sounds
 // play centred. The context starts on the first user gesture.
+
+import { COMBAT_AUDIO } from '../config/combatAudio';
 
 type V3 = [number, number, number];
 export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce';
@@ -20,12 +22,13 @@ export const createSound = () => {
     const loadClip = async (audio: AudioContext, name: string, url: string) => {
         try {
             const response = await fetch(url);
+            if (!response.ok) throw new Error(`Audio ${name}: HTTP ${response.status}`);
             clips.set(name, await audio.decodeAudioData(await response.arrayBuffer()));
         } catch {
             /* clip unavailable: the synthesised fallback plays instead */
         }
     };
-    const playClip = (audio: AudioContext, name: string, volume: number) => {
+    const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity) => {
         const buffer = clips.get(name);
         if (!buffer) return null;
         const source = audio.createBufferSource();
@@ -33,8 +36,16 @@ export const createSound = () => {
         const gain = audio.createGain();
         gain.gain.value = volume;
         source.connect(gain).connect(master!);
-        source.start();
+        source.onended = () => {
+            source.disconnect();
+            gain.disconnect();
+        };
+        source.start(0, start, Math.min(end, buffer.duration) - start);
         return { source, gain };
+    };
+    const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO) => {
+        const clip = COMBAT_AUDIO[cue];
+        return playClip(audio, cue, clip.gain, clip.start, clip.end);
     };
 
     const ensure = () => {
@@ -51,7 +62,8 @@ export const createSound = () => {
             const data = noise.getChannelData(0);
             for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
             void loadClip(ctx, 'defeat', '/assets/audio/defeat.mp3');
-            void loadClip(ctx, 'kill', '/assets/audio/kill.mp3');
+            for (const [cue, clip] of Object.entries(COMBAT_AUDIO)) void loadClip(ctx, cue, clip.url);
+            void loadClip(ctx, 'legacy-kill', '/assets/audio/kill.mp3');
         }
         if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
         return ctx;
@@ -276,10 +288,11 @@ export const createSound = () => {
                 tone(audio, out, 'sawtooth', 900, 120, now, 0.12, 0.2);
                 hiss(audio, out, now + 0.03, 0.45, 0.35, 2600, 6000, 2.4);
             }),
-        /** Your sniper disc took someone's head: a heavy bass hit under a bright bell. */
-        snipeConfirm: () =>
+        /** Sniper or golden elimination: use the selected head/kill clip, with the original synthesis as fallback. */
+        snipeConfirm: (head = true) =>
             play((audio, now) => {
-                if (playTestClip(audio, 'head')) return;
+                const cue = head ? 'head' : 'kill';
+                if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
                 tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
                 tone(audio, master!, 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
                 tone(audio, master!, 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
@@ -371,15 +384,16 @@ export const createSound = () => {
                 const out = output(audio, at);
                 tone(audio, out, 'square', 320, 180, now, 0.05, Math.min(0.12, 0.03 + strength * 0.01));
             }),
-        /** Your disc hit someone: a crisp confirmation; the "kill" clip when it eliminates. */
+        /** Your disc hit someone: head takes precedence over kill, then a nonlethal body hit. */
         hitConfirm: (eliminated: boolean, head = false) =>
             play((audio, now) => {
-                if (playTestClip(audio, head ? 'head' : eliminated ? 'kill' : 'hit')) return;
+                const cue = head ? 'head' : eliminated ? 'kill' : 'hit';
+                if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
                 tone(audio, master!, 'sine', 1320, 1250, now, 0.09, 0.32);
                 tone(audio, master!, 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
                 // Head hits ring higher and longer.
                 if (head) tone(audio, master!, 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
-                if (eliminated && !playClip(audio, 'kill', 1.1)) {
+                if (eliminated && !playClip(audio, 'legacy-kill', 1.1)) {
                     tone(audio, master!, 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
                     tone(audio, master!, 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
                 }

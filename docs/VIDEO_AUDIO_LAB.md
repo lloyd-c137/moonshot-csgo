@@ -11,7 +11,23 @@
 - 完整本地清单：`.audio-lab-local/manifest.json`；片段：`.audio-lab-local/clips/`。原始视频与完整解码音轨保存在用户 Downloads 的 `moonshot-video-audio-staging/`。
 - 另输出了 `/Users/mac/Downloads/moonshot_video_split_27_clips.zip`，包含全部片段和清单。
 
-视频标注 CSGO，没有可确认的再发布许可；源视频与衍生音频仅作本地评估，目录被 Git 忽略，未放在 public/，生产构建不会包含这些文件。
+源视频标注 CSGO；完整视频、音轨及 27 段制作区仍被 Git 忽略。2026-10-16 用户确认拥有片段 10、12、16 的游戏公开发布授权，只有这三段被选入生产资源；没有把其他片段或完整视频上传，也不将它们标为 CC0。
+
+## 生产默认音效（2026-10-16）
+
+按用户截图：身体命中 v10（0–0.54299 s）、击杀确认 v12（0–0.74299 s）、爆头确认 v16（0–1.05299 s），增益均为 0.35，经过原有 0.55 master，与试音面板一致。未重新归一化或转码；三份 WAV 与拆分源 SHA-256 完全一致，见 `public/assets/audio/combat-provenance.json`。
+
+普通、狙击、金盘共用头身事件选择：爆头优先用 v16，身体致命用 v12，非致命用 v10；金盘身体击杀不再误用爆头确认声。碰撞声未改。资源在首次用户手势时解码；请求或解码失败保留原有合成/旧音频回退。
+
+修复人偶不可见：首次进入离线练习时网络状态回调会执行 `avatars.clear()`，曾把已经创建的本地人偶删除，命中胶囊却仍存在。靶场现在独立维护人偶注册，远端角色清理后会恢复，不改固定位置、生命或复活时长。
+
+本次针对性验证：
+
+- PASS：`npm run typecheck`、`npm run lint`、`npm run build`、`git diff --check`。
+- PASS：`node --test test/combat-audio.test.js`（1/1），检查选择、增益、时长和公开衍生文件哈希。
+- PASS：`npx playwright test tests/browser/audio-lab.spec.ts --workers=1`（1/1），开启渲染后进入靶场、人偶标签可见、两次身体命中击杀、满血爆头、两次原位复活；记录真实 AudioBufferSourceNode 的片段时长、0 起点、35% gain 与裁剪长度，页面无异常。截图中实际人偶模型可见。
+- PASS：`npx playwright test --config playwright.production.config.ts --workers=1`（1/1），生产预览真实 GLB/Ammo、鼠标锁定进入/暂停，三段音频请求 200 且实际解码时长正确。
+- NOT RUN：人工音质试听、真实网络对战与整套校园回归；本次没有将这些记为通过。
 
 ## 启动与使用
 

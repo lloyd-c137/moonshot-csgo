@@ -1,0 +1,45 @@
+{
+    "version": 1,
+    "source": {
+        "file": "740588fdd5a6ae2ca2315cca86339e56.mp4",
+        "sha256": "689718ac6ca12d260ec518fbe26516e89aeccf34f4796152a9f40791c19324fb",
+        "note": "User-supplied video marked CSGO; event-boundary extraction, not source separation."
+    },
+    "publication": {
+        "status": "OWNER_CONFIRMED_AUTHORIZED",
+        "date": "2026-10-16",
+        "basis": "Owner explicitly confirmed having public game-release authorization for clips 10, 12 and 16 in the project conversation. This records the owner's confirmation, not an independently verified license or a CC0 claim."
+    },
+    "clips": [
+        {
+            "cue": "hit",
+            "sourceClip": "v10",
+            "file": "body-hit-v10.wav",
+            "sourceStart": 17.662,
+            "sourceEnd": 18.205,
+            "duration": 0.54299,
+            "gain": 0.35,
+            "sha256": "65d39cb5a20b64d54d264ab92d28583b976341325e5809eede9346eec03002bc"
+        },
+        {
+            "cue": "kill",
+            "sourceClip": "v12",
+            "file": "kill-v12.wav",
+            "sourceStart": 21.792,
+            "sourceEnd": 22.535,
+            "duration": 0.74299,
+            "gain": 0.35,
+            "sha256": "215ee0fb0c3818e9fbc0250c1e9231c56f56a036d1428941f752640bd94f09a1"
+        },
+        {
+            "cue": "head",
+            "sourceClip": "v16",
+            "file": "headshot-v16.wav",
+            "sourceStart": 27.672,
+            "sourceEnd": 28.725,
+            "duration": 1.05299,
+            "gain": 0.35,
+            "sha256": "733e7555f939b6a2932159ce71c1d7ac3ca14c3a0bf6fdd96d53753b69fbf032"
+        }
+    ]
+}

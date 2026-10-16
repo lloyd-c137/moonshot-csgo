@@ -104,7 +104,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let labRespawnAt = 0;
     let labUi: AudioLabUi | undefined;
     if (audioLab) {
-        avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
                 sound,
@@ -533,7 +532,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 }
             } else if (by === me) {
                 if (goldKill) {
-                    sound.snipeConfirm();
+                    sound.snipeConfirm(head);
                     sound.goldTaken();
                     ui.hitMarker('snipe');
                     ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
@@ -1298,6 +1297,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
             poses = net.poses();
             if (audioLab) {
+                // Network state changes clear remote avatars, including on first entering offline practice.
+                // Keep the local target registered independently of that remote-player lifecycle.
+                if (!avatars.has(labTargetId)) avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
                 if (labHp === 0 && now >= labRespawnAt) labHp = MAX_HP;
                 if (labHp > 0) poses.set(labTargetId, labTargetPose);
                 else poses.delete(labTargetId);

@@ -25,3 +25,6 @@ playwright-report/
 *.njsproj
 *.sln
 *.sw?
+
+# Local Cloudflare Worker state (wrangler dev)
+.wrangler/

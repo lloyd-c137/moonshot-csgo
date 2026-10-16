@@ -21,8 +21,10 @@ import type { Entity, Texture } from 'playcanvas';
 
 import { installDebugHooks } from './app/debugHooks';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
+import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { browserStorage, DiscoveryLog } from './gameplay/discovery';
+import { createMatch } from './gameplay/match';
 import { addCampusCollisions } from './physics/collisionWorld';
 import {
     applySettings,
@@ -174,6 +176,14 @@ const boot = async () => {
     buildSigns(app, campus.root, derivedWorld, rooms.rooms);
     const { player, camera } = createPlayer(app);
     setupAtmosphere(app, camera);
+    const match = createMatch({
+        app,
+        player,
+        camera,
+        canvas,
+        ui: shell,
+        url: multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname)
+    });
     const lightPool = createLightPool(app, [
         ...derivedWorld.lights,
         ...authoredScenes.flatMap((scene) => scene.lights)
@@ -220,6 +230,7 @@ const boot = async () => {
         }
         roomTracker.update([position.x, position.z], deltaTime);
         lightPool.update(deltaTime, position);
+        match.update(deltaTime);
         const forward = camera.forward;
         shell.drawMaps(position.x, position.z, forward.x, forward.z);
     });
@@ -249,6 +260,7 @@ const boot = async () => {
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
+            if (!hasEntered) match.start(shell.nickname());
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
             shell.playing();
@@ -320,6 +332,7 @@ const boot = async () => {
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
             discovered: () => [...discovery.list],
+            match: match.debug,
             setRendering: (enabled: boolean) => {
                 app.autoRender = enabled;
                 app.renderNextFrame = true;

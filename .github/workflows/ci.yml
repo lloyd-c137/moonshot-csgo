@@ -21,3 +21,11 @@ jobs:
             - run: npx playwright install --with-deps chromium
             - run: npm run test:e2e:prod
             - run: npm run test:e2e
+            # Deploys the shared-world Worker (server/) after a green run on main. Needs the repository secrets
+            # CLOUDFLARE_API_TOKEN (Workers Scripts edit) and CLOUDFLARE_ACCOUNT_ID; skipped when they are absent.
+            - name: Deploy multiplayer Worker
+              if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.CLOUDFLARE_API_TOKEN != ''
+              run: npm run server:deploy
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -5,31 +5,36 @@
     "description": "Moonshot Open World browser FPS bootstrap",
     "type": "module",
     "scripts": {
-        "audit:nav": "node tools/navAuditCli.ts",
-        "build": "vite build",
-        "derive:world": "node tools/deriveWorldCli.ts",
-        "dev": "vite",
-        "fmt": "prettier --check .",
-        "fmt:fix": "prettier --write .",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
-        "start": "vite preview",
-        "test": "node --test",
-        "test:e2e": "playwright test",
-        "test:e2e:prod": "npm run build && playwright test --config playwright.production.config.ts",
-        "typecheck": "tsc --noEmit"
-    },
+    "audit:nav": "node tools/navAuditCli.ts",
+    "build": "vite build",
+    "derive:world": "node tools/deriveWorldCli.ts",
+    "dev": "vite",
+    "fmt": "prettier --check .",
+    "fmt:fix": "prettier --write .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "server:deploy": "wrangler deploy --config server/wrangler.toml",
+    "server:dev": "wrangler dev --config server/wrangler.toml --port 8787 --var ALLOWED_ORIGINS:localhost,127.0.0.1",
+    "spawns": "node tools/spawnPointsCli.ts",
+    "start": "vite preview",
+    "test": "node --test",
+    "test:e2e": "playwright test",
+    "test:e2e:prod": "npm run build && playwright test --config playwright.production.config.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json"
+  },
     "dependencies": {
         "playcanvas": "2.23.2"
     },
     "devDependencies": {
+        "@cloudflare/workers-types": "5.20261016.1",
         "@playcanvas/eslint-config": "3.0.0-beta.8",
         "@playcanvas/inspector": "0.2.0",
         "@playwright/test": "1.64.1",
         "eslint": "9.39.5",
         "prettier": "3.9.10",
         "typescript": "6.0.3",
-        "vite": "8.3.4"
+        "vite": "8.3.4",
+        "wrangler": "4.151.0"
     },
     "engines": {
         "node": ">=22.23.2"

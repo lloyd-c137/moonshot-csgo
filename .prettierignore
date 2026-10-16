@@ -8,3 +8,4 @@ docs/
 test-results/
 playwright-report/
 .playwright-cli/
+.wrangler/

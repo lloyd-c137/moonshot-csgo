@@ -10,6 +10,18 @@ The public production build is available at <https://moonshot-csgo.pages.dev/>. 
 
 The repository owner explicitly approved public hosting of the FF-01 runtime GLB and curated room data on 2026-10-15. This remains an in-development game; deployment does not imply that unverified classroom/arena routes are playable.
 
+## Shared world: frisbee play
+
+Everyone who opens the game joins one shared campus (GAMEPLAY_AUTHORED, approved by the owner on 2026-10-15).
+
+- **Play**: hold the left mouse button to charge and release to throw a frisbee; two hits eliminate a player, who respawns 2.5 s later at one of 24 spread corridor spawn points (`src/config/spawns.ts`, from `npm run spawns`). Damaged players heal after 10 s without a hit. Points: 1 per hit, 2 more for the eliminating hit; live standings top left, Tab for the full table.
+- **Flight**: discs are Ammo rigid bodies that collide with the level only, steered by a two-coefficient flying-disc lift/drag model (`src/gameplay/frisbee.ts`), with continuous collision against walls.
+- **Feedback**: synthesised Web Audio sounds (throw whoosh, bounces, hit confirmation, being hit, eliminations, respawn; other players' sounds positioned in 3D), hit markers, a red damage flash, health pips and an elimination broadcast.
+- **Server**: a Cloudflare Worker with one Durable Object room (`server/`), deployed at `wss://moonshot-csgo-multiplayer.lloyd666.workers.dev/ws`. Clients own their movement; the thrower's client detects hits and the room validates every claim (throw exists and is recent, one hit per disc, both players alive, target within reach of the throw and of the claimed contact point), then alone decides damage, eliminations and respawns. Only page origins on `moonshot-csgo.pages.dev` may connect; messages are size-checked and rate-limited.
+- **Privacy**: no login; only the nickname the player types (or a random one) is shown. Nothing is stored: the room lives in memory and forgets everyone on disconnect; no addresses are logged by the game.
+- **Offline**: without a reachable server (and always in `npm run dev` unless `?server=ws://127.0.0.1:8787/ws` is given) the game is single-player frisbee practice. `npm run server:dev` runs the room locally; the browser spec `tests/browser/multiplayer.spec.ts` plays a two-player round against it.
+- **Known limits**: client-authoritative movement and thrower-side hit detection can be cheated by a modified client (claims are plausibility-checked, not simulated server-side); very slow clients (well under 10 FPS) may see hits rejected after the 8 s claim window. Deploy: `npm run server:deploy` (CI deploys from main when the Cloudflare secrets are set).
+
 ## Requirements
 
 - Node.js `>=22.23.2` (bootstrap verified with Node `24.16.0` and npm `11.13.0`)

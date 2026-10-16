@@ -4,9 +4,11 @@ import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
 import type {
     AccountStats,
     ChatLine,
+    GoldState,
     King,
     PlayerPose,
     PlayerSummary,
+    RoundState,
     Scores,
     ServerMessage,
     ThrowRecord,
@@ -21,7 +23,13 @@ type Handlers = {
     welcome: (
         me: PlayerSummary,
         players: PlayerSummary[],
-        extra: { account: AccountStats | null; king: King | null; chat: ChatLine[] }
+        extra: {
+            account: AccountStats | null;
+            king: King | null;
+            chat: ChatLine[];
+            round: RoundState;
+            gold: GoldState;
+        }
     ) => void;
     joined: (player: PlayerSummary) => void;
     left: (id: string) => void;
@@ -42,6 +50,11 @@ type Handlers = {
     account: (account: AccountStats) => void;
     healed: (id: string, hp: number) => void;
     respawn: (id: string, spawn: number) => void;
+    gold: (gold: GoldState, event: 'spawned' | 'taken' | 'dropped') => void;
+    round: (round: RoundState, scores: Scores) => void;
+    caught: (id: string) => void;
+    /** Round-trip time to the room (ms), smoothed; null when not connected. */
+    latency: (ms: number | null) => void;
 };
 
 export const createNetClient = (url: string | null, handlers: Handlers) => {
@@ -54,6 +67,11 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let lastPoseAt = 0;
     const history = new Map<string, PoseBuffer>();
     const clock = new ServerClock();
+    let latency: number | null = null;
+    // Latency probe every 2 s while connected.
+    window.setInterval(() => {
+        if (state === 'online') send({ type: 'ping', c: Math.round(performance.now() * 10) / 10 });
+    }, 2000);
 
     const setState = (next: NetState, detail?: string) => {
         state = next;
@@ -68,12 +86,16 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'welcome': {
                 me = message.id;
                 retry = 0;
+                clock.observe(message.t, performance.now());
                 setState('online');
+                send({ type: 'ping', c: performance.now() });
                 const self = message.players.find((player) => player.id === message.id)!;
                 handlers.welcome(self, message.players, {
                     account: message.account,
                     king: message.king,
-                    chat: message.chat
+                    chat: message.chat,
+                    round: message.round,
+                    gold: message.gold
                 });
                 break;
             }
@@ -134,6 +156,21 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'healed':
                 handlers.healed(message.id, message.hp);
                 break;
+            case 'gold':
+                handlers.gold(message.gold, message.event);
+                break;
+            case 'round':
+                handlers.round(message.round, message.scores);
+                break;
+            case 'caught':
+                handlers.caught(message.id);
+                break;
+            case 'pong': {
+                const rtt = performance.now() - message.c;
+                latency = latency === null ? rtt : latency + (rtt - latency) * 0.3;
+                handlers.latency(Math.round(latency));
+                break;
+            }
             case 'respawn':
                 handlers.respawn(message.id, message.spawn);
                 break;
@@ -171,6 +208,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             socket = null;
             me = null;
             history.clear();
+            latency = null;
+            handlers.latency(null);
             if (state === 'rejected') return;
             setState('offline', 'disconnected');
             // Reconnect with backoff (1, 2, 4 … 30 s).
@@ -218,6 +257,14 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         hit(throwId: number, target: string, at: Vec3Tuple) {
             send({ type: 'hit', throwId, target, at });
+        },
+        /** Tells the room 纪老师 caught this player throwing. */
+        caught() {
+            send({ type: 'caught' });
+        },
+        /** Estimated room clock (ms), or null before the first message. */
+        serverNow() {
+            return clock.toServer(performance.now());
         },
         /** Interpolated remote poses for drawing, keyed by player id (call once per frame). */
         poses(): Map<string, PlayerPose> {

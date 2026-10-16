@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Room } from '../server/room.ts';
+import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
     cleanName,
     HEAL_SECONDS,
     MAX_HP,
     parseClientMessage,
     PROTOCOL_VERSION,
-    RESPAWN_SECONDS
+    RESPAWN_SECONDS,
+    ROUND
 } from '../src/net/protocol.ts';
 
 const harness = () => {
@@ -63,7 +65,7 @@ test('wrong protocol versions and garbage are rejected', () => {
     assert.equal(cleanName('a'.repeat(40)).length, 16);
 });
 
-test('two valid hits eliminate (one per disc), score 1 + 1 + 2, then the server respawns at full health', () => {
+test('two valid hits eliminate (one per disc), scoring one point for the elimination, then the server respawns at full health', () => {
     const { room, join, pose, inbox } = harness();
     join('a', 'A');
     join('b', 'B');
@@ -76,7 +78,7 @@ test('two valid hits eliminate (one per disc), score 1 + 1 + 2, then the server 
     throwAndHit(1, 1000);
     assert.ok(inbox.get('b').some((message) => message.type === 'thrown' && message.from === 'a'));
     let struck = inbox.get('b').filter((message) => message.type === 'struck');
-    assert.deepEqual([struck.length, struck[0].hp, struck[0].out, struck[0].scores.a], [1, 1, false, [1, 0, 0]]);
+    assert.deepEqual([struck.length, struck[0].hp, struck[0].out, struck[0].scores.a], [1, 1, false, [0, 0, 0]]);
     // The same disc cannot score twice.
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 1600);
     assert.equal(inbox.get('b').filter((message) => message.type === 'struck').length, 1);
@@ -84,7 +86,7 @@ test('two valid hits eliminate (one per disc), score 1 + 1 + 2, then the server 
     struck = inbox.get('b').filter((message) => message.type === 'struck');
     assert.deepEqual(
         [struck[1].hp, struck[1].out, struck[1].scores.a, struck[1].scores.b],
-        [0, true, [4, 1, 0], [0, 0, 1]]
+        [0, true, [1, 1, 0], [0, 0, 1]]
     );
     // Eliminated players cannot be hit again.
     throwAndHit(3, 3000);
@@ -232,4 +234,83 @@ test('a sniper disc to the head eliminates outright; a slow throw cannot claim t
     // The aim level travels with the pose so others can see the scope glint.
     const snapshot = room.players.get('a').pose;
     assert.equal(snapshot.aim, 1);
+});
+
+test('rounds: the golden disc spawns, is picked up, drops on elimination, and its holder wins at time', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24,
+        null,
+        () => 0 // golden disc at the first spawn point
+    );
+    for (const id of ['a', 'b']) {
+        inbox.set(id, []);
+        room.connect(id);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
+    }
+    const welcome = inbox.get('a')[0];
+    assert.equal(welcome.type, 'welcome');
+    assert.deepEqual(welcome.round, { phase: 'playing', endsAt: ROUND.roundSeconds * 1000 });
+    assert.deepEqual(welcome.gold, { holder: null, at: [SPAWN_POINTS[0][0], 0.92, SPAWN_POINTS[0][1]] });
+    const goldEvents = () =>
+        inbox
+            .get('b')
+            .filter((m) => m.type === 'gold')
+            .map((m) => [m.event, m.gold.holder]);
+    // Too far: nothing. Walking onto it: taken.
+    room.message(
+        'a',
+        { type: 'pose', pose: { p: [SPAWN_POINTS[0][0] + 5, 0.92, SPAWN_POINTS[0][1]], yaw: 0, pitch: 0 } },
+        2000
+    );
+    assert.deepEqual(goldEvents(), []);
+    room.message(
+        'a',
+        { type: 'pose', pose: { p: [SPAWN_POINTS[0][0] + 1, 0.92, SPAWN_POINTS[0][1]], yaw: 0, pitch: 0 } },
+        2100
+    );
+    assert.deepEqual(goldEvents(), [['taken', 'a']]);
+    // B eliminates A: the disc drops where A fell, and B picks it up after the short delay.
+    const [ax, , az] = room.players.get('a').pose.p;
+    room.message('b', { type: 'pose', pose: { p: [ax + 6, 0.92, az], yaw: 0, pitch: 0 } }, 3000);
+    for (const [id, at] of [
+        [1, 4000],
+        [2, 5000]
+    ]) {
+        room.message('b', { type: 'throw', throw: { id, o: [ax + 6, 1.5, az], v: [-15, 0, 0], tilt: 0 } }, at);
+        room.message('b', { type: 'hit', throwId: id, target: 'a', at: [ax, 1.0, az] }, at + 300);
+    }
+    assert.deepEqual(goldEvents().slice(1), [['dropped', null]]);
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 5400);
+    assert.equal(goldEvents().length, 2, 'not straight away');
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 6500);
+    assert.deepEqual(goldEvents().at(-1), ['taken', 'b']);
+    // Kills score one point each.
+    assert.deepEqual(room.summaries().find((p) => p.id === 'b').score, 1);
+    // Time runs out: B holds it and wins; a new round follows after the intermission with scores reset.
+    room.tick(ROUND.roundSeconds * 1000 + 1);
+    const ended = inbox
+        .get('a')
+        .filter((m) => m.type === 'round')
+        .at(-1);
+    assert.equal(ended.round.phase, 'ended');
+    assert.equal(ended.round.winner, 'B');
+    room.tick(ROUND.roundSeconds * 1000 + ROUND.intermissionSeconds * 1000 + 2);
+    const next = inbox
+        .get('a')
+        .filter((m) => m.type === 'round')
+        .at(-1);
+    assert.equal(next.round.phase, 'playing');
+    assert.deepEqual(next.scores.b, [0, 0, 0]);
+    assert.deepEqual(goldEvents().at(-1), ['spawned', null]);
+    // Latency probe is echoed.
+    room.message('a', { type: 'ping', c: 42 }, 1);
+    assert.deepEqual(inbox.get('a').at(-1), { type: 'pong', c: 42 });
 });

@@ -9,8 +9,17 @@ import { SPAWN_POINTS } from '../config/spawns';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
-import type { King, PlayerPose, PlayerSummary, ThrowRecord } from '../net/protocol';
-import { colourFor, MAX_HP, RESPAWN_SECONDS, SNIPER, SPAWN_PROTECTION, THROW_COOLDOWN } from '../net/protocol';
+import type { King, PlayerPose, PlayerSummary, RoundState, ThrowRecord } from '../net/protocol';
+import {
+    colourFor,
+    DETENTION_SECONDS,
+    MAX_HP,
+    RESPAWN_SECONDS,
+    ROUND,
+    SNIPER,
+    SPAWN_PROTECTION,
+    THROW_COOLDOWN
+} from '../net/protocol';
 import { kickLook, setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
 import type { Ui } from '../ui/shell';
@@ -20,9 +29,22 @@ import { createDiscs } from './discs';
 import { createEffects } from './effects';
 import type { V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
-import { airborne, CATCH_AT, INSPECT_SECONDS, inspectPose, TOSS_AT } from './inspect';
+import { createGold, GOLD_COLOUR } from './gold';
+import {
+    airborne,
+    CATCH_AT,
+    GOLD_CATCH_AT,
+    GOLD_INSPECT_SECONDS,
+    GOLD_TOSS_AT,
+    goldAirborne,
+    goldInspectPose,
+    INSPECT_SECONDS,
+    inspectPose,
+    TOSS_AT
+} from './inspect';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
 import { createSound } from './sound';
+import { createTeacher } from './teacherView';
 
 type Options = {
     app: AppBase;
@@ -67,6 +89,25 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     const sound = createSound();
     const effects = createEffects(app);
     let king: King | null = null;
+    // The round, the golden disc and 纪老师.
+    const goldView = createGold(app, discs.mesh, effects);
+    discs.goldMaterial = goldView.material;
+    avatars.goldMaterial = goldView.material;
+    const teacher = createTeacher(app, camera, ui.nameTagLayer());
+    let roundState: RoundState | null = null;
+    /** performance.now() when the local player may move again after being caught by 纪老师. */
+    let detainedUntil = 0;
+    let detentionShown = false;
+    let speeds: { ground: number; air: number; jump: number } | null = null;
+    let warming = false;
+    /** Whether the current inspect is the golden disc's (it has its own, longer routine). */
+    let goldInspect = false;
+    let goldSparkAt = 0;
+    let lastGoldMine = false;
+    const goldHolder = () => goldView.state?.holder ?? null;
+    const holdingGold = () => goldHolder() === selfId();
+    /** Room clock now: the server's while online, the local clock offline. */
+    const roomNow = () => (net.state === 'online' ? (net.serverNow() ?? Date.now()) : Date.now());
     let nickname = '';
     let inputPaused = false;
     let poses = new Map<string, PlayerPose>();
@@ -127,6 +168,19 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             ghost.material.update();
             ghost.entity.render!.meshInstances = [new MeshInstance(mesh, ghost.material)];
         }
+    };
+    const tintGhostsGold = () => {
+        for (const ghost of ghosts) {
+            ghost.material.diffuse.set(1, 0.74, 0.2);
+            ghost.material.emissive.set(1, 0.62, 0.12);
+            ghost.material.emissiveIntensity = 0.9;
+            ghost.material.update();
+            ghost.entity.render!.meshInstances = [new MeshInstance(discs.mesh, ghost.material)];
+        }
+    };
+    const viewmodelWorld = (): V3 => {
+        const p = viewmodel.getPosition();
+        return [p.x, p.y, p.z];
     };
     /** Whether the catch kick of the current inspect has fired. */
     let caught = false;
@@ -222,6 +276,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             if (state !== 'online') {
                 roster.clear();
                 avatars.clear();
+                // Back to offline practice: no round, and a local golden disc will be laid out again.
+                roundState = null;
+                goldView.set(null);
+                avatars.setGold(null);
                 if (!alive) {
                     setAlive(true);
                     ui.eliminated(null);
@@ -238,6 +296,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 auth.account = extra.account;
                 ui.account(extra.account);
             }
+            roundState = extra.round;
+            goldView.set(extra.gold);
+            avatars.setGold(extra.gold.holder);
             for (const each of players) {
                 roster.set(each.id, each);
                 if (each.id !== me.id) avatars.add(each.id, each.name, each.colour);
@@ -293,6 +354,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             const entry = roster.get(target);
             if (entry) Object.assign(entry, { hp: targetHp, alive: !out });
             const me = selfId();
+            avatars.flash(target, performance.now());
             if (target === me) {
                 hp = targetHp;
                 sound.hurt(out);
@@ -331,14 +393,20 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 if (snipe) {
                     sound.snipeConfirm();
                     ui.hitMarker('snipe');
-                    ui.popup(`狙击爆头 · ${nameOf(target)}  +3`, 'snipe');
+                    ui.popup(`狙击爆头 · ${nameOf(target)}  +1`, 'snipe');
+                    punch = Math.max(punch, 1.8);
+                    shake = Math.max(shake, 0.06);
                 } else {
                     sound.hitConfirm(out, head);
                     ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
                     ui.popup(
-                        out ? `淘汰 ${nameOf(target)}  +3` : head ? '爆头  +1' : '命中  +1',
+                        out ? `淘汰 ${nameOf(target)}  +1` : head ? '爆头！' : '命中！',
                         out ? 'kill' : head ? 'head' : 'hit'
                     );
+                    // Confirmation you can feel: a punch of the view, harder on eliminations.
+                    punch = Math.max(punch, out ? 1.4 : head ? 1 : 0.7);
+                    if (out) shake = Math.max(shake, 0.05);
+                    ui.crosshairKick(out ? 'kill' : head ? 'head' : 'hit');
                 }
             } else {
                 sound.impact(positionOf(target) ?? at);
@@ -380,6 +448,62 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             auth.account = account;
             ui.account(account);
         },
+        gold: (gold, event) => {
+            const previous = goldView.state?.holder ?? null;
+            goldView.set(gold);
+            avatars.setGold(gold.holder);
+            const me = selfId();
+            if (event === 'taken' && gold.holder) {
+                const where: V3 = gold.holder === me ? viewmodelWorld() : (positionOf(gold.holder) ?? gold.at);
+                goldView.flourish(where);
+                if (gold.holder === me) {
+                    sound.goldTaken();
+                    ui.popup('夺得金飞盘！', 'gold');
+                    ui.feed('你持有金飞盘 · 坚持到倒计时结束就能获胜', 'mine');
+                    punch = Math.max(punch, 1.2);
+                } else {
+                    sound.goldLost();
+                    ui.feed(`${nameOf(gold.holder)} 夺得了金飞盘！`, 'neutral');
+                }
+            } else if (event === 'dropped') {
+                goldView.flourish(gold.at);
+                sound.goldChime(gold.at);
+                ui.feed(
+                    previous === me ? '你的金飞盘掉落了！' : '金飞盘掉落了，快去抢！',
+                    previous === me ? 'me' : 'neutral'
+                );
+            } else if (event === 'spawned') {
+                goldView.flourish(gold.at);
+                sound.goldChime();
+                ui.notify('金飞盘已刷新！位置已在地图和屏幕上标出');
+            }
+        },
+        round: (next, scores) => {
+            const was = roundState;
+            roundState = next;
+            for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
+                const entry = roster.get(id);
+                if (entry) Object.assign(entry, { score, kills, deaths });
+            }
+            if (next.phase === 'ended') {
+                const mine = next.winnerId === selfId();
+                sound.roundEnd(mine);
+                ui.broadcastText(
+                    mine ? '你守住了金飞盘，赢得本局！' : next.winner ? `${next.winner} 赢得本局` : '本局无人获胜'
+                );
+            } else if (was?.phase === 'ended') {
+                sound.roundStart();
+                ui.notify('新一局开始！争夺金飞盘');
+            }
+            refreshBoard();
+        },
+        caught: (id) => {
+            if (id === selfId()) return; // already shown locally
+            teacher.say('室内不准打飞盘！', performance.now());
+            sound.whistle();
+            ui.feed(`纪老师抓到 ${nameOf(id)} 在室内打飞盘，罚站 ${DETENTION_SECONDS} 秒`);
+        },
+        latency: (ms) => ui.latency(ms),
         respawn: (id, spawn) => {
             const entry = roster.get(id);
             if (entry) Object.assign(entry, { alive: true, hp: MAX_HP });
@@ -442,8 +566,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             velocity: record.v,
             normal: launchNormal(record.v, record.tilt),
             local: true,
-            sniper
+            sniper,
+            gold: holdingGold()
         });
+        // 纪老师 saw that: no frisbees indoors. Stand still for a few seconds.
+        if (!warming && teacher.sees(player.getPosition(), player)) {
+            detainedUntil = now + DETENTION_SECONDS * 1000;
+            teacher.say('室内不准打飞盘！', now);
+            sound.whistle();
+            ui.popup('纪老师：室内不准打飞盘！', 'me');
+            ui.feed(`被纪老师抓到 · 罚站 ${DETENTION_SECONDS} 秒`, 'me');
+            net.caught();
+        }
         if (sniper) {
             sound.sniperThrow();
             punch = 1.6;
@@ -470,6 +604,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         // Right button while charging or aiming: stand down without throwing.
         if (event.button === 2 && chargingSince !== null) return cancelCharge();
         if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
+        if (performance.now() < detainedUntil) return; // standing still for 纪老师
         chargingSince = performance.now();
         aimSoundPlayed = false;
         aimReadyPlayed = false;
@@ -491,9 +626,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
         const now = performance.now();
         if ((now - lastThrowAt) / 1000 <= THROW_COOLDOWN) return false; // disc not back in hand yet
+        if (now < detainedUntil) return false;
         inspectSince = now;
         caught = false;
-        sound.inspect(INSPECT_SECONDS, TOSS_AT, CATCH_AT);
+        goldInspect = holdingGold();
+        if (goldInspect) {
+            tintGhostsGold();
+            sound.goldInspect(GOLD_INSPECT_SECONDS, GOLD_TOSS_AT, GOLD_CATCH_AT);
+        } else {
+            tintGhosts(viewmodelHue < 0 ? colourFor('local') : viewmodelHue);
+            sound.inspect(INSPECT_SECONDS, TOSS_AT, CATCH_AT);
+        }
         return true;
     };
     const showBoard = (show: boolean) => {
@@ -555,26 +698,52 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         viewmodel.enabled = started && alive;
         if (!alive) inspectSince = null;
         const inspecting = inspectSince !== null || inspectHold !== null;
-        const u = inspecting ? (inspectHold ?? (now - inspectSince!) / 1000 / INSPECT_SECONDS) : 1;
+        const routine = goldInspect
+            ? { seconds: GOLD_INSPECT_SECONDS, pose: goldInspectPose, inAir: goldAirborne, catchAt: GOLD_CATCH_AT }
+            : { seconds: INSPECT_SECONDS, pose: inspectPose, inAir: airborne, catchAt: CATCH_AT };
+        const u = inspecting ? (inspectHold ?? (now - inspectSince!) / 1000 / routine.seconds) : 1;
         if (u >= 1) inspectSince = null;
         // Afterimages follow the disc a few milliseconds behind while it flies.
         ghosts.forEach((ghost, index) => {
-            const lag = u - (index + 1) * 0.011;
-            ghost.entity.enabled = viewmodel.enabled && u < 1 && airborne(u) && airborne(lag);
+            const lag = u - (index + 1) * (goldInspect ? 0.008 : 0.011);
+            ghost.entity.enabled = viewmodel.enabled && u < 1 && routine.inAir(u) && routine.inAir(lag);
             if (!ghost.entity.enabled) return;
-            const [p, e] = inspectPose(lag);
+            const [p, e] = routine.pose(lag);
             ghost.entity.setLocalPosition(p[0], p[1], p[2]);
             ghost.entity.setLocalEulerAngles(e[0], e[1], e[2]);
         });
         if (u < 1) {
-            const [p, e] = inspectPose(u);
+            const [p, e] = routine.pose(u);
             viewmodel.setLocalPosition(p[0], p[1], p[2]);
             viewmodel.setLocalEulerAngles(e[0], e[1], e[2]);
-            // Snap catch: a small FOV kick and a jolt of the view.
-            if (!caught && u >= CATCH_AT && inspectHold === null) {
+            if (goldInspect && now - goldSparkAt > 16) {
+                // Golden disc: sparks spiral up off it while it levitates and spins, and trail it through the air.
+                goldSparkAt = now;
+                const at = viewmodelWorld();
+                const spinning = u > 0.1 && u < 0.44;
+                const a = now / 40;
+                const r = spinning ? 0.16 : 0.05;
+                effects.mote(
+                    [at[0] + Math.cos(a) * r, at[1] + (spinning ? 0.02 : 0), at[2] + Math.sin(a) * r],
+                    Math.random() < 0.35 ? [1, 1, 1] : GOLD_COLOUR,
+                    spinning ? [Math.cos(a) * 0.5, 1.1, Math.sin(a) * 0.5] : [0, 0.2, 0],
+                    0.012 + Math.random() * 0.014,
+                    0.7
+                );
+            }
+            // Snap catch: a kick of the view (and a gold shockwave for the golden disc).
+            if (!caught && u >= routine.catchAt && inspectHold === null) {
                 caught = true;
-                punch = Math.max(punch, 0.55);
+                punch = Math.max(punch, goldInspect ? 1.1 : 0.55);
                 shake = Math.max(shake, 0.05);
+                if (goldInspect) {
+                    const at = viewmodelWorld();
+                    effects.ring(at, GOLD_COLOUR, 0.05, 0.45, 0.6);
+                    for (let i = 0; i < 16; i++) {
+                        const a = (i / 16) * Math.PI * 2;
+                        effects.mote(at, GOLD_COLOUR, [Math.cos(a) * 1.4, Math.sin(a) * 1.4, 0.3], 0.01, 0.45, 2);
+                    }
+                }
             }
             return;
         }
@@ -594,6 +763,162 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         );
     };
 
+    const markerScreen = new Vec3();
+    const markerWorld = new Vec3();
+    /** Where the golden disc is right now (lying spot, or the holder's position), or null. */
+    const goldPosition = (): V3 | null => {
+        const state = goldView.state;
+        if (!state) return null;
+        if (state.holder === null) return state.at;
+        if (state.holder === selfId()) {
+            const p = player.getPosition();
+            return [p.x, p.y, p.z];
+        }
+        return positionOf(state.holder) ?? null;
+    };
+    let roundEndSecond = -1;
+    /** Per frame: 纪老师, the golden disc, detention, the round clock and the on-screen gold marker. */
+    const updateRound = (now: number) => {
+        if (warming) return;
+        teacher.update(roomNow(), now, 0);
+        // Offline practice: a golden disc of your own to find.
+        if (started && net.state !== 'online' && !goldView.state) {
+            const [x, z] = SPAWN_POINTS[10];
+            goldView.set({ holder: null, at: [x, 0.92, z] });
+        }
+        const state = goldView.state;
+        const me = selfId();
+        if (state && net.state !== 'online' && state.holder === null && alive) {
+            const p = player.getPosition();
+            if (Math.hypot(p.x - state.at[0], p.z - state.at[2]) < ROUND.pickupRadius) {
+                goldView.set({ holder: me, at: state.at });
+                goldView.flourish(viewmodelWorld());
+                sound.goldTaken();
+                ui.popup('夺得金飞盘！', 'gold');
+            }
+        }
+        const holder = goldHolder();
+        const mine = holder !== null && holder === me;
+        // Equip: the in-hand disc becomes the golden one (and back when it is lost).
+        if (mine !== lastGoldMine) {
+            lastGoldMine = mine;
+            viewmodel.render!.meshInstances = mine
+                ? [new MeshInstance(discs.mesh, goldView.material)]
+                : discs.meshInstances(viewmodelHue < 0 ? colourFor('local') : viewmodelHue);
+        }
+        if (mine && viewmodel.enabled && inspectSince === null && now - goldSparkAt > 90) {
+            goldSparkAt = now;
+            const [x, y, z] = viewmodelWorld();
+            effects.mote(
+                [x + (Math.random() - 0.5) * 0.12, y + 0.02, z + (Math.random() - 0.5) * 0.12],
+                GOLD_COLOUR,
+                [0, 0.25, 0],
+                0.006,
+                0.5
+            );
+        }
+        const holderPosition = holder && !mine ? (positionOf(holder) ?? null) : null;
+        goldView.update(now, holderPosition, mine);
+
+        // Detention: frozen in place (looking around is allowed) until the time is up.
+        const script = controller() as unknown as { speedGround: number; speedAir: number; jumpForce: number } | null;
+        const detained = now < detainedUntil;
+        if (script) {
+            if (!speeds) speeds = { ground: script.speedGround, air: script.speedAir, jump: script.jumpForce };
+            if (detained) {
+                script.speedGround = 0;
+                script.speedAir = 0;
+                script.jumpForce = 0;
+                chargingSince = null;
+            } else if (detentionShown) {
+                script.speedAir = speeds.air;
+                script.jumpForce = speeds.jump;
+            }
+        }
+        if (detained) {
+            detentionShown = true;
+            ui.detention((detainedUntil - now) / 1000, DETENTION_SECONDS);
+        } else if (detentionShown) {
+            detentionShown = false;
+            ui.detention(null);
+        }
+
+        // Round clock, golden disc status and end-of-round banner.
+        const roomMs = roomNow();
+        const current = roundState;
+        if (net.state === 'online' && current) {
+            if (current.phase === 'playing') {
+                ui.roundClock(Math.max(0, (current.endsAt - roomMs) / 1000));
+                if (roundEndSecond !== -1) {
+                    roundEndSecond = -1;
+                    ui.roundEnd(null);
+                }
+            } else {
+                ui.roundClock(0);
+                const left = Math.max(0, (current.nextAt - roomMs) / 1000);
+                if (Math.ceil(left) !== roundEndSecond) {
+                    roundEndSecond = Math.ceil(left);
+                    ui.roundEnd({ winner: current.winner, mine: current.winnerId === me, nextIn: left });
+                }
+            }
+        } else {
+            ui.roundClock(null);
+        }
+        ui.goldStatus(
+            !state
+                ? '金飞盘未出现'
+                : mine
+                  ? '你持有金飞盘 · 守住它！'
+                  : holder
+                    ? `${nameOf(holder)} 持有金飞盘`
+                    : '金飞盘无人持有 · 去抢！',
+            !state ? 'neutral' : mine ? 'mine' : holder ? 'other' : 'lying'
+        );
+        // On-screen marker: where it lies, or over its holder's head.
+        const target = mine ? null : goldPosition();
+        if (!target || !started) {
+            ui.goldMarker(null);
+            return;
+        }
+        markerWorld.set(target[0], target[1] + (holder ? 1.3 : 0.6), target[2]);
+        camera.camera!.worldToScreen(markerWorld, markerScreen);
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const eye = camera.getPosition();
+        const distance = Math.round(Math.hypot(target[0] - eye.x, target[2] - eye.z));
+        const label = holder ? `${nameOf(holder)} · ${distance} m` : `金飞盘 · ${distance} m`;
+        const margin = 48;
+        const inFront = markerScreen.z > 0;
+        if (
+            inFront &&
+            markerScreen.x > margin &&
+            markerScreen.x < width - margin &&
+            markerScreen.y > margin &&
+            markerScreen.y < height - margin
+        ) {
+            ui.goldMarker({ x: markerScreen.x, y: markerScreen.y, angle: null, label });
+            return;
+        }
+        // Off screen (or behind): pin to the edge in its direction.
+        let dx = markerScreen.x - width / 2;
+        let dy = markerScreen.y - height / 2;
+        if (!inFront) {
+            dx = -dx;
+            dy = -dy;
+        }
+        if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) dy = height;
+        const scale = Math.min(
+            (width / 2 - margin) / Math.abs(dx || 1e-6),
+            (height / 2 - margin) / Math.abs(dy || 1e-6)
+        );
+        ui.goldMarker({
+            x: width / 2 + dx * scale,
+            y: height / 2 + dy * scale,
+            angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+            label
+        });
+    };
+
     const targets = new Map<string, V3>();
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return {
@@ -603,6 +928,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
          * shaders are compiled before play instead of on the first hit, inspect or opponent (a visible hitch).
          */
         async prewarm() {
+            warming = true;
             const eye = camera.getPosition().clone();
             const ahead = camera.forward.clone().mulScalar(1.6).add(eye);
             const at: V3 = [ahead.x, ahead.y, ahead.z];
@@ -616,6 +942,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             effects.burst(at, colourFor('local'), 'head');
             effects.snipe(at);
             effects.tracer(at, colourFor('local'));
+            effects.mote(at, GOLD_COLOUR, [0, 0, 0], 0.05, 0.3);
+            effects.ring(at, GOLD_COLOUR, 0.2, 0.3, 1);
+            goldView.showAll(at);
+            teacher.root.setPosition(at[0], at[1] - 1, at[2]);
+            ghosts[0].entity.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
             avatars.add('prewarm', '', colourFor('local'));
             avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0, aim: 1 }]]), 0);
             discs.launch({
@@ -633,6 +964,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             avatars.remove('prewarm');
             discs.clear();
             effects.clear();
+            goldView.set(null);
+            warming = false;
         },
         /** Joins the shared world (first entry only). */
         start(name: string) {
@@ -659,6 +992,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             poses = net.poses();
             avatars.update(poses, now);
             animateFeel(deltaTime, now);
+            updateRound(now);
             effects.update(deltaTime);
             targets.clear();
             for (const [id, each] of poses) targets.set(id, each.p);
@@ -677,6 +1011,15 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         get alive() {
             return alive;
+        },
+        /** The golden disc and 纪老师 for the maps. */
+        markers() {
+            const at = goldPosition();
+            const teacherPose = teacher.pose;
+            return {
+                gold: at ? { x: at[0], z: at[2], held: goldHolder() !== null } : null,
+                teacher: { x: teacherPose.x, z: teacherPose.z, yaw: teacherPose.yaw }
+            };
         },
         get online() {
             return net.state === 'online';
@@ -715,8 +1058,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 throws,
                 hitsClaimed,
                 inspecting: inspectSince !== null,
-                aim
+                aim,
+                gold: goldView.state,
+                round: roundState,
+                detained: performance.now() < detainedUntil
             }),
+            /** 纪老师 right now (position and facing). */
+            teacher: () => teacher.pose,
             inspect: startInspect,
             holdInspect: (u: number | null) => (inspectHold = u),
             holdAim: (value: number | null) => (aimHold = value),

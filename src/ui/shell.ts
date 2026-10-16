@@ -2,6 +2,7 @@ import type { CampusRoom } from '../world/roomIndex';
 
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
+import type { MapMarkers } from './minimap';
 import type { Settings } from './settings';
 import { SETTING_RANGES } from './settings';
 import './theme.css';
@@ -119,6 +120,24 @@ const MARKUP = `
       <span class="location-name" id="location-name">正在定位</span>
       <span class="location-kind" id="location-kind"></span>
     </div>
+    <div class="round-bar" id="round-bar" data-tone="neutral">
+      <span class="round-clock" id="round-clock">--:--</span>
+      <span class="round-gold"><i class="gold-dot" aria-hidden="true"></i><span id="round-gold">金飞盘</span></span>
+    </div>
+    <div class="gold-marker" id="gold-marker" hidden aria-hidden="true">
+      <span class="gold-marker-arrow"></span><span class="gold-marker-icon"></span><span class="gold-marker-label" id="gold-marker-label"></span>
+    </div>
+    <div class="detention" id="detention" hidden>
+      <strong>纪老师：室内不准打飞盘！</strong>
+      <span id="detention-detail">罚站 4.0 秒</span>
+      <i class="detention-bar"><i id="detention-fill"></i></i>
+    </div>
+    <div class="round-end" id="round-end" hidden>
+      <small id="round-end-kicker">本局结束</small>
+      <strong id="round-end-title"></strong>
+      <span id="round-end-detail"></span>
+    </div>
+    <span class="latency" id="latency" data-quality="none">离线</span>
     <section class="leaderboard" id="leaderboard" aria-label="实时积分">
       <div class="king-line" id="king-line" hidden><span class="king-crown"><svg viewBox="0 0 24 18" aria-hidden="true"><path d="M2 16h20l1-11-6 5-5-9-5 9-6-5z"/></svg></span><span>淘汰王</span><b id="king-line-name"></b><em id="king-line-kills"></em></div>
       <header><span>本局积分</span><span class="net-status" id="net-status" data-state="offline">离线练习</span></header>
@@ -434,8 +453,67 @@ export const createUi = () => {
             if (root.dataset.screen !== 'play') return;
             root.dataset.map = root.dataset.map === 'open' ? 'closed' : 'open';
         },
-        drawMaps: (x: number, z: number, forwardX: number, forwardZ: number) =>
-            map.draw(x, z, forwardX, forwardZ, root.dataset.map === 'open'),
+        drawMaps: (x: number, z: number, forwardX: number, forwardZ: number, markers: MapMarkers) =>
+            map.draw(x, z, forwardX, forwardZ, root.dataset.map === 'open', markers),
+        /** Round countdown (seconds left), or null when there is no round (offline practice). */
+        roundClock: (seconds: number | null) => {
+            const text =
+                seconds === null
+                    ? '练习'
+                    : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+            const clock = $('#round-clock');
+            if (clock.textContent !== text) clock.textContent = text;
+            const urgent = seconds !== null && seconds <= 30;
+            if (clock.dataset.urgent !== String(urgent)) clock.dataset.urgent = String(urgent);
+        },
+        /** Golden disc status line under the clock. */
+        goldStatus: (text: string, tone: 'neutral' | 'mine' | 'other' | 'lying') => {
+            const status = $('#round-gold');
+            if (status.textContent !== text) status.textContent = text;
+            $('#round-bar').dataset.tone = tone;
+            root.dataset.gold = tone;
+        },
+        /**
+         * The golden disc's on-screen marker: at its screen position when in view, otherwise pinned to the screen edge
+         * with an arrow pointing toward it. Null hides it (when you carry it yourself).
+         */
+        goldMarker: (marker: { x: number; y: number; angle: number | null; label: string } | null) => {
+            const element = $('#gold-marker');
+            element.hidden = marker === null;
+            if (!marker) return;
+            element.style.transform = `translate(${Math.round(marker.x)}px, ${Math.round(marker.y)}px)`;
+            element.dataset.edge = String(marker.angle !== null);
+            if (marker.angle !== null) element.style.setProperty('--angle', `${Math.round(marker.angle)}deg`);
+            const label = $('#gold-marker-label');
+            if (label.textContent !== marker.label) label.textContent = marker.label;
+        },
+        /** Standing-still penalty from 纪老师: seconds left (null hides). */
+        detention: (seconds: number | null, total = 4) => {
+            const element = $('#detention');
+            element.hidden = seconds === null;
+            if (seconds === null) return;
+            $('#detention-detail').textContent = `罚站中 · ${seconds.toFixed(1)} 秒后可以移动`;
+            $('#detention-fill').style.width = `${(seconds / total) * 100}%`;
+        },
+        /** End-of-round banner (null hides it). */
+        roundEnd: (result: { winner: string | null; mine: boolean; nextIn: number } | null) => {
+            const element = $('#round-end');
+            element.hidden = result === null;
+            if (!result) return;
+            element.dataset.mine = String(result.mine);
+            $('#round-end-title').textContent = result.mine
+                ? '你赢得了本局！'
+                : result.winner
+                  ? `${result.winner} 赢得本局`
+                  : '本局无人守住金飞盘';
+            $('#round-end-detail').textContent = `${Math.ceil(result.nextIn)} 秒后开始新一局 · 金飞盘将重新刷新`;
+        },
+        /** Round-trip time to the room, bottom left (null when offline). */
+        latency: (ms: number | null) => {
+            const element = $('#latency');
+            element.textContent = ms === null ? '离线' : `${ms} ms`;
+            element.dataset.quality = ms === null ? 'none' : ms < 80 ? 'good' : ms < 160 ? 'fair' : 'poor';
+        },
         /** Username and password typed on the title screen. */
         credentials: () => ({
             name: $<HTMLInputElement>('#auth-name').value.trim(),
@@ -532,7 +610,7 @@ export const createUi = () => {
         },
         chatOpen: () => $('#chat').dataset.open === 'true',
         /** Short text by the crosshair: hit, head hit, elimination, or being head-hit. */
-        popup: (text: string, kind: 'hit' | 'head' | 'kill' | 'snipe' | 'me') => {
+        popup: (text: string, kind: 'hit' | 'head' | 'kill' | 'snipe' | 'gold' | 'me') => {
             const popup = $('#popup');
             popup.textContent = text;
             popup.dataset.kind = kind;
@@ -664,6 +742,23 @@ export const createUi = () => {
             replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
             broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
+        },
+        /** A one-line announcement in the broadcast banner (round results and similar). */
+        broadcastText: (text: string) => {
+            const banner = $('#broadcast');
+            banner.dataset.tone = 'mine';
+            banner.dataset.snipe = 'false';
+            banner.textContent = text;
+            banner.hidden = false;
+            replay(banner, 'show');
+            window.clearTimeout(broadcastTimer);
+            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 4000);
+        },
+        /** The crosshair jumps and flashes on a confirmed hit. */
+        crosshairKick: (kind: 'hit' | 'head' | 'kill') => {
+            const crosshair = $('.crosshair');
+            crosshair.dataset.kick = kind;
+            replay(crosshair, 'kick');
         },
         /** Sniper scope overlay: aim progress 0–1 (0 hides it) and whether the next release is a sniper throw. */
         scope: (aim: number, ready: boolean) => {

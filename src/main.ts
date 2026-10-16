@@ -308,7 +308,7 @@ const boot = async () => {
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
         const forward = camera.forward;
-        shell.drawMaps(position.x, position.z, forward.x, forward.z);
+        shell.drawMaps(position.x, position.z, forward.x, forward.z, match.markers());
     });
 
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

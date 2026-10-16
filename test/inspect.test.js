@@ -29,3 +29,22 @@ test('weapon inspect: toss, tumble over the centre of view, catch, and back to t
         previous = next;
     }
 });
+
+test('golden disc inspect: levitate-spin, high toss, catch, and back to rest without jumps', async () => {
+    const { goldInspectPose, goldAirborne, GOLD_TOSS_AT, GOLD_CATCH_AT } = await import('../src/gameplay/inspect.ts');
+    const [p0, e0] = goldInspectPose(0);
+    assert.ok(near(p0, REST[0]) && near(e0, REST[1]));
+    const [p1, e1] = goldInspectPose(1);
+    assert.ok(near(p1, REST[0]));
+    assert.ok(near(wrap(e1), wrap(REST[1])));
+    assert.ok(goldAirborne((GOLD_TOSS_AT + GOLD_CATCH_AT) / 2));
+    assert.ok(goldInspectPose((GOLD_TOSS_AT + GOLD_CATCH_AT) / 2)[0][1] > 0.1, 'tossed high');
+    let previous = goldInspectPose(0);
+    for (let frame = 1; frame <= 200; frame++) {
+        const next = goldInspectPose(frame / 200);
+        assert.ok(Math.hypot(...next[0].map((v, i) => v - previous[0][i])) < 0.05, `position step at ${frame}`);
+        // The levitating spin is meant to blur (≈ 9 turns/s), so allow up to 60° per 16 ms frame.
+        assert.ok(Math.max(...next[1].map((v, i) => Math.abs(v - previous[1][i]))) < 60, `angle step at ${frame}`);
+        previous = next;
+    }
+});

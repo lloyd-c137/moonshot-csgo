@@ -18,9 +18,13 @@ type Particle = {
     spin: V3;
     size: number;
     ring: boolean;
+    /** Downward acceleration (m/s²); motes float with 0 or negative. */
+    gravity: number;
+    /** Rings: how far they grow over their life (m). */
+    grow: number;
 };
 
-const POOL = 96;
+const POOL = 192;
 
 const meshOf = (app: AppBase, shape: Shape) => {
     const mesh = new Mesh(app.graphicsDevice);
@@ -52,9 +56,20 @@ export const createEffects = (app: AppBase) => {
         });
         entity.enabled = false;
         app.root.addChild(entity);
-        return { entity, material, life: 0, age: 0, v: [0, 0, 0] as V3, spin: [0, 0, 0] as V3, size: 0, ring };
+        return {
+            entity,
+            material,
+            life: 0,
+            age: 0,
+            v: [0, 0, 0] as V3,
+            spin: [0, 0, 0] as V3,
+            size: 0,
+            ring,
+            gravity: 9.8,
+            grow: 1.3
+        };
     };
-    for (let i = 0; i < POOL; i++) free.push(make(i % 12 === 0));
+    for (let i = 0; i < POOL; i++) free.push(make(i % 8 === 0));
 
     const take = (ring: boolean) => {
         const index = free.findIndex((p) => p.ring === ring);
@@ -66,9 +81,20 @@ export const createEffects = (app: AppBase) => {
         return oldest;
     };
 
-    const emit = (at: V3, colour: [number, number, number], v: V3, size: number, life: number, ring = false) => {
+    const emit = (
+        at: V3,
+        colour: [number, number, number],
+        v: V3,
+        size: number,
+        life: number,
+        ring = false,
+        gravity = 9.8,
+        grow = 1.3
+    ) => {
         const p = take(ring);
         if (!p) return;
+        p.gravity = gravity;
+        p.grow = grow;
         p.material.emissive.set(...colour);
         p.material.update();
         p.entity.setPosition(...at);
@@ -83,29 +109,78 @@ export const createEffects = (app: AppBase) => {
     };
 
     return {
-        /** A hit at `at`: shards in the thrower's colour; bigger, with a ring, when it eliminates; gold for the head. */
+        /**
+         * A hit at `at`: a hot white core flash, a fast shock ring, a spray of shards in the thrower's colour and
+         * bright sparks that arc and fall. Head hits add a gold crown of sparks; eliminations a bigger double ring and
+         * a burst of light thrown upward.
+         */
         burst(at: V3, hue: number, kind: 'hit' | 'head' | 'out') {
             const colour = kind === 'head' ? ([1, 0.82, 0.25] as [number, number, number]) : hueColour(hue);
-            const count = kind === 'out' ? 22 : kind === 'head' ? 16 : 11;
+            const count = kind === 'out' ? 34 : kind === 'head' ? 26 : 18;
             for (let i = 0; i < count; i++) {
                 const a = Math.random() * Math.PI * 2;
                 const up = Math.random() * 0.9 + 0.2;
-                const speed = 2.5 + Math.random() * (kind === 'out' ? 5 : 3.5);
+                const speed = 3 + Math.random() * (kind === 'out' ? 7 : 5);
                 emit(
                     at,
-                    i % 4 === 0 ? [1, 1, 1] : colour,
+                    i % 3 === 0 ? [1, 1, 1] : colour,
                     [Math.cos(a) * speed, up * speed, Math.sin(a) * speed],
-                    0.035 + Math.random() * 0.04,
-                    0.45 + Math.random() * 0.3
+                    0.035 + Math.random() * 0.05,
+                    0.45 + Math.random() * 0.35
                 );
             }
-            // A quick white flash at the impact.
-            emit(at, [1, 1, 1], [0, 0, 0], 0.22, 0.12);
-            if (kind !== 'hit') emit(at, colour, [0, 0, 0], 0.2, kind === 'out' ? 0.55 : 0.35, true);
+            // Thin, fast sparks.
+            for (let i = 0; i < (kind === 'hit' ? 8 : 14); i++) {
+                const a = Math.random() * Math.PI * 2;
+                const speed = 8 + Math.random() * 6;
+                emit(
+                    at,
+                    [1, 0.95, 0.8],
+                    [Math.cos(a) * speed, 2 + Math.random() * 4, Math.sin(a) * speed],
+                    0.02,
+                    0.3,
+                    false,
+                    14
+                );
+            }
+            // Core flash: big and short, then a softer afterglow.
+            emit(at, [1, 1, 1], [0, 0, 0], kind === 'hit' ? 0.32 : 0.45, 0.09, false, 0);
+            emit(at, colour, [0, 0, 0], kind === 'hit' ? 0.22 : 0.32, 0.25, false, 0);
+            // Shock ring on every hit; eliminations get a second, slower one.
+            emit(at, [1, 1, 1], [0, 0, 0], 0.12, 0.22, true, 0, kind === 'hit' ? 1.4 : 2);
+            if (kind !== 'hit') emit(at, colour, [0, 0, 0], 0.2, kind === 'out' ? 0.6 : 0.4, true, 0, 2.6);
+            if (kind === 'head') {
+                for (let i = 0; i < 12; i++) {
+                    const a = (i / 12) * Math.PI * 2;
+                    emit(at, [1, 0.85, 0.3], [Math.cos(a) * 3, 5, Math.sin(a) * 3], 0.04, 0.55, false, 6);
+                }
+            }
+            if (kind === 'out') {
+                for (let i = 0; i < 10; i++) {
+                    emit(
+                        at,
+                        colour,
+                        [(Math.random() - 0.5) * 1.2, 7 + Math.random() * 5, (Math.random() - 0.5) * 1.2],
+                        0.06,
+                        0.7,
+                        false,
+                        4
+                    );
+                }
+            }
+        },
+        /** A floating mote (sparkles around the golden disc and similar): no gravity unless given. */
+        mote(at: V3, colour: [number, number, number], v: V3, size: number, life: number, gravity = 0) {
+            emit(at, colour, v, size, life, false, gravity);
+        },
+        /** An expanding ring (pickups, catches). */
+        ring(at: V3, colour: [number, number, number], size: number, life: number, grow: number) {
+            emit(at, colour, [0, 0, 0], size, life, true, 0, grow);
         },
         /** One glowing mote of a sniper disc's tracer (call each frame along its path). */
         tracer(at: V3, hue: number) {
-            const [r, g, b] = hueColour(hue);
+            // hue < 0: the golden disc's trail.
+            const [r, g, b] = hue < 0 ? [1, 0.75, 0.2] : hueColour(hue);
             emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], 0.07, 0.28);
         },
         /** A sniper headshot: a tall gold flash and a wide ring on top of the elimination burst. */
@@ -138,10 +213,10 @@ export const createEffects = (app: AppBase) => {
                 }
                 if (p.ring) {
                     // Ring grows outward and thins.
-                    const s = p.size + t * 1.3;
+                    const s = p.size + t * p.grow;
                     p.entity.setLocalScale(s, s * 0.6, s);
                 } else {
-                    p.v[1] -= 9.8 * deltaTime;
+                    p.v[1] -= p.gravity * deltaTime;
                     const pos = p.entity.getPosition();
                     p.entity.setPosition(
                         pos.x + p.v[0] * deltaTime,

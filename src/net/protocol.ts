@@ -8,7 +8,7 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -26,8 +26,8 @@ export const THROW_CLAIM_WINDOW = 8;
 export const MAX_HP = 2;
 /** Seconds without being hit before a damaged player is healed to full. */
 export const HEAL_SECONDS = 10;
-/** Points: every hit, plus a bonus for the eliminating hit. */
-export const POINTS = { hit: 1, elimination: 2 } as const;
+/** Points: one per elimination (hits alone score nothing). */
+export const POINTS = { hit: 0, elimination: 1 } as const;
 /** Fastest launch speed a client may claim (m/s), plus the thrower's own velocity allowance. */
 export const MAX_THROW_SPEED = 26;
 export const NAME_MAX = 16;
@@ -40,6 +40,20 @@ export const HEAD_ABOVE = 0.45;
  * `straightSeconds`. A sniper disc to the head eliminates outright. The room only honours the flag at ≥ `minSpeed`.
  */
 export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const;
+/**
+ * Rounds: the 金飞盘 (golden disc) appears at a random spawn point; walk within `pickupRadius` to take it; whoever
+ * holds it when the `roundSeconds` clock runs out wins. Holders drop it where they are eliminated (or leave).
+ */
+export const ROUND = { roundSeconds: 600, intermissionSeconds: 10, pickupRadius: 1.6, pickupDelay: 0.8 } as const;
+/** 纪老师 catches a throw inside his view: the thrower stands still for this long. */
+export const DETENTION_SECONDS = 4;
+
+/** Where the golden disc is: lying somewhere (`at`), or carried by `holder`. */
+export type GoldState = { holder: string | null; at: Vec3Tuple };
+/** The current round: playing until `endsAt` (room clock), or ended with a winner (name, or null) until `nextAt`. */
+export type RoundState =
+    | { phase: 'playing'; endsAt: number }
+    | { phase: 'ended'; winner: string | null; winnerId: string | null; nextAt: number };
 
 export type Vec3Tuple = [number, number, number];
 
@@ -98,6 +112,10 @@ export type ClientMessage =
     | { type: 'pose'; pose: PlayerPose; ct?: number }
     | { type: 'throw'; throw: ThrowRecord }
     | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
+    /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
+    | { type: 'caught' }
+    /** Latency probe: the room echoes `c` straight back. */
+    | { type: 'ping'; c: number }
     | { type: 'respawned'; pose: PlayerPose };
 
 export type ServerMessage =
@@ -109,6 +127,10 @@ export type ServerMessage =
           account: AccountStats | null;
           king: King | null;
           chat: ChatLine[];
+          round: RoundState;
+          gold: GoldState;
+          /** Room clock now (ms), so the patrol and countdown line up before the first snapshot. */
+          t: number;
       }
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' | 'auth' }
     | { type: 'joined'; player: PlayerSummary }
@@ -131,7 +153,11 @@ export type ServerMessage =
     | { type: 'king'; king: King; isNew: boolean }
     | { type: 'account'; account: AccountStats }
     | { type: 'healed'; id: string; hp: number }
-    | { type: 'respawn'; id: string; spawn: number };
+    | { type: 'respawn'; id: string; spawn: number }
+    | { type: 'gold'; gold: GoldState; event: 'spawned' | 'taken' | 'dropped' }
+    | { type: 'round'; round: RoundState; scores: Scores }
+    | { type: 'caught'; id: string }
+    | { type: 'pong'; c: number };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
 export const cleanName = (raw: unknown) => {
@@ -187,6 +213,10 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
                 : null;
         case 'chat':
             return typeof value.text === 'string' ? (value as ClientMessage) : null;
+        case 'caught':
+            return value as ClientMessage;
+        case 'ping':
+            return isNumber(value.c) ? (value as ClientMessage) : null;
         case 'pose':
             return isPose(value.pose) && (value.ct === undefined || isNumber(value.ct))
                 ? (value as ClientMessage)

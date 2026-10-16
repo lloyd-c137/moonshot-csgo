@@ -203,7 +203,8 @@ const boot = async () => {
     for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
     buildSigns(app, campus.root, derivedWorld, rooms.rooms);
     const { player, camera } = createPlayer(app);
-    setupAtmosphere(app, camera);
+    const { sun, setNight } = setupAtmosphere(app, camera);
+    let night = false;
     const serverUrl = multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
     const auth = createAuth(apiBase(serverUrl));
     shell.accountsAvailable(auth.available);
@@ -313,6 +314,12 @@ const boot = async () => {
                 shell.stuck(false);
             }
         }
+        lightPool.setDark(match.dark);
+        if (match.dark !== night) {
+            night = match.dark;
+            sun.light!.intensity = night ? 0.04 : 0.55;
+            setNight(night);
+        }
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
         const forward = camera.forward;
@@ -359,9 +366,12 @@ const boot = async () => {
                 shell.signingIn(false);
             });
     };
+    // R: straight to the middle of the 莲花球场 (the open-air arena).
     const recover = () => {
-        recoverPlayer(player);
-        shell.notify('已回到南入口');
+        const [x, z] = derivedWorld.arena.center;
+        player.rigidbody!.teleport(x, 0.92, z, 0, 0, 0);
+        player.rigidbody!.linearVelocity = Vec3.ZERO;
+        shell.notify('已传送到莲花球场');
     };
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {

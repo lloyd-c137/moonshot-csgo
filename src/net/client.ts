@@ -47,7 +47,8 @@ type Handlers = {
         at: Vec3Tuple,
         scores: Scores,
         sniper: boolean,
-        gold: boolean
+        gold: boolean,
+        final: boolean
     ) => void;
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
@@ -150,7 +151,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.at,
                     message.scores,
                     message.sniper === true,
-                    message.gold === true
+                    message.gold === true,
+                    message.final === true
                 );
                 break;
             case 'chat':
@@ -280,6 +282,10 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         /** Tells the room 纪老师 caught this player throwing. */
         caught() {
             send({ type: 'caught' });
+        },
+        /** Tells the room the night guard's flashlight found this player. */
+        spotted() {
+            send({ type: 'spotted' });
         },
         /** Estimated room clock (ms), or null before the first message. */
         serverNow() {

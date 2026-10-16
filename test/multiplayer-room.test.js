@@ -410,3 +410,80 @@ test("the golden disc's throws leave an ordinary disc where they come down, with
     );
     assert.equal(room.players.get('a').ammo, AMMO.start);
 });
+
+test('blackout: eliminations are final, the guard can spot players, the last one standing wins; deaths drop a disc', async () => {
+    const { guardAt } = await import('../src/gameplay/guard.ts');
+    const inbox = new Map();
+    let roll = 0.9;
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24,
+        null,
+        () => roll
+    );
+    room.startAmmo = 9;
+    for (const id of ['a', 'b', 'c']) {
+        inbox.set(id, []);
+        room.connect(id);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
+    }
+    const blackout = room.blackoutAt();
+    assert.equal(blackout, (ROUND.roundSeconds - ROUND.blackoutSecondsLeft) * 1000);
+    // Golden throws leave a disc only sometimes (here: the roll misses).
+    room.gold = { holder: 'a', at: [0, 0.92, 0] };
+    room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, 100);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [10, 0, 0], tilt: 0 } }, 1000);
+    room.message('a', { type: 'landed', throwId: 1, at: [10, 0.02, 0] }, 2000);
+    assert.equal(room.discs.length, 0);
+    roll = 0.1;
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [10, 0, 0], tilt: 0 } }, 3000);
+    room.message('a', { type: 'landed', throwId: 2, at: [10, 0.02, 0] }, 4000);
+    assert.equal(room.discs.length, 1);
+    room.gold = { holder: null, at: [0, 0.92, 0] };
+    // Before the blackout a spotted claim does nothing.
+    const g0 = guardAt(blackout - 1, blackout);
+    room.message('b', { type: 'pose', pose: { p: [g0.x, 0.92, g0.z - 3], yaw: 0, pitch: 0 } }, blackout - 500);
+    room.message('b', { type: 'spotted' }, blackout - 400);
+    assert.equal(room.players.get('b').alive, true);
+    // After it: B is caught by the flashlight — out for the round, and a disc drops where B stood.
+    const discsBefore = room.discs.length;
+    const g = guardAt(blackout + 1000, blackout);
+    room.message('b', { type: 'pose', pose: { p: [g.x, 0.92, g.z - 3], yaw: 0, pitch: 0 } }, blackout + 900);
+    room.message('b', { type: 'spotted' }, blackout + 1000);
+    const struck = inbox
+        .get('a')
+        .filter((m) => m.type === 'struck')
+        .at(-1);
+    assert.deepEqual([struck.target, struck.by, struck.final], ['b', 'guard', true]);
+    assert.equal(room.discs.length, discsBefore + 1);
+    room.tick(blackout + 10_000);
+    assert.equal(room.players.get('b').alive, false, 'no respawn after the blackout');
+    // C is eliminated by A's discs: A is the last one standing and wins straight away.
+    room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 11_000);
+    room.message('c', { type: 'pose', pose: { p: [6, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 11_000);
+    for (const [id, at] of [
+        [3, blackout + 12_000],
+        [4, blackout + 13_000]
+    ]) {
+        room.message('a', { type: 'throw', throw: { id, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, at);
+        room.message('a', { type: 'hit', throwId: id, target: 'c', at: [6, 1.0, 0] }, at + 300);
+    }
+    const ended = inbox
+        .get('b')
+        .filter((m) => m.type === 'round')
+        .at(-1);
+    assert.equal(ended.round.phase, 'ended');
+    assert.equal(ended.round.winner, 'A');
+    // The next round brings everyone back.
+    room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 1);
+    room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 100);
+    assert.ok([...room.players.values()].every((p) => !p.spectating));
+    const respawned = inbox.get('a').filter((m) => m.type === 'respawn').map((m) => m.id);
+    assert.ok(respawned.includes('b') && respawned.includes('c'), 'the watchers are respawned');
+});

@@ -32,6 +32,7 @@ import type { V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { createGold, GOLD_COLOUR } from './gold';
 import { createGroundDiscs } from './groundDiscs';
+import { createGuard } from './guardView';
 import {
     airborne,
     CATCH_AT,
@@ -115,6 +116,16 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let goldInspect = false;
     let goldSparkAt = 0;
     let lastGoldMine = false;
+    const guard = createGuard(app, camera, ui.nameTagLayer());
+    let teacherGraceUntil = 0;
+    let dark = false;
+    let spottedSent = false;
+    /** Out for the rest of the round (after the lights went out): watching someone else. */
+    let spectating = false;
+    let watchIndex = 0;
+    /** Room time when this round's lights go out, or null (no round / offline). */
+    const blackoutAt = () =>
+        roundState?.phase === 'playing' ? roundState.endsAt - ROUND.blackoutSecondsLeft * 1000 : null;
     const goldHolder = () => goldView.state?.holder ?? null;
     const holdingGold = () => goldHolder() === selfId();
     /** Room clock now: the server's while online, the local clock offline. */
@@ -197,7 +208,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
     let caught = false;
 
     const selfId = () => net.id ?? 'local';
-    const nameOf = (id: string) => roster.get(id)?.name ?? '某人';
+    const nameOf = (id: string) => (id === 'guard' ? '保安' : (roster.get(id)?.name ?? '某人'));
     const refreshBoard = () => {
         ui.net(netState, roster.size);
         const me = selfId();
@@ -272,6 +283,47 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         }
     };
 
+    // ---------- watching (out for the rest of the round) ----------
+    const lookAt = new Vec3();
+    const startSpectating = (reason: string) => {
+        if (spectating) return;
+        spectating = true;
+        const script = controller();
+        if (script) script.enabled = false;
+        if (player.rigidbody) player.rigidbody.enabled = false;
+        ui.eliminated(null);
+        ui.spectate({ reason, watching: null });
+    };
+    const stopSpectating = () => {
+        if (!spectating) return;
+        spectating = false;
+        if (player.rigidbody) player.rigidbody.enabled = true;
+        const script = controller();
+        if (script) script.enabled = alive && !inputPaused;
+        ui.spectate(null);
+    };
+    /** Places the camera behind and above the watched player, looking at them; click switches who. */
+    const spectate = (now: number) => {
+        const candidates = [...roster.values()].filter(
+            (entry) => entry.id !== selfId() && entry.alive && poses.has(entry.id)
+        );
+        if (!candidates.length) {
+            ui.spectate({ reason: '没有可以观看的玩家', watching: null });
+            return;
+        }
+        const target = candidates[watchIndex % candidates.length];
+        const p = poses.get(target.id)!;
+        const yaw = (p.yaw * Math.PI) / 180;
+        const bob = Math.sin(now / 1500) * 0.1;
+        player.setPosition(p.p[0] + Math.sin(yaw) * 3.2, p.p[1] + 1.1 + bob, p.p[2] + Math.cos(yaw) * 3.2);
+        lookAt.set(p.p[0], p.p[1] + 0.6, p.p[2]);
+        camera.lookAt(lookAt);
+        ui.spectate({ reason: null, watching: target.name });
+    };
+    window.addEventListener('mousedown', (event) => {
+        if (spectating && event.button === 0) watchIndex++;
+    });
+
     const net = createNetClient(url, {
         state: (state, detail) => {
             netState = state;
@@ -302,6 +354,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         welcome: (me, players, extra) => {
             roster.clear();
+            if (me.spectating) startSpectating('灯已经灭了：本局观战，下一局开始时加入');
+            else stopSpectating();
             king = extra.king;
             ui.king(king);
             ui.chatHistory(extra.chat);
@@ -361,7 +415,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
-        struck: (target, by, targetHp, out, head, at, scores, sniper, golden) => {
+        struck: (target, by, targetHp, out, head, at, scores, sniper, golden, final) => {
+            const entryFinal = roster.get(target);
+            if (entryFinal && final) entryFinal.spectating = true;
             const snipe = sniper && head && out;
             const goldKill = golden && out;
             if (goldKill) goldView.flourish(at);
@@ -402,7 +458,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                     dz /= length;
                     player.rigidbody!.applyImpulse(dx * PLAYER.mass * 5, PLAYER.mass * 2.2, dz * PLAYER.mass * 5);
                 }
-                if (out) {
+                if (out && final) {
+                    setAlive(false);
+                    killer = nameOf(by);
+                    startSpectating(
+                        by === 'guard' ? '你被保安的手电筒照到了，出局' : `你被 ${nameOf(by)} 淘汰，本局出局`
+                    );
+                } else if (out) {
                     setAlive(false);
                     killer = nameOf(by);
                     deadUntil = performance.now() + RESPAWN_SECONDS * 1000;
@@ -554,8 +616,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         respawn: (id, spawn) => {
             const entry = roster.get(id);
-            if (entry) Object.assign(entry, { alive: true, hp: MAX_HP });
+            if (entry) Object.assign(entry, { alive: true, hp: MAX_HP, spectating: false });
             if (id !== selfId()) return refreshBoard();
+            stopSpectating();
+            spottedSent = false;
             respawnAt(spawn);
             setAlive(true);
             ui.eliminated(null);
@@ -626,15 +690,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             sniper,
             gold: holdingGold()
         });
-        // 纪老师 saw that: no frisbees indoors. Stand still for a few seconds.
-        if (!warming && teacher.sees(player.getPosition())) {
-            detainedUntil = now + DETENTION_SECONDS * 1000;
-            teacher.say('室内不准打飞盘！', now);
-            sound.whistle();
-            ui.popup('纪老师：室内不准打飞盘！', 'me');
-            ui.feed(`被纪老师抓到 · 罚站 ${DETENTION_SECONDS} 秒`, 'me');
-            net.caught();
-        }
         if (sniper) {
             sound.sniperThrow();
             punch = 1.6;
@@ -890,12 +945,41 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
                 0.5
             );
         }
-        // 纪老师's circle: a standing warning while you are inside it.
-        const watched = started && alive && teacher.sees(player.getPosition());
+        // 纪老师's circle: stepping into it means standing still for a few seconds, frisbee or not. Once released you
+        // get a few seconds to walk out before he can stop you again.
+        const watched = started && alive && !spectating && teacher.sees(player.getPosition());
         if (watched !== inWatch) {
             inWatch = watched;
             ui.watchWarning(watched);
         }
+        if (watched && !warming && now >= detainedUntil && now >= teacherGraceUntil) {
+            detainedUntil = now + DETENTION_SECONDS * 1000;
+            teacherGraceUntil = detainedUntil + 4000;
+            teacher.say('站住！禁止打飞盘！', now);
+            sound.whistle();
+            ui.popup('纪老师：禁止打飞盘！罚站！', 'me');
+            ui.feed(`被纪老师抓到 · 罚站 ${DETENTION_SECONDS} 秒`, 'me');
+            net.caught();
+        }
+        // The night guard: at the south gate until the lights go out, then on his rounds with a flashlight.
+        const lightsOut = blackoutAt();
+        guard.update(roomNow(), lightsOut);
+        const nowDark = net.state === 'online' && lightsOut !== null && roomNow() >= lightsOut;
+        if (nowDark !== dark) {
+            dark = nowDark;
+            if (dark) {
+                sound.blackout();
+                ui.broadcastText('灯灭了！保安开始巡逻 · 被手电筒照到即出局');
+                ui.feed('从现在起被淘汰就不能复活，只剩最后一人时直接获胜', 'me');
+            }
+        }
+        if (dark && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
+            spottedSent = true;
+            ui.popup('被保安的手电筒照到了！', 'me');
+            net.spotted();
+        }
+        // Watching: the camera follows someone still in the game.
+        if (spectating) spectate(now);
         // Monitoring room radar countdown.
         if (now < radarUntil) {
             radarShown = true;
@@ -1040,6 +1124,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             goldView.showAll(at);
             ground.showAt(at[0], at[1] - 0.5, at[2]);
             teacher.root.setPosition(at[0], at[1] - 1, at[2]);
+            guard.showAt(at[0] + 1, at[2]);
             ghosts[0].entity.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
             avatars.add('prewarm', '', colourFor('local'));
             avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0, aim: 1 }]]), 0);
@@ -1079,7 +1164,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
             if (chargingSince !== null && aim < 0.02) {
                 ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
             } else if (chargingSince !== null) ui.charge(null);
-            if (!alive) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
+            if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
             if (net.state === 'online' && alive) net.pose(pose());
             const eye = camera.getPosition();
             const f = camera.forward;
@@ -1119,6 +1204,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth }: Opti
         },
         get alive() {
             return alive;
+        },
+        /** Lights out (the round's final minutes). */
+        get dark() {
+            return dark;
         },
         /** The player walked into a room (or the corridor, null): the monitoring room switches on the radar. */
         enteredRoom(id: string | null) {

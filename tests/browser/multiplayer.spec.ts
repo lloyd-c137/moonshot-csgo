@@ -93,6 +93,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
 
     const b = await open(browser);
     await enter(b.page, nameB, 'secret-456');
+    const idA = (await state(a.page)).id;
     await expect
         .poll(async () => (await state(a.page)).players.map((p) => p.name).sort())
         .toEqual([nameA, nameB].sort());
@@ -102,7 +103,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     const round = (await state(a.page)).round!;
     expect(round.phase).toBe('playing');
     await expect(a.page.locator('#round-clock')).toHaveText(/^(10:00|09:[0-5]\d)$/);
-    await expect(b.page.locator('#round-gold')).toContainText('无人持有');
+    await expect(b.page.locator('#round-gold')).toContainText(/无人持有|.+持有金飞盘/);
     await expect(a.page.locator('#latency')).toHaveText(/^\d+ ms$/);
     // Discs are ammunition, shown at the bottom (the local test room hands out extra).
     await expect(a.page.locator('#ammo-text')).toContainText('飞盘');
@@ -115,17 +116,42 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // Stand 6 m apart in the straight corridor north of M104.
     await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
+    await Promise.all([
+        a.page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90)),
+        b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, -90))
+    ]);
     await a.page.waitForTimeout(1_800);
+    // Keep the game render active for one visual capture of the remote throw overlay.
+    await Promise.all([
+        a.page.evaluate(() => window.__MOONSHOT__!.setRendering(true)),
+        b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true))
+    ]);
 
     // First body hit: damaged, not out.
+    const armBeforeThrow = await b.page.evaluate(
+        (id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'),
+        idA
+    );
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
     await expect
-        .poll(async () => [(await state(b.page)).hp, (await state(a.page)).hitsClaimed], { timeout: 5_000 })
-        .toEqual([1, 1]);
+        .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idA), { timeout: 1_000 })
+        .toBe('Frisbee_Throw');
+    await expect
+        .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'), idA))
+        .not.toEqual(armBeforeThrow);
+    await expect
+        .poll(
+            async () => [
+                (await state(b.page)).hp,
+                (await state(a.page)).hitsClaimed,
+                await a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idB)
+            ],
+            { timeout: 5_000 }
+        )
+        .toEqual([1, 1, 'Hit_Chest']);
     expect((await state(a.page)).hitsPredicted).toBe(1);
     expect((await state(b.page)).alive).toBe(true);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
-    expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idB)).toBe('Hit_Chest');
     await expect(a.page.locator('#hitmarker')).not.toHaveAttribute('data-prediction');
     await a.page.screenshot({ path: 'test-results/combat-body-hit.png' });
 

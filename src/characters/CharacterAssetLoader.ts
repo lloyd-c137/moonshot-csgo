@@ -1,5 +1,12 @@
-import { Asset, AnimStateGraph, Entity } from 'playcanvas';
+import { ANIM_LAYER_ADDITIVE, Asset, AnimStateGraph, Entity } from 'playcanvas';
 import type { AppBase, ContainerResource, AnimTrack, StandardMaterial } from 'playcanvas';
+
+import {
+    createFrisbeeThrowTrack,
+    FRISBEE_THROW_DURATION,
+    FRISBEE_THROW_RELEASE_OFFSET,
+    FRISBEE_THROW_REMAINING
+} from './frisbeeThrowTrack';
 
 export const CHARACTER_ASSET_URL = '/assets/characters/moonshot-humanoid.glb';
 export const CHARACTER_SOURCE_HEIGHT = 1.829;
@@ -12,10 +19,12 @@ const clipName = (name: string) => name.split('|').at(-1) ?? name;
 export class CharacterAssetLoader {
     private readonly resource: ContainerResource;
     private readonly tracks: Map<string, AnimTrack>;
+    private readonly frisbeeThrowTrack: AnimTrack;
 
-    private constructor(resource: ContainerResource, tracks: Map<string, AnimTrack>) {
+    private constructor(resource: ContainerResource, tracks: Map<string, AnimTrack>, frisbeeThrowTrack: AnimTrack) {
         this.resource = resource;
         this.tracks = tracks;
+        this.frisbeeThrowTrack = frisbeeThrowTrack;
     }
 
     static load(app: AppBase) {
@@ -37,7 +46,7 @@ export class CharacterAssetLoader {
                     reject(new Error('Character container is missing required idle/walk/sprint clips'));
                     return;
                 }
-                resolve(new CharacterAssetLoader(resource, tracks));
+                resolve(new CharacterAssetLoader(resource, tracks, createFrisbeeThrowTrack()));
             });
             app.assets.add(asset);
             app.assets.load(asset);
@@ -141,6 +150,19 @@ export class CharacterAssetLoader {
         );
         for (const [name, track] of this.tracks)
             modelRoot.anim!.assignAnimation(name, track, 'Base', 1, name.endsWith('_Loop'));
+        let throwLayer: ReturnType<NonNullable<typeof modelRoot.anim>['addLayer']> | null = null;
+        const throwMaskBone = modelRoot.findByName('spine_02') as Entity | null;
+        if (throwMaskBone) {
+            const relativePath = throwMaskBone.path.slice(armature.path.length + 1);
+            // Runtime binder consumes a path-tree object; the published addLayer declaration incorrectly types it as an array.
+            throwLayer = modelRoot.anim!.addLayer(
+                'FrisbeeThrow',
+                0,
+                { [`${armature.name}/${relativePath}`]: { children: true } } as unknown as object[],
+                ANIM_LAYER_ADDITIVE
+            );
+            throwLayer.assignAnimation('Frisbee_Throw', this.frisbeeThrowTrack, 1, false);
+        }
         if (options.gripRightHand && this.tracks.has('Pistol_Idle_Loop') && gripBones.length === 5)
             modelRoot.anim!.assignAnimation(
                 'Pistol_Idle_Loop',
@@ -151,6 +173,8 @@ export class CharacterAssetLoader {
             );
         const tracks = this.tracks;
         let visualScale = CHARACTER_VISUAL_SCALE;
+        let throwTimer = 0;
+        let disposed = false;
         return {
             root,
             materials,
@@ -158,7 +182,7 @@ export class CharacterAssetLoader {
                 return CHARACTER_SOURCE_HEIGHT * visualScale;
             },
             duration(name: string) {
-                return tracks.get(name)?.duration ?? 0;
+                return name === 'Frisbee_Throw' ? FRISBEE_THROW_DURATION : (tracks.get(name)?.duration ?? 0);
             },
             setScale(scale: number) {
                 visualScale = Math.max(0.2, Math.min(1.2, scale));
@@ -169,7 +193,25 @@ export class CharacterAssetLoader {
                 if (!tracks.has(name) || layer.activeState === name) return;
                 layer.transition(name, blend);
             },
+            playThrow() {
+                if (!throwLayer || disposed) return;
+                window.clearTimeout(throwTimer);
+                throwLayer.transition('Frisbee_Throw', 0.045, FRISBEE_THROW_RELEASE_OFFSET);
+                throwLayer.blendToWeight(1, 0.06);
+                throwTimer = window.setTimeout(
+                    () => {
+                        if (!disposed) throwLayer?.blendToWeight(0, 0.14);
+                    },
+                    Math.max(0, (FRISBEE_THROW_REMAINING - 0.12) * 1000)
+                );
+            },
+            stopThrow() {
+                window.clearTimeout(throwTimer);
+                throwLayer?.blendToWeight(0, 0.05);
+            },
             dispose() {
+                disposed = true;
+                window.clearTimeout(throwTimer);
                 root.destroy();
                 for (const material of materials.values()) material.destroy();
             }

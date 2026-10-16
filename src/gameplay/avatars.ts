@@ -4,6 +4,7 @@ import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'pl
 import { Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+import { FRISBEE_THROW_REMAINING } from '../characters/frisbeeThrowTrack';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
 import { box, merge, place } from '../render/shapes';
@@ -29,6 +30,7 @@ type Avatar = {
     locomotion: 'Idle_Loop' | 'Jog_Fwd_Loop' | 'Sprint_Loop';
     action: string | null;
     actionUntil: number;
+    throwUntil: number;
     heldPose: PlayerPose | null;
     heldUntil: number;
 };
@@ -138,6 +140,7 @@ export const createAvatars = (
             locomotion: 'Idle_Loop',
             action: null,
             actionUntil: 0,
+            throwUntil: 0,
             heldPose: null,
             heldUntil: 0
         });
@@ -271,6 +274,8 @@ export const createAvatars = (
             if (!avatar) return;
             const action = eliminated ? 'Death01' : head ? 'Hit_Head' : 'Hit_Chest';
             const duration = Math.max(0.35, avatar.character.duration(action));
+            avatar.character.stopThrow();
+            avatar.throwUntil = 0;
             avatar.action = action;
             avatar.actionUntil = now + duration * 1000;
             avatar.character.play(action, eliminated ? 0.06 : 0.08);
@@ -280,7 +285,19 @@ export const createAvatars = (
             }
         },
         actionState(id: string) {
-            return avatars.get(id)?.action ?? null;
+            const avatar = avatars.get(id);
+            if (!avatar) return null;
+            return avatar.action ?? (performance.now() < avatar.throwUntil ? 'Frisbee_Throw' : null);
+        },
+        jointRotation(id: string, name: string) {
+            const bone = avatars.get(id)?.character.root.findByName(name);
+            return bone?.getLocalRotation().toArray() ?? null;
+        },
+        throw(id: string, now: number) {
+            const avatar = avatars.get(id);
+            if (!avatar) return;
+            avatar.character.playThrow();
+            avatar.throwUntil = now + FRISBEE_THROW_REMAINING * 1000;
         },
         setLeader,
         setGold,

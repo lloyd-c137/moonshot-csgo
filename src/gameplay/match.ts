@@ -509,6 +509,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         },
         thrown: (from, record, ageMs) => {
             const thrower = roster.get(from);
+            avatars.throw(from, performance.now());
             if (record.sniper) sound.sniperThrow(record.o);
             else sound.throw(record.o);
             // Latency compensation: start the replayed disc where it is by now, not where it was released.
@@ -1756,6 +1757,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 power: { ...power, phase: powerPhase(roomNow(), power), dark, guard: { ...guard.pose } }
             }),
             avatarAction: (id: string) => avatars.actionState(id),
+            avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,
             inspect: startInspect,

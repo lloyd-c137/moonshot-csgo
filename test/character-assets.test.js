@@ -3,6 +3,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import {
+    createFrisbeeThrowTrack,
+    FRISBEE_THROW_DURATION,
+    FRISBEE_THROW_RELEASE_OFFSET,
+    FRISBEE_THROW_REMAINING
+} from '../src/characters/frisbeeThrowTrack.ts';
+
 const root = new URL('../', import.meta.url);
 const sourcePath = new URL('assets/source/characters/UAL1_Standard.fbx', root);
 const runtimePath = new URL('public/assets/characters/moonshot-humanoid.glb', root);
@@ -144,4 +151,27 @@ test('right-hand grip animation covers every finger used by held props', () => {
     for (const name of ['thumb_01_r', 'index_01_r', 'middle_01_r', 'ring_01_r', 'pinky_01_r']) {
         assert.ok(nodes.has(name), `grip pose animates ${name}`);
     }
+});
+
+test('the authored frisbee release track is an upper-body, non-root-motion action', () => {
+    const track = createFrisbeeThrowTrack();
+    assert.equal(track.name, 'Frisbee_Throw');
+    assert.equal(track.duration, 0.72);
+    assert.equal(FRISBEE_THROW_DURATION, 0.72);
+    assert.ok(FRISBEE_THROW_RELEASE_OFFSET > 0 && FRISBEE_THROW_RELEASE_OFFSET < 1);
+    assert.ok(FRISBEE_THROW_REMAINING > 0 && FRISBEE_THROW_REMAINING < FRISBEE_THROW_DURATION);
+    assert.equal(track.inputs[0].components, 1);
+    assert.deepEqual([...track.inputs[0].data], [0, 0.09, 0.18, 0.28, 0.43, 0.58, 0.72]);
+    assert.equal(track.curves.length, 5);
+    const paths = track.curves.map((curve) => curve.paths[0].entityPath.join('/'));
+    assert.ok(paths.some((path) => path.endsWith('/spine_03')));
+    assert.ok(paths.some((path) => path.endsWith('/clavicle_r/upperarm_r')));
+    assert.ok(paths.some((path) => path.endsWith('/lowerarm_r/hand_r')));
+    assert.ok(paths.some((path) => path.endsWith('/clavicle_l/upperarm_l')));
+    assert.ok(paths.every((path) => !path.endsWith('/root') && !path.endsWith('/pelvis')));
+    for (const output of track.outputs)
+        for (let index = 0; index < output.data.length; index += 4) {
+            const norm = Math.hypot(...Array.from(output.data.slice(index, index + 4)));
+            assert.ok(Math.abs(norm - 1) < 1e-5, `unit quaternion at sample ${index / 4}`);
+        }
 });

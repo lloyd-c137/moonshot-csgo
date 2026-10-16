@@ -36,6 +36,30 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await advance(page, 2600);
     expect(await page.evaluate(() => window.__MOONSHOT__!.match.state().inspecting)).toBe(false);
 
+    // Holding the throw button past a flick aims: the view zooms in gradually to the sniper scope.
+    const fov = () => page.evaluate(() => window.__MOONSHOT__!.fov());
+    const normalFov = await fov();
+    await page.mouse.down();
+    await advance(page, 150);
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.state().aim)).toBe(0);
+    await advance(page, 450);
+    const halfway = await fov();
+    expect(halfway).toBeLessThan(normalFov);
+    await expect(page.locator('#scope')).toHaveAttribute('data-ready', 'false');
+    await advance(page, 600);
+    expect(await fov()).toBeLessThan(halfway);
+    expect(await fov()).toBeCloseTo(normalFov * 0.36, 0);
+    await expect(page.locator('#scope')).toHaveAttribute('data-ready', 'true');
+    await expect(page.locator('#scope-state')).toContainText('狙击就绪');
+    // Right-click stands down without throwing; the view zooms back out.
+    const throwsBefore = (await page.evaluate(() => window.__MOONSHOT__!.match.state())).throws;
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.up({ button: 'right' });
+    await page.mouse.up();
+    await advance(page, 500);
+    expect(await fov()).toBeCloseTo(normalFov, 0);
+    expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).throws).toBe(throwsBefore);
+
     await page.keyboard.press('m');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-map', 'open');
     await page.keyboard.press('m');

@@ -197,3 +197,39 @@ test('pose stamps follow the sender clock, not network jitter', async () => {
     assert.ok(stamps.every((t, i) => t <= 6000 + i * 50 + jitter[i]));
     assert.equal(stampPose({ clockSamples: [], clockOffset: null, poseAt: 0 }, undefined, 777), 777);
 });
+
+test('a sniper disc to the head eliminates outright; a slow throw cannot claim the sniper flag', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24
+    );
+    for (const id of ['a', 'b']) {
+        inbox.set(id, []);
+        room.connect(id);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
+    }
+    room.message('a', { type: 'pose', pose: { p: [0, 0.9, 0], yaw: 0, pitch: 0, aim: 1 } }, 3000);
+    room.message('b', { type: 'pose', pose: { p: [20, 0.9, 0], yaw: 0, pitch: 0 } }, 3000);
+    const struck = () => inbox.get('b').filter((message) => message.type === 'struck');
+    // Claims sniper at normal speed: honoured as a normal throw, one point of damage even to the head.
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [20, 0, 0], tilt: 0, sniper: true } }, 4000);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [20, 1.5, 0] }, 4900);
+    assert.deepEqual(
+        struck().map((m) => [m.hp, m.out, m.head, m.sniper]),
+        [[1, false, true, false]]
+    );
+    // A real sniper throw to the head: out in one.
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [34, 0, 0], tilt: 0, sniper: true } }, 5000);
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [20, 1.5, 0] }, 5600);
+    assert.deepEqual(struck()[1], { ...struck()[1], hp: 0, out: true, head: true, sniper: true });
+    // The aim level travels with the pose so others can see the scope glint.
+    const snapshot = room.players.get('a').pose;
+    assert.equal(snapshot.aim, 1);
+});

@@ -71,7 +71,8 @@ export class PoseBuffer {
         return {
             p: [lerp(a.pose.p[0], b.pose.p[0]), lerp(a.pose.p[1], b.pose.p[1]), lerp(a.pose.p[2], b.pose.p[2])],
             yaw: a.pose.yaw + dyaw * u,
-            pitch: lerp(a.pose.pitch, b.pose.pitch)
+            pitch: lerp(a.pose.pitch, b.pose.pitch),
+            aim: b.pose.aim
         };
     }
 }

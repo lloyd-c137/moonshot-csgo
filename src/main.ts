@@ -228,6 +228,7 @@ const boot = async () => {
     const storage = browserStorage();
     const settings = loadSettings(storage);
     applySettings(player, camera, settings);
+    match.setView(settings.fieldOfView, settings.lookSensitivity);
 
     // The exploration log was removed; drop what older versions saved.
     storage?.removeItem('moonshot-open-world.discovered.v1');
@@ -426,6 +427,7 @@ const boot = async () => {
             },
             settingsChanged: (next) => {
                 applySettings(player, camera, next);
+                match.setView(next.fieldOfView, next.lookSensitivity);
                 saveSettings(storage, next);
             },
             logout: async () => {
@@ -457,6 +459,7 @@ const boot = async () => {
                 };
             },
             position: () => player.getPosition().toArray(),
+            fov: () => camera.camera!.fov,
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover: () => recoverPlayer(player),
             collisionCount: collisions.sourceBodies,

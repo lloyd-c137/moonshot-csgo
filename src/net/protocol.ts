@@ -35,6 +35,11 @@ export const NAME_MAX = 16;
 export const CHAT = { max: 120, burst: 4, windowSeconds: 6, history: 40 } as const;
 /** A hit this far above the capsule centre (m) is a head hit. */
 export const HEAD_ABOVE = 0.45;
+/**
+ * Sniper throws (a fully aimed charge): launched at `speed`, they fly dead straight (no drop, no lift) for
+ * `straightSeconds`. A sniper disc to the head eliminates outright. The room only honours the flag at ≥ `minSpeed`.
+ */
+export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const;
 
 export type Vec3Tuple = [number, number, number];
 
@@ -44,6 +49,8 @@ export type PlayerPose = {
     /** Camera yaw and pitch, degrees. */
     yaw: number;
     pitch: number;
+    /** How far into a sniper aim the player is (0–1), so others can see the scope glint. */
+    aim?: number;
 };
 
 export type PlayerSummary = {
@@ -80,6 +87,8 @@ export type ThrowRecord = {
     o: Vec3Tuple;
     v: Vec3Tuple;
     tilt: number;
+    /** A fully aimed sniper throw (see SNIPER). */
+    sniper?: boolean;
 };
 
 export type ClientMessage =
@@ -113,6 +122,8 @@ export type ServerMessage =
           hp: number;
           out: boolean;
           head: boolean;
+          /** Sniper disc: a head hit with one eliminates outright. */
+          sniper: boolean;
           at: Vec3Tuple;
           scores: Scores;
       }
@@ -148,7 +159,13 @@ export const isVec3 = (value: unknown): value is Vec3Tuple =>
     Array.isArray(value) && value.length === 3 && value.every(isNumber);
 export const isPose = (value: unknown): value is PlayerPose => {
     const pose = value as PlayerPose;
-    return !!pose && isVec3(pose.p) && isNumber(pose.yaw) && isNumber(pose.pitch);
+    return (
+        !!pose &&
+        isVec3(pose.p) &&
+        isNumber(pose.yaw) &&
+        isNumber(pose.pitch) &&
+        (pose.aim === undefined || isNumber(pose.aim))
+    );
 };
 
 /** Parses and shape-checks a client message; anything malformed returns null. */

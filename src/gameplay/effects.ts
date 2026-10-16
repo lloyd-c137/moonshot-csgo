@@ -103,6 +103,20 @@ export const createEffects = (app: AppBase) => {
             emit(at, [1, 1, 1], [0, 0, 0], 0.22, 0.12);
             if (kind !== 'hit') emit(at, colour, [0, 0, 0], 0.2, kind === 'out' ? 0.55 : 0.35, true);
         },
+        /** One glowing mote of a sniper disc's tracer (call each frame along its path). */
+        tracer(at: V3, hue: number) {
+            const [r, g, b] = hueColour(hue);
+            emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], 0.07, 0.28);
+        },
+        /** A sniper headshot: a tall gold flash and a wide ring on top of the elimination burst. */
+        snipe(at: V3) {
+            emit(at, [1, 0.85, 0.3], [0, 0, 0], 0.45, 0.18);
+            emit(at, [1, 0.82, 0.25], [0, 0, 0], 0.35, 0.7, true);
+            for (let i = 0; i < 10; i++) {
+                const a = (i / 10) * Math.PI * 2;
+                emit(at, [1, 0.9, 0.5], [Math.cos(a) * 7, 1.5 + Math.random() * 2, Math.sin(a) * 7], 0.05, 0.5);
+            }
+        },
         /** Ends every live particle at once. */
         clear() {
             for (const p of particles) {

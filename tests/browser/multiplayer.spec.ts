@@ -125,6 +125,18 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect(Math.hypot(x + 40.3, z - 39.6)).toBeGreaterThan(3);
     await expect(b.page.locator('#eliminated')).toBeHidden();
 
+    // A fully aimed sniper disc to the head eliminates a full-health player in one hit.
+    expect((await state(b.page)).hp).toBe(2);
+    await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
+    await a.page.waitForTimeout(1_800);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.6, 39.6, undefined, true))).toBe(
+        true
+    );
+    await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
+    await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'snipe');
+    await expect(a.page.locator('#broadcast')).toContainText('狙击爆头');
+    await expect(b.page.locator('#popup')).toHaveText('被狙击爆头');
+
     // Leaving is seen by the other player.
     await b.page.context().close();
     await expect.poll(async () => (await state(a.page)).players.length, { timeout: 10_000 }).toBe(1);

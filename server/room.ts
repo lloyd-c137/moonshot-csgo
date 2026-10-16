@@ -25,6 +25,7 @@ import {
     PROTOCOL_VERSION,
     randomName,
     RESPAWN_SECONDS,
+    SNIPER,
     SPAWN_PROTECTION,
     THROW_CLAIM_WINDOW,
     THROW_COOLDOWN
@@ -224,6 +225,8 @@ export class Room {
         if (speed > MAX_THROW_SPEED + 12 || player.throws.has(record.id)) return;
         // The disc must leave from near the thrower's last known position.
         if (player.pose && distance(player.pose.p, record.o) > 3) return;
+        // A sniper flag only counts on a full-speed launch.
+        if (record.sniper && speed < SNIPER.minSpeed) record.sniper = false;
         player.lastThrowAt = now;
         player.throws.set(record.id, { record, at: now, scored: false });
         this.out.all({ type: 'thrown', from: player.id, t: now, throw: record }, player.id);
@@ -241,11 +244,13 @@ export class Room {
         const reach = Math.hypot(...entry.record.v) * (elapsed + 0.35) + HIT_SLACK;
         if (distance(entry.record.o, target.pose.p) > reach || distance(at, target.pose.p) > HIT_SLACK) return;
         entry.scored = true;
-        target.hp = Math.max(0, target.hp - 1);
+        const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
+        const sniper = entry.record.sniper === true;
+        // A sniper disc to the head is lethal outright; anything else takes one point of health.
+        target.hp = sniper && head ? 0 : Math.max(0, target.hp - 1);
         target.hurtAt = now;
         player.score += POINTS.hit;
         const out = target.hp === 0;
-        const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
         if (out) {
             player.kills++;
             player.score += POINTS.elimination;
@@ -255,7 +260,17 @@ export class Room {
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
-        this.out.all({ type: 'struck', target: target.id, by: player.id, hp: target.hp, out, head, at, scores });
+        this.out.all({
+            type: 'struck',
+            target: target.id,
+            by: player.id,
+            hp: target.hp,
+            out,
+            head,
+            sniper,
+            at,
+            scores
+        });
         this.persist(player, target, out, now);
     }
 

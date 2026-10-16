@@ -34,7 +34,8 @@ type Handlers = {
         out: boolean,
         head: boolean,
         at: Vec3Tuple,
-        scores: Scores
+        scores: Scores,
+        sniper: boolean
     ) => void;
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
@@ -117,7 +118,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.out,
                     message.head,
                     message.at,
-                    message.scores
+                    message.scores,
+                    message.sniper === true
                 );
                 break;
             case 'chat':

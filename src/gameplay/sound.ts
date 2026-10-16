@@ -201,6 +201,35 @@ export const createSound = () => {
                 hiss(audio, out, at(0.9), 0.18, 0.06, 700, 1500, 1.4);
                 tone(audio, out, 'square', 380, 260, at(0.99), 0.04, 0.035);
             }),
+        /** Starting to aim: a soft mechanical slide that rises with the zoom. */
+        scopeIn: () =>
+            play((audio, now) => {
+                hiss(audio, master!, now, 0.5, 0.07, 500, 2400, 2);
+                tone(audio, master!, 'sine', 220, 440, now, 0.6, 0.05);
+            }),
+        /** Fully aimed: a crisp lock click and a held high tone. */
+        scopeReady: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'square', 1800, 1700, now, 0.03, 0.07);
+                tone(audio, master!, 'square', 2400, 2300, now + 0.05, 0.03, 0.06);
+                tone(audio, master!, 'sine', 880, 880, now + 0.06, 0.35, 0.05);
+            }),
+        /** Sniper release: a sharp crack and a fast, thin whoosh (positioned for other players' throws). */
+        sniperThrow: (at?: V3) =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                hiss(audio, out, now, 0.08, 0.5, 4000, 1500, 0.8);
+                tone(audio, out, 'sawtooth', 900, 120, now, 0.12, 0.2);
+                hiss(audio, out, now + 0.03, 0.45, 0.35, 2600, 6000, 2.4);
+            }),
+        /** Your sniper disc took someone's head: a heavy bass hit under a bright bell. */
+        snipeConfirm: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'sine', 120, 40, now, 0.5, 0.7);
+                tone(audio, master!, 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
+                tone(audio, master!, 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
+                hiss(audio, master!, now, 0.12, 0.3, 6000, 2000, 0.7);
+            }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {

@@ -1,8 +1,11 @@
 // Gameplay tuning and authored overrides. Every value here is GAMEPLAY_AUTHORED: it is a game decision layered on
 // top of the SOURCE_DERIVED_3D_UNVERIFIED campus model, never a measured property of the real building.
 
-/** Safe spawn, at the source label anchor of the east entrance lobby (capsule centre height). */
-export const SAFE_SPAWN = { x: 50.85, y: 0.92, z: -2.86 };
+/** Safe spawn, at the source label anchor of the south entrance lobby (capsule centre height), facing north. */
+export const SAFE_SPAWN = { x: -8.7, y: 0.92, z: 46.3 };
+
+/** The previous spawn, the east entrance lobby anchor (kept for routes and tests that start there). */
+export const EAST_ENTRANCE = { x: 50.85, y: 0.92, z: -2.86 };
 
 export const PLAYER = {
     /**

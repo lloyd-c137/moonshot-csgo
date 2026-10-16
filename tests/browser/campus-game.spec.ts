@@ -17,19 +17,19 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     const dressing = await page.evaluate(() => window.__MOONSHOT__!.dressing);
     expect(dressing.doors).toBeGreaterThan(100);
     expect(dressing.lights).toBeGreaterThan(500);
-    expect(initial.position[0]).toBeCloseTo(50.85, 1);
+    expect(initial.position[0]).toBeCloseTo(-8.7, 1);
     expect(initial.position[1]).toBeGreaterThan(0.75);
     expect(initial.position[1]).toBeLessThan(1.05);
-    expect(initial.position[2]).toBeCloseTo(-2.86, 1);
+    expect(initial.position[2]).toBeCloseTo(46.3, 1);
 
     await enterAtSpawn(page);
     await advance(page, 500);
-    await expect(page.locator('#location-code')).toContainText('东入口门厅');
-    await expect(page.locator('#location-name')).toHaveText('ENTRANCE-EAST');
+    await expect(page.locator('#location-code')).toContainText('南入口门厅');
+    await expect(page.locator('#location-name')).toHaveText('ENTRANCE-SOUTH');
     // The spawn lobby is the first discovery: plate tag, toast and tally all report it.
-    expect(await page.evaluate(() => window.__MOONSHOT__!.discovered())).toEqual(['ENTRANCE-EAST']);
+    expect(await page.evaluate(() => window.__MOONSHOT__!.discovered())).toEqual(['ENTRANCE-SOUTH']);
     await expect(page.locator('#location')).toHaveAttribute('data-new', 'true');
-    await expect(page.locator('#toast')).toContainText('东入口门厅');
+    await expect(page.locator('#toast')).toContainText('南入口门厅');
     await expect(page.locator('#tally')).toHaveText('已发现 1 / 166');
 
     await page.keyboard.press('m');
@@ -88,6 +88,7 @@ test('open entrances and the top seat row do not lead out of the level; a fall i
     await enterAtSpawn(page);
 
     // The east entrance has no source wall: the slab ends at x≈67.5. The authored barrier stops the capsule there.
+    await page.evaluate(() => window.__MOONSHOT__!.teleport(50.85, 0.92, -2.86));
     await walk(page, 1, 0, 15_000);
     const atEntrance = await position(page);
     expect(atEntrance[0]).toBeGreaterThan(65);
@@ -118,7 +119,33 @@ test('open entrances and the top seat row do not lead out of the level; a fall i
     await page.evaluate(() => window.__MOONSHOT__!.teleport(80, 1, 0));
     await advance(page, 2_000);
     expect(await page.evaluate(() => window.__MOONSHOT__!.recoveries())).toBe(1);
-    expect(horizontal(await position(page), [50.85, 0, -2.86])).toBeLessThan(0.2);
-    await expect(page.locator('#toast')).toContainText('已回到东入口');
+    expect(horizontal(await position(page), [-8.7, 0, 46.3])).toBeLessThan(0.2);
+    await expect(page.locator('#toast')).toContainText('已回到南入口');
+    expect(errors).toEqual([]);
+});
+
+test('pushing into a wall for a while offers the unstuck escape, which returns to the south entrance', async ({
+    page
+}) => {
+    const errors = collectErrors(page);
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    // Walk east into the authored barrier at the open east entrance and keep pushing.
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.teleport(65.5, 0.92, -2.86);
+        window.__MOONSHOT__!.setLook(0, -90);
+    });
+    await advance(page, 300);
+    await page.keyboard.down('w');
+    await advance(page, 3_000);
+    const pushed = await position(page);
+    await page.keyboard.up('w');
+    expect(await page.evaluate(() => window.__MOONSHOT__!.stuckShown()), `at ${pushed}`).toBe(true);
+    await expect(page.locator('#unstuck')).toBeVisible();
+    await page.keyboard.press('g');
+    await advance(page, 200);
+    expect(horizontal(await position(page), [-8.7, 0, 46.3])).toBeLessThan(0.2);
+    await expect(page.locator('#unstuck')).toBeHidden();
+    await expect(page.locator('#toast')).toContainText('已脱离卡死');
     expect(errors).toEqual([]);
 });

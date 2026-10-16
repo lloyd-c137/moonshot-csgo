@@ -124,8 +124,11 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
     };
 
     const net = createNetClient(url, {
-        state: (state) => {
+        state: (state, detail) => {
             netState = state;
+            if (state === 'rejected' && detail === 'version') {
+                ui.updateAvailable('联机服务器已经升级，刷新页面后才能继续多人对战。');
+            }
             if (state !== 'online') {
                 roster.clear();
                 avatars.clear();
@@ -409,6 +412,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url }: Options) =
                 },
                 (at, speed) => sound.bounce(at, speed)
             );
+        },
+        get alive() {
+            return alive;
         },
         debug: {
             state: () => ({

@@ -24,35 +24,42 @@ const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
-    <div class="title-column">
-      <div class="plate">
-        <span class="stripe" aria-hidden="true"></span>
-        <div class="plate-body">
-          <span class="plate-code">FF-01</span>
-          <h1 id="title-heading">Moonshot Open World</h1>
-          <p>自由走遍校园一层，找到每一个房间。</p>
+    <div class="title-shade" aria-hidden="true"></div>
+    <header class="title-top">
+      <span class="brand-mark">FF-01</span>
+      <span class="brand-name">MOONSHOT ACADEMY · 校园一层</span>
+      <span class="title-mode"><i aria-hidden="true"></i>多人在线 · 全服同一张地图</span>
+    </header>
+    <div class="title-main">
+      <p class="eyebrow">开放世界 · 飞盘大乱斗</p>
+      <h1 id="title-heading">Moonshot<br />Open World</h1>
+      <p class="tagline">走遍校园一层的每一个房间，拿起飞盘和在线的所有人同场对战：两次命中即淘汰。</p>
+      <div class="start-card">
+        <div class="loading-strip">
+          <ol class="stages" aria-label="加载进度"></ol>
+          <span class="stage-label" id="stage-label">正在准备…</span>
         </div>
-      </div>
-      <ol class="stages" aria-label="加载进度"></ol>
-      <div class="title-actions">
-        <label class="nickname" for="nickname">昵称<input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
-        <button class="primary" id="enter-button" type="button" disabled>正在加载</button>
+        <div class="start-row">
+          <label class="nickname" for="nickname"><span>昵称</span><input id="nickname" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="不填则随机" /></label>
+          <button class="primary" id="enter-button" type="button" disabled>正在加载</button>
+        </div>
         <p class="load-error" id="load-error" role="alert" hidden></p>
         <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
       </div>
+    </div>
+    <footer class="title-bottom">
       <dl class="controls">
         <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
         <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
         <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
-        <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
-        <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>
-        <div><dt><span class="kbd">R</span></dt><dd>回到东入口</dd></div>
-        <div><dt><span class="kbd">左键</span></dt><dd>投掷飞盘（按住蓄力）</dd></div>
+        <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷</dd></div>
         <div><dt><span class="kbd">Tab</span></dt><dd>排行榜</dd></div>
+        <div><dt><span class="kbd">M</span></dt><dd>地图</dd></div>
+        <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
+        <div><dt><span class="kbd">Esc</span></dt><dd>暂停</dd></div>
       </dl>
-      <p class="fine-print">所有人同在一张地图：飞盘击中即淘汰，稍后在别处复活。只显示你填写的昵称，不需要登录，也不保存任何个人信息。</p>
-      <p class="fine-print">场景由 FF-01 平面图推导，墙高、门、家具与灯光为游戏补充，并非实地测量。</p>
-    </div>
+      <p class="fine-print">只显示你填写的昵称，无需登录，不保存个人信息 · 场景由 FF-01 平面图推导，墙高、门、家具与灯光为游戏补充，并非实地测量</p>
+    </footer>
   </section>
 
   <section class="screen screen-hud" aria-label="游戏界面">
@@ -74,6 +81,7 @@ const MARKUP = `
     <div class="name-tags" id="name-tags" aria-hidden="true"></div>
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
     <div class="health" id="health" aria-label="生命"></div>
+    <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd">G</span>好像卡住了？脱离卡死</button>
     <ol class="feed" id="feed" aria-live="polite"></ol>
     <div class="scoreboard" id="scoreboard" hidden>
       <table><thead><tr><th>玩家</th><th>击中</th><th>被击中</th></tr></thead><tbody id="scoreboard-rows"></tbody></table>
@@ -95,12 +103,24 @@ const MARKUP = `
     </div>
   </section>
 
+  <div class="update-dialog" id="update-dialog" role="alertdialog" aria-labelledby="update-title" hidden>
+    <div class="update-card">
+      <span class="update-badge">新版本</span>
+      <h2 id="update-title">游戏已更新</h2>
+      <p id="update-detail">刷新页面即可使用最新版本。你的探索进度保存在本机，不会丢失。</p>
+      <div class="update-actions">
+        <button class="primary" id="update-reload" type="button">立即刷新</button>
+        <button class="secondary" id="update-later" type="button">稍后</button>
+      </div>
+    </div>
+  </div>
+
   <section class="screen screen-pause" aria-labelledby="pause-heading">
     <div class="pause-column">
       <h2 id="pause-heading">已暂停</h2>
       <div class="pause-actions">
         <button class="primary" id="resume-button" type="button">继续探索</button>
-        <button class="secondary" id="recover-button" type="button">回到东入口</button>
+        <button class="secondary" id="recover-button" type="button">脱离卡死 · 回到南入口</button>
       </div>
       <div class="progress">
         <span id="progress-label"></span>
@@ -212,9 +232,11 @@ export const createUi = (locations: CampusRoom[]) => {
         stage: (stage: LoadStage, state: 'active' | 'done') => {
             const item = stagesList.querySelector<HTMLElement>(`[data-stage="${stage}"]`);
             if (item) item.dataset.state = state;
+            if (state === 'active') $('#stage-label').textContent = `正在加载${item?.textContent ?? ''}…`;
         },
         ready: (actions: Actions, settings: Settings) => {
             for (const item of stagesList.querySelectorAll<HTMLElement>('li')) item.dataset.state = 'done';
+            $('#stage-label').textContent = '准备就绪';
             enterButton.disabled = false;
             enterButton.textContent = '进入校园';
             enterButton.addEventListener('click', actions.enter);
@@ -302,6 +324,28 @@ export const createUi = (locations: CampusRoom[]) => {
             return value;
         },
         nameTagLayer: () => $('#name-tags'),
+        /**
+         * Offers a reload for a newer version. Shown as a dialog; during play (mouse captured) it waits on the
+         * pause screen and a light notice says so.
+         */
+        updateAvailable: (detail?: string) => {
+            const dialog = $('#update-dialog');
+            if (detail) $('#update-detail').textContent = detail;
+            $('#update-reload').onclick = () => window.location.reload();
+            $('#update-later').onclick = () => {
+                dialog.hidden = true;
+                root.dataset.update = 'later';
+            };
+            root.dataset.update = 'available';
+            dialog.hidden = false;
+            if (root.dataset.screen === 'play') showToast('游戏有新版本：按 Esc 后刷新即可更新', 'discovery', 8000);
+        },
+        /** Shows or hides the escape offer when the player seems stuck. */
+        stuck: (show: boolean, onEscape?: () => void) => {
+            const button = $<HTMLButtonElement>('#unstuck');
+            if (onEscape) button.onclick = onEscape;
+            button.hidden = !show;
+        },
         net: (state: 'offline' | 'connecting' | 'online' | 'rejected', players: number) => {
             const status = $('#net-status');
             status.dataset.state = state;

@@ -20,11 +20,13 @@ import {
 import type { Entity, Texture } from 'playcanvas';
 
 import { installDebugHooks } from './app/debugHooks';
+import { watchForUpdates } from './app/updates';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { browserStorage, DiscoveryLog } from './gameplay/discovery';
 import { createMatch } from './gameplay/match';
+import { StuckDetector } from './gameplay/stuck';
 import { addCampusCollisions } from './physics/collisionWorld';
 import {
     applySettings,
@@ -220,15 +222,61 @@ const boot = async () => {
     );
     shell.setLocation(undefined, false);
     let recoveries = 0;
+    // Stuck detection: movement keys held with no progress (or sunk into the floor) offers a one-key escape.
+    const stuck = new StuckDetector();
+    const moveKeys = new Set<string>();
+    let stuckShown = false;
+    let stuckAt: [number, number] = [0, 0];
+    const escapeStuck = () => {
+        stuck.reset();
+        stuckShown = false;
+        shell.stuck(false);
+        recoverPlayer(player);
+        shell.notify('已脱离卡死，回到南入口');
+    };
+    shell.stuck(false, () => {
+        escapeStuck();
+        canvas.requestPointerLock()?.catch?.(() => undefined);
+    });
+    for (const type of ['keydown', 'keyup'] as const) {
+        window.addEventListener(type, (event) => {
+            if (
+                !['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
+                    event.code
+                )
+            )
+                return;
+            if (type === 'keydown') moveKeys.add(event.code);
+            else moveKeys.delete(event.code);
+        });
+    }
+    window.addEventListener('blur', () => moveKeys.clear());
     app.on('update', (deltaTime: number) => {
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
             recoverPlayer(player);
-            shell.notify('已离开可探索范围，已回到东入口');
+            shell.notify('已离开可探索范围，已回到南入口');
             return;
         }
         roomTracker.update([position.x, position.z], deltaTime);
+        if (document.pointerLockElement === canvas && match.alive) {
+            const isStuck = stuck.update(
+                deltaTime,
+                performance.now() / 1000,
+                [position.x, position.y, position.z],
+                moveKeys.size > 0
+            );
+            if (isStuck && !stuckShown) {
+                stuckShown = true;
+                stuckAt = [position.x, position.z];
+                shell.stuck(true);
+            } else if (stuckShown && Math.hypot(position.x - stuckAt[0], position.z - stuckAt[1]) > 1) {
+                // Got free on their own.
+                stuckShown = false;
+                shell.stuck(false);
+            }
+        }
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
         const forward = camera.forward;
@@ -238,7 +286,7 @@ const boot = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const spawnCheck = inspectSpawn(app);
     if (!spawnCheck.supported || !spawnCheck.clear) {
-        throw new Error(`东入口出生点未通过楼板支撑与头顶净空检查：${JSON.stringify(spawnCheck)}`);
+        throw new Error(`南入口出生点未通过楼板支撑与头顶净空检查：${JSON.stringify(spawnCheck)}`);
     }
     shell.stage('dressing', 'done');
 
@@ -255,7 +303,7 @@ const boot = async () => {
     };
     const recover = () => {
         recoverPlayer(player);
-        shell.notify('已回到东入口');
+        shell.notify('已回到南入口');
     };
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
@@ -289,6 +337,9 @@ const boot = async () => {
             } else if (event.code === 'KeyR' && hasEntered && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 recover();
+            } else if (event.code === 'KeyG' && stuckShown && document.pointerLockElement === canvas) {
+                event.preventDefault();
+                escapeStuck();
             } else if (event.code === 'KeyM' && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 shell.toggleMap();
@@ -312,6 +363,8 @@ const boot = async () => {
         settings
     );
 
+    if (import.meta.env.PROD) watchForUpdates(__BUILD_ID__, () => shell.updateAvailable());
+
     if (import.meta.env.DEV) {
         installDebugHooks({
             position: () => player.getPosition().toArray(),
@@ -326,6 +379,7 @@ const boot = async () => {
             },
             recoveries: () => recoveries,
             setLook: (pitch: number, yaw: number) => setLook(player, pitch, yaw),
+            stuckShown: () => stuckShown,
             raycast: (from: number[], to: number[]) =>
                 rigidbodySystem.raycastFirst(new Vec3(from[0], from[1], from[2]), new Vec3(to[0], to[1], to[2]))?.entity
                     .name ?? null,

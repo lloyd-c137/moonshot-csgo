@@ -17,3 +17,6 @@ declare module 'playcanvas/scripts/esm/sky/procedural-sky.mjs' {
 
     export const ProceduralSky: typeof Script & (new () => Script);
 }
+
+/** Build identity injected by vite.config.ts (commit on Cloudflare Pages). */
+declare const __BUILD_ID__: string;

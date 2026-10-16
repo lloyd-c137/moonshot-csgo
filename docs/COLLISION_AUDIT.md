@@ -58,7 +58,7 @@ Sealed by the source walls at r = 0.28 m: `A203`, `M124`, `SVC-03`, `SVC-15` (so
 
 ## Spawn probe
 
-Candidate: `[50.85, 0.92, -2.86]` metres, at the source label anchor of the label-only east entrance. At boot, PlayCanvas Ammo raycasts require floor support from `Floor_Slab` or `Arena_Court`; five vertical capsule-clearance samples (centre and ±0.8 × radius) must have no obstruction through 2.15 m. The candidate passes both checks.
+Candidate (since 2026-10-15): `[-8.7, 0.92, 46.3]` metres, at the source label anchor of the label-only south entrance (previously `[50.85, 0.92, -2.86]`, the east entrance). At boot, PlayCanvas Ammo raycasts require floor support from `Floor_Slab` or `Arena_Court`; five vertical capsule-clearance samples (centre and ±0.8 × radius) must have no obstruction through 2.15 m. The candidate passes both checks.
 
 ## Runtime checks
 

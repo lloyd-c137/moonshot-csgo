@@ -17,6 +17,7 @@ import type { Vec2 } from '../src/world/geometry2d.ts';
 import { signedArea, simplifyRing } from '../src/world/geometry2d.ts';
 import type { CampusRoom } from '../src/world/roomIndex.ts';
 import { findRoomAt, pointInRoom } from '../src/world/roomIndex.ts';
+import { AUTHORED_ROOM_IDS } from '../src/world/rooms/index.ts';
 
 import { auditFloor, CELL, Grid, loadCampusGeometry } from './navAudit.ts';
 import type { Image } from './png.ts';
@@ -931,8 +932,16 @@ export const deriveWorld = () => {
     const doors = [...deriveDoors(geometry, fine, fineSolid), ...doorwayDoors(doorways, geometry.rooms)];
     const { furniture: linework, partitions } = deriveFurniture(geometry, fine, fineSolid, doors, fineArena);
     // Cut doorways are open floor for layout purposes; the arena and stands stay unfurnished.
-    const furniture = [...linework, ...deriveRoomFurnishing(geometry, fine, fineSolid, doors, linework, fineArena)];
-    const lights = deriveLights(geometry, grid, solid, roomCells, arena, courtyard, floor);
+    // Authored interiors (src/world/rooms) replace the generic furniture and lights of their rooms.
+    const authored = geometry.rooms.filter((room) => (AUTHORED_ROOM_IDS as readonly string[]).includes(room.id));
+    const outsideAuthored = (point: Vec2) => !authored.some((room) => pointInRoom(point, room));
+    const furniture = [
+        ...linework,
+        ...deriveRoomFurnishing(geometry, fine, fineSolid, doors, linework, fineArena)
+    ].filter((item) => outsideAuthored(item.center));
+    const lights = deriveLights(geometry, grid, solid, roomCells, arena, courtyard, floor).filter(([x, z]) =>
+        outsideAuthored([x, z])
+    );
     const minimap = deriveMinimap(geometry, wallCells, glassCells, roomKind, kinds, floor, arena, grid);
 
     const world: DerivedWorld = {

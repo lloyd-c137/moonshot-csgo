@@ -159,7 +159,8 @@ export const buildDressing = (
     campus: Entity,
     world: DerivedWorld,
     rooms: CampusRoom[],
-    ceilingMask: Texture
+    ceilingMask: Texture,
+    authoredRooms: readonly string[] = []
 ) => {
     const device = app.graphicsDevice;
     const root = new Entity('GameplayAuthored_Dressing');
@@ -201,7 +202,8 @@ export const buildDressing = (
     for (const child of roomsNode.children as Entity[]) {
         const id = child.name.replace(/^(Room|Space)_/, '');
         const kind = kindOf.get(id) ?? 'room';
-        if (!child.render) continue;
+        // Authored interiors lay their own floor.
+        if (!child.render || authoredRooms.includes(id)) continue;
         const top = worldTriangles(child).filter((triangle) => isHorizontalAt(triangle, 0.02));
         if (!byKind.has(kind)) byKind.set(kind, new MeshBuilder());
         addHorizontal(byKind.get(kind)!, top, 0.02, false);

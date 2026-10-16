@@ -36,12 +36,14 @@ import { createLightPool, setupAtmosphere } from './render/atmosphere';
 import { loadSettings, saveSettings } from './ui/settings';
 import type { Ui } from './ui/shell';
 import { createUi } from './ui/shell';
+import { buildAuthoredRoom } from './world/authoredRoom';
 import { loadCampus } from './world/campusLoader';
 import { cutDoorwaysInto } from './world/doorwayCutter';
 import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressing';
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
+import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
 
 let ui: Ui | null = null;
 
@@ -165,10 +167,15 @@ const boot = async () => {
     shell.stage('structure', 'done');
 
     shell.stage('dressing', 'active');
-    const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask);
+    const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask, AUTHORED_ROOM_IDS);
+    const authoredScenes = authoredRoomScenes();
+    for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
     const { player, camera } = createPlayer(app);
     setupAtmosphere(app, camera);
-    const lightPool = createLightPool(app, derivedWorld.lights);
+    const lightPool = createLightPool(app, [
+        ...derivedWorld.lights,
+        ...authoredScenes.flatMap((scene) => scene.lights)
+    ]);
     const storage = browserStorage();
     const settings = loadSettings(storage);
     applySettings(player, camera, settings);

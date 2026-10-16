@@ -9,7 +9,9 @@ const VIEW_METRES = 36;
 /** Things drawn on both maps: the golden disc (always) and 纪老师 with his view. */
 export type MapMarkers = {
     gold: { x: number; z: number; held: boolean } | null;
-    teacher: { x: number; z: number; yaw: number } | null;
+    teacher: { x: number; z: number; yaw: number; range: number } | null;
+    /** Other players, shown while the monitoring room's radar is on. */
+    players: { x: number; z: number; colour: number }[];
 };
 
 export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasElement) => {
@@ -54,7 +56,17 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.restore();
     };
 
-    let markers: MapMarkers = { gold: null, teacher: null };
+    let markers: MapMarkers = { gold: null, teacher: null, players: [] };
+    /** A player dot in their colour (monitoring-room radar). */
+    const playerDot = (g: CanvasRenderingContext2D, x: number, y: number, size: number, hue: number) => {
+        g.beginPath();
+        g.arc(x, y, size, 0, Math.PI * 2);
+        g.fillStyle = `hsl(${hue} 80% 55%)`;
+        g.strokeStyle = '#0b1422';
+        g.lineWidth = size * 0.45;
+        g.fill();
+        g.stroke();
+    };
     /** A gold star (the golden disc) at canvas point (x, y). */
     const goldIcon = (g: CanvasRenderingContext2D, x: number, y: number, size: number, held: boolean) => {
         g.save();
@@ -88,7 +100,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         const centre = -Math.PI / 2 - (yawDegrees * Math.PI) / 180;
         g.beginPath();
         g.moveTo(x, y);
-        g.arc(x, y, range, centre - 0.84, centre + 0.84);
+        g.arc(x, y, range, centre, centre + Math.PI * 2);
         g.closePath();
         g.fillStyle = 'rgba(255, 70, 85, 0.25)';
         g.fill();
@@ -130,11 +142,26 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
             if (markers.teacher) {
                 const [tx, ty] = toDock(markers.teacher.x, markers.teacher.z);
                 const metre = scale / MINIMAP_RESOLUTION;
-                if (Math.hypot(tx - w / 2, ty - w / 2) < w / 2 + 13 * metre)
-                    teacherIcon(g, tx, ty, markers.teacher.yaw, 13 * metre, 4 * ratio);
+                if (Math.hypot(tx - w / 2, ty - w / 2) < w / 2 + markers.teacher.range * metre)
+                    teacherIcon(g, tx, ty, markers.teacher.yaw, markers.teacher.range * metre, 4 * ratio);
             }
         }
         g.restore();
+        // Radar (monitoring room): every player, pinned to the rim when off the dock.
+        if (ready) {
+            const scale = w / (VIEW_METRES / MINIMAP_RESOLUTION);
+            for (const other of markers.players) {
+                let ox = w / 2 + ((other.x - x) / MINIMAP_RESOLUTION) * scale;
+                let oy = w / 2 + ((other.z - z) / MINIMAP_RESOLUTION) * scale;
+                const d = Math.hypot(ox - w / 2, oy - w / 2);
+                const limit = w / 2 - 6 * ratio;
+                if (d > limit) {
+                    ox = w / 2 + ((ox - w / 2) / d) * limit;
+                    oy = w / 2 + ((oy - w / 2) / d) * limit;
+                }
+                playerDot(g, ox, oy, 3.5 * ratio, other.colour);
+            }
+        }
         // The golden disc is always shown: on the dock when near, pinned to its rim (pointing at it) when far.
         if (ready && markers.gold) {
             const scale = w / (VIEW_METRES / MINIMAP_RESOLUTION);
@@ -181,9 +208,13 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 tx * scale * ratio,
                 tz * scale * ratio,
                 markers.teacher.yaw,
-                (13 / MINIMAP_RESOLUTION) * scale * ratio,
+                (markers.teacher.range / MINIMAP_RESOLUTION) * scale * ratio,
                 5 * ratio
             );
+        }
+        for (const other of markers.players) {
+            const [ox, oz] = toPixel(other.x, other.z);
+            playerDot(g, ox * scale * ratio, oz * scale * ratio, 5 * ratio, other.colour);
         }
         if (markers.gold) {
             const [gx, gz] = toPixel(markers.gold.x, markers.gold.z);
@@ -201,7 +232,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 next.teacher
                     ? `${next.teacher.x.toFixed(1)},${next.teacher.z.toFixed(1)},${Math.round(next.teacher.yaw)}`
                     : ''
-            }`;
+            }|${next.players.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
             const markersChanged = key !== last.markers;
             last.markers = key;
             markers = next;

@@ -289,6 +289,12 @@ export const createSound = () => {
                 [0, 0.5, 1].forEach((t) => tone(audio, master!, 'square', 880, 880, now + t, 0.12, 0.06));
                 tone(audio, master!, 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
             }),
+        /** Picked a disc up: a quick bright double click. */
+        pickup: () =>
+            play((audio, now) => {
+                tone(audio, master!, 'triangle', 880, 1320, now, 0.08, 0.12);
+                tone(audio, master!, 'triangle', 1320, 1760, now + 0.07, 0.1, 0.1);
+            }),
         /** Disc release: an airy whoosh (positioned for other players' throws). */
         throw: (at?: V3) =>
             play((audio, now) => {

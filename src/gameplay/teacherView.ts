@@ -1,7 +1,7 @@
 // 纪老师 in the world: a figure in a dark suit with glasses and a red duty armband, walking his patrol (legs swing,
-// he bobs), his field of view painted on the floor as a red fan so players can keep out of it, a name tag, and a
+// he bobs), the circle he watches painted on the floor in red so players can keep out of it, a name tag, and a
 // speech bubble when he catches someone. He is placed from the room clock (gameplay/teacher.ts).
-import type { AppBase, Entity as EntityType, RigidBodyComponentSystem } from 'playcanvas';
+import type { AppBase, Entity as EntityType } from 'playcanvas';
 import {
     BLEND_ADDITIVE,
     Color,
@@ -73,7 +73,7 @@ const fanEdge = (radius: number, halfAngle: number, width: number, segments = 32
         const [bx, bz] = point(-halfAngle + (2 * halfAngle * (i + 1)) / segments);
         strip(ax, az, bx, bz);
     }
-    for (const side of [-halfAngle, halfAngle]) strip(0, 0, ...point(side));
+    if (halfAngle < 180) for (const side of [-halfAngle, halfAngle]) strip(0, 0, ...point(side));
     return merge(strips);
 };
 
@@ -164,8 +164,8 @@ export const createTeacher = (app: AppBase, camera: EntityType, layer: HTMLEleme
     cone.addComponent('render', {
         castShadows: false,
         meshInstances: [
-            new MeshInstance(meshOf(app, fan(TEACHER.range, TEACHER.halfAngle)), coneFill),
-            new MeshInstance(meshOf(app, fanEdge(TEACHER.range, TEACHER.halfAngle, 0.06)), coneEdge)
+            new MeshInstance(meshOf(app, fan(TEACHER.range, 180, 64)), coneFill),
+            new MeshInstance(meshOf(app, fanEdge(TEACHER.range, 180, 0.08, 96)), coneEdge)
         ]
     });
     cone.setLocalPosition(0, 0.03, 0);
@@ -180,11 +180,8 @@ export const createTeacher = (app: AppBase, camera: EntityType, layer: HTMLEleme
     bubble.hidden = true;
     layer.append(tag, bubble);
 
-    const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const screen = new Vec3();
     const head = new Vec3();
-    const eye = new Vec3();
-    const target = new Vec3();
     let pose: TeacherPose = teacherAt(0);
     let floorY = 0;
     let bubbleUntil = 0;
@@ -215,16 +212,9 @@ export const createTeacher = (app: AppBase, camera: EntityType, layer: HTMLEleme
             if (!bubble.hidden)
                 bubble.style.transform = `translate(-50%, -100%) translate(${Math.round(screen.x)}px, ${Math.round(screen.y - 28)}px)`;
         },
-        /**
-         * Whether he can see a player at capsule centre `at` right now: inside his view cone and with a clear line
-         * from his eyes to the player's head (walls and glass block it).
-         */
-        sees(at: Vec3, player: EntityType) {
-            if (!inTeacherView(pose, at.x, at.z)) return false;
-            eye.set(pose.x, floorY + TEACHER.eye, pose.z);
-            target.set(at.x, at.y + 0.6, at.z);
-            const hit = rigidbody.raycastFirst(eye, target);
-            return !hit || hit.entity === player;
+        /** Whether a player at capsule centre `at` is inside his watch (the circle around him). */
+        sees(at: Vec3) {
+            return inTeacherView(pose, at.x, at.z);
         },
         /** Shows his speech bubble for a few seconds. */
         say(text: string, now: number) {

@@ -8,7 +8,7 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -45,6 +45,14 @@ export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const
  * holds it when the `roundSeconds` clock runs out wins. Holders drop it where they are eliminated (or leave).
  */
 export const ROUND = { roundSeconds: 600, intermissionSeconds: 10, pickupRadius: 1.6, pickupDelay: 0.8 } as const;
+/**
+ * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).
+ * Everyone carries at most `max`; respawning hands back `start`. The PE office puts out a fresh disc every
+ * `officeSeconds` (at most `officeMax` lying there). The golden disc is never used up: it returns to its holder.
+ */
+export const AMMO = { start: 1, max: 3, pickupRadius: 1.5, officeSeconds: 60, officeMax: 3 } as const;
+/** A disc lying on the floor, waiting to be picked up. */
+export type GroundDisc = { id: number; at: Vec3Tuple };
 /** 纪老师 catches a throw inside his view: the thrower stands still for this long. */
 export const DETENTION_SECONDS = 4;
 
@@ -112,6 +120,8 @@ export type ClientMessage =
     | { type: 'pose'; pose: PlayerPose; ct?: number }
     | { type: 'throw'; throw: ThrowRecord }
     | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
+    /** The sender's own disc came to rest at `at` (it now lies there for anyone to pick up). */
+    | { type: 'landed'; throwId: number; at: Vec3Tuple }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
@@ -129,6 +139,8 @@ export type ServerMessage =
           chat: ChatLine[];
           round: RoundState;
           gold: GoldState;
+          ammo: number;
+          discs: GroundDisc[];
           /** Room clock now (ms), so the patrol and countdown line up before the first snapshot. */
           t: number;
       }
@@ -146,6 +158,8 @@ export type ServerMessage =
           head: boolean;
           /** Sniper disc: a head hit with one eliminates outright. */
           sniper: boolean;
+          /** Thrown by the golden disc's holder. */
+          gold: boolean;
           at: Vec3Tuple;
           scores: Scores;
       }
@@ -157,6 +171,10 @@ export type ServerMessage =
     | { type: 'gold'; gold: GoldState; event: 'spawned' | 'taken' | 'dropped' }
     | { type: 'round'; round: RoundState; scores: Scores }
     | { type: 'caught'; id: string }
+    /** Your disc count changed. */
+    | { type: 'ammo'; ammo: number }
+    /** Discs lying around changed (`added`: a fresh one appeared, e.g. at the PE office). */
+    | { type: 'discs'; discs: GroundDisc[]; added?: { id: number; office: boolean } }
     | { type: 'pong'; c: number };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
@@ -217,6 +235,8 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
             return value as ClientMessage;
         case 'ping':
             return isNumber(value.c) ? (value as ClientMessage) : null;
+        case 'landed':
+            return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':
             return isPose(value.pose) && (value.ct === undefined || isNumber(value.ct))
                 ? (value as ClientMessage)

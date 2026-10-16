@@ -16,7 +16,8 @@ import { Room } from './room.ts';
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
 const ROOM_NAME = 'campus-v2';
 
-type Env = { WORLD: DurableObjectNamespace<World>; ALLOWED_ORIGINS: string };
+/** START_AMMO: local test rooms only (npm run server:dev) — lets browser tests throw repeatedly. */
+type Env = { WORLD: DurableObjectNamespace<World>; ALLOWED_ORIGINS: string; START_AMMO?: string };
 
 const originAllowed = (origin: string | null, allowed: string) => {
     if (!origin) return false;
@@ -108,6 +109,7 @@ export class World extends DurableObject<Env> {
             SPAWN_POINTS.length,
             this.accounts
         );
+        if (env.START_AMMO) this.room.startAmmo = Number(env.START_AMMO) || this.room.startAmmo;
     }
 
     async fetch(request: Request): Promise<Response> {

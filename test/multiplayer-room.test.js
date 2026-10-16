@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Room } from '../server/room.ts';
+import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
+    AMMO,
     cleanName,
     HEAL_SECONDS,
     MAX_HP,
@@ -26,6 +28,7 @@ const harness = () => {
         },
         24
     );
+    room.startAmmo = 9;
     const join = (id, name, now = 0) => {
         inbox.set(id, []);
         room.connect(id);
@@ -212,6 +215,7 @@ test('a sniper disc to the head eliminates outright; a slow throw cannot claim t
         },
         24
     );
+    room.startAmmo = 9;
     for (const id of ['a', 'b']) {
         inbox.set(id, []);
         room.connect(id);
@@ -250,6 +254,7 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
         null,
         () => 0 // golden disc at the first spawn point
     );
+    room.startAmmo = 9;
     for (const id of ['a', 'b']) {
         inbox.set(id, []);
         room.connect(id);
@@ -313,4 +318,68 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
     // Latency probe is echoed.
     room.message('a', { type: 'ping', c: 42 }, 1);
     assert.deepEqual(inbox.get('a').at(-1), { type: 'pong', c: 42 });
+});
+
+test('discs are ammunition: throws spend them, landed discs are picked up, the PE office hands out more', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24,
+        null,
+        () => 0.5
+    );
+    inbox.set('a', []);
+    room.connect('a');
+    room.message('a', { type: 'hello', version: PROTOCOL_VERSION, name: 'A' }, 0);
+    assert.equal(inbox.get('a')[0].ammo, AMMO.start);
+    const pose = (x, at) => room.message('a', { type: 'pose', pose: { p: [x, 0.92, 0], yaw: 0, pitch: 0 } }, at);
+    pose(0, 100);
+    const thrown = () => [...room.players.get('a').throws.keys()];
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [10, 0, 0], tilt: 0 } }, 1000);
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [10, 0, 0], tilt: 0 } }, 2000);
+    assert.deepEqual(thrown(), [1], 'no disc left for the second throw');
+    assert.deepEqual(
+        inbox
+            .get('a')
+            .filter((m) => m.type === 'ammo')
+            .map((m) => m.ammo),
+        [0]
+    );
+    // It lands 12 m away and lies there; walking over picks it up again.
+    room.message('a', { type: 'landed', throwId: 1, at: [12, 0.05, 0] }, 3000);
+    assert.equal(room.discs.length, 1);
+    pose(6, 3500);
+    assert.equal(room.discs.length, 1, 'too far');
+    pose(11.5, 4000);
+    assert.equal(room.discs.length, 0);
+    assert.equal(
+        inbox
+            .get('a')
+            .filter((m) => m.type === 'ammo')
+            .at(-1).ammo,
+        1
+    );
+    // An implausible landing far beyond the throw is ignored.
+    room.message('a', { type: 'throw', throw: { id: 3, o: [11.5, 1.5, 0], v: [5, 0, 0], tilt: 0 } }, 5000);
+    room.message('a', { type: 'landed', throwId: 3, at: [70, 0.05, 60] }, 6000);
+    assert.equal(room.discs.length, 0);
+    // The PE office puts out a disc every minute.
+    room.tick(5000 + AMMO.officeSeconds * 1000 + 1);
+    const office = inbox
+        .get('a')
+        .filter((m) => m.type === 'discs')
+        .at(-1);
+    assert.equal(office.added.office, true);
+    assert.ok(Math.hypot(office.discs[0].at[0] - PE_OFFICE.x, office.discs[0].at[2] - PE_OFFICE.z) < 1);
+    // The golden disc's holder throws without spending anything.
+    room.gold = { holder: 'a', at: [0, 0.92, 0] };
+    room.message('a', { type: 'throw', throw: { id: 4, o: [11.5, 1.5, 0], v: [5, 0, 0], tilt: 0 } }, 70_000);
+    assert.ok(thrown().includes(4));
+    assert.equal(room.players.get('a').ammo, 0);
 });

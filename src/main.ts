@@ -240,9 +240,17 @@ const boot = async () => {
         if (anchor) anchorPositions.set(room.id, [anchor.getPosition().x, anchor.getPosition().z]);
     }
     const anchors = createAnchorTriggers(rooms.rooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
-    const roomTracker = new RoomTracker(rooms.rooms, (location) => shell.setLocation(location), 0.35, 0.2, anchors, [
-        arena
-    ]);
+    const roomTracker = new RoomTracker(
+        rooms.rooms,
+        (location) => {
+            shell.setLocation(location);
+            match.enteredRoom(location?.id ?? null);
+        },
+        0.35,
+        0.2,
+        anchors,
+        [arena]
+    );
     shell.setLocation(undefined);
     let recoveries = 0;
     // Stuck detection: movement keys held with no progress (or sunk into the floor) offers a one-key escape.

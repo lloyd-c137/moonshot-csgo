@@ -103,13 +103,22 @@ export const createEffects = (app: AppBase) => {
             emit(at, [1, 1, 1], [0, 0, 0], 0.22, 0.12);
             if (kind !== 'hit') emit(at, colour, [0, 0, 0], 0.2, kind === 'out' ? 0.55 : 0.35, true);
         },
+        /** Ends every live particle at once. */
+        clear() {
+            for (const p of particles) {
+                p.entity.enabled = false;
+                free.push(p);
+            }
+            particles.length = 0;
+        },
         update(deltaTime: number) {
-            for (const p of [...particles]) {
+            for (let index = particles.length - 1; index >= 0; index--) {
+                const p = particles[index];
                 p.age += deltaTime;
                 const t = p.age / p.life;
                 if (t >= 1) {
                     p.entity.enabled = false;
-                    particles.splice(particles.indexOf(p), 1);
+                    particles.splice(index, 1);
                     free.push(p);
                     continue;
                 }

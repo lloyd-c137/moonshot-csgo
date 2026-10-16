@@ -6,7 +6,7 @@
 import type { PlayerPose } from './protocol';
 
 /** How far behind the estimated server clock remote players are drawn (ms): one pose + one snapshot interval + jitter. */
-export const RENDER_DELAY = 130;
+export const RENDER_DELAY = 150;
 /** Longest extrapolation past the newest pose before holding still (ms). */
 const MAX_EXTRAPOLATION = 120;
 

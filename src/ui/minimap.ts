@@ -99,9 +99,30 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         arrow(g, px * scale * ratio, pz * scale * ratio, angle, 11 * ratio);
     };
 
+    const last = { x: NaN, z: NaN, angle: NaN, ready: false, fullOpen: false, width: 0, height: 0 };
     return {
         draw: (x: number, z: number, forwardX: number, forwardZ: number, fullOpen: boolean) => {
             const angle = Math.atan2(forwardZ, forwardX);
+            // Redraw only when something visible changed (moved ≥ 2 cm, turned ≥ 0.4°, map opened, image loaded):
+            // standing still or holding a direction no longer repaints both canvases every frame.
+            const changed =
+                ready !== last.ready ||
+                fullOpen !== last.fullOpen ||
+                Math.abs(x - last.x) > 0.02 ||
+                Math.abs(z - last.z) > 0.02 ||
+                Math.abs(angle - last.angle) > 0.007 ||
+                window.innerWidth !== last.width ||
+                window.innerHeight !== last.height;
+            if (!changed) return;
+            Object.assign(last, {
+                x,
+                z,
+                angle,
+                ready,
+                fullOpen,
+                width: window.innerWidth,
+                height: window.innerHeight
+            });
             drawDock(x, z, angle);
             if (fullOpen) drawFull(x, z, angle);
         }

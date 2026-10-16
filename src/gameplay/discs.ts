@@ -178,7 +178,9 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             onBounce?: (at: V3, speed: number) => void
         ) {
             bounceHandler = onBounce ?? null;
-            for (const disc of [...discs]) {
+            // Backwards, so removing a disc does not skip the next one (and no per-frame array copy).
+            for (let index = discs.length - 1; index >= 0; index--) {
+                const disc = discs[index];
                 disc.age += deltaTime;
                 const body = disc.entity.rigidbody!;
                 const v = body.linearVelocity;

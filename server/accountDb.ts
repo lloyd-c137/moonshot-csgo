@@ -21,6 +21,18 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
         'CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, key TEXT NOT NULL, expires INTEGER NOT NULL)'
     );
     sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    // One-time owner-requested win-rate restart. The caller wraps initialization in transactionSync.
+    // Keep the old counters for recovery; never rerun this on a later Worker restart/deployment.
+    const resetKey = 'winrate-reset-100-v1';
+    if (!sql.exec('SELECT value FROM meta WHERE key = ?', resetKey).toArray().length) {
+        const previous = sql.exec('SELECT key, wins, rounds FROM users').toArray();
+        sql.exec('UPDATE users SET wins = 0, rounds = 0');
+        sql.exec(
+            'INSERT INTO meta (key, value) VALUES (?, ?)',
+            resetKey,
+            JSON.stringify({ initialWinRate: 100, previous })
+        );
+    }
     const one = <T>(cursor: SqlStorageCursor<Record<string, SqlStorageValue>>) => {
         const rows = cursor.toArray();
         return (rows[0] as T | undefined) ?? null;
@@ -68,7 +80,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
         top: (limit) =>
             sql
                 .exec(
-                    'SELECT * FROM users ORDER BY kills DESC, (1.0 * wins / MAX(rounds, 1)) DESC, key ASC LIMIT ?',
+                    'SELECT * FROM users ORDER BY kills DESC, (CASE WHEN rounds = 0 THEN 1.0 ELSE 1.0 * wins / rounds END) DESC, key ASC LIMIT ?',
                     limit
                 )
                 .toArray() as unknown as UserRow[]

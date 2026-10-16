@@ -76,7 +76,7 @@ const MARKUP = `
         <section class="tab-panel" data-panel="board" hidden>
           <h2 class="panel-title">全服累计排行</h2>
           <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜率</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
-          <p class="fine-print">胜率 = 胜场 ÷ 已结算参赛局数；从本次更新开始记录，无记录显示 —。中途离开仍计入已结算局，纯观战与中止局不计。</p>
+          <p class="fine-print">胜率初始为 100%；首局结算后按实际胜场 ÷ 参赛局数更新。中途离开仍计入已结算局，纯观战与中止局不计。</p>
         </section>
         <section class="tab-panel" data-panel="help" hidden>
           <h2 class="panel-title">操作说明</h2>

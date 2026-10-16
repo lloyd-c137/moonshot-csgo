@@ -76,7 +76,7 @@ export class World extends DurableObject<Env> {
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
-        this.accounts = new Accounts(sqlAccountDb(ctx.storage.sql));
+        this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(ctx.storage.sql)));
         const send = (socket: WebSocket | undefined, message: ServerMessage) => {
             try {
                 socket?.send(JSON.stringify(message));

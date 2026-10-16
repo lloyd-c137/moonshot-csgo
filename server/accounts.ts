@@ -248,7 +248,7 @@ export class MemoryAccountDb implements AccountDb {
             .sort(
                 (a, b) =>
                     b.kills - a.kills ||
-                    b.wins / (b.rounds || 1) - a.wins / (a.rounds || 1) ||
+                    (b.rounds === 0 ? 1 : b.wins / b.rounds) - (a.rounds === 0 ? 1 : a.wins / a.rounds) ||
                     a.key.localeCompare(b.key)
             )
             .slice(0, limit);

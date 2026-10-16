@@ -1,11 +1,11 @@
-/** Older servers / unrecorded history have no denominator: do not imply a measured 0% win rate. */
+/** Owner-requested initial 100%; after the first completed round use the actual win ratio. */
 export const formatWinRate = ({ wins, rounds }: { wins?: number; rounds?: number }): string =>
     typeof wins === 'number' &&
     typeof rounds === 'number' &&
     Number.isFinite(wins) &&
     Number.isFinite(rounds) &&
-    rounds > 0 &&
+    rounds >= 0 &&
     wins >= 0 &&
     wins <= rounds
-        ? `${((wins / rounds) * 100).toFixed(1)}%`
+        ? `${(rounds === 0 ? 100 : (wins / rounds) * 100).toFixed(1)}%`
         : '—';

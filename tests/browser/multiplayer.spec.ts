@@ -56,7 +56,7 @@ test('lifetime board shows eliminations and measured win rates, including no rec
     await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率']);
     await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '50.0%']);
     await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '0.0%']);
-    await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '—']);
+    await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '100.0%']);
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 

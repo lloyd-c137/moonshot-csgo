@@ -1,6 +1,6 @@
 /*
- * Moonshot Open World UI — wayfinding-signage language.
- * Ink plates, plan-paper type, one signal yellow for "you are here" and new discoveries.
+ * Moonshot Frisbee Games UI — wayfinding-signage language.
+ * Ink plates, plan-paper type, one signal yellow for "you are here".
  */
 :root {
     --ink: #1b2a3a;
@@ -878,22 +878,6 @@ input {
     opacity: 0.7;
 }
 
-.location .new-tag {
-    display: none;
-    margin-left: 6px;
-    padding: 0 6px;
-    border-radius: 3px;
-    background: var(--signal);
-    color: var(--ink);
-    font-size: 11px;
-    font-weight: 800;
-    text-shadow: none;
-}
-
-.location[data-new='true'] .new-tag {
-    display: inline-block;
-}
-
 .crosshair {
     position: absolute;
     top: 50%;
@@ -959,7 +943,7 @@ input {
     animation: toast-in 0.25s ease-out;
 }
 
-.toast[data-tone='discovery'] {
+.toast[data-tone='notice'] {
     color: var(--paper);
     box-shadow: inset 0 -2px 0 rgb(255 194 26 / 0.7);
 }
@@ -1005,39 +989,6 @@ input {
 
 .pause-actions .primary {
     width: 100%;
-}
-
-.progress {
-    display: grid;
-    gap: 6px;
-}
-
-.progress-bar {
-    height: 6px;
-    border-radius: 3px;
-    background: var(--ink-raised);
-    overflow: hidden;
-}
-
-.progress-bar span {
-    display: block;
-    height: 100%;
-    background: var(--signal);
-}
-
-.recent {
-    display: grid;
-    gap: 4px;
-    margin: 0;
-    padding: 0;
-    color: var(--line);
-    font-size: var(--step-0);
-    list-style: none;
-}
-
-.recent b {
-    color: var(--paper);
-    font-variant-numeric: tabular-nums;
 }
 
 fieldset {

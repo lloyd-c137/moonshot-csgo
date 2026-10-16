@@ -33,7 +33,7 @@ const MARKUP = `
     <div class="title-shade" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
     <header class="title-top">
-      <div class="brand"><span class="brand-mark">FF-01</span><b>MOONSHOT</b><span>OPEN WORLD</span></div>
+      <div class="brand"><span class="brand-mark">FF-01</span><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
       <nav class="title-tabs" role="tablist" aria-label="菜单">
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
@@ -45,7 +45,7 @@ const MARKUP = `
       <div class="title-left">
         <section class="tab-panel" data-panel="play">
           <p class="mode-tag"><span>模式</span>飞盘大乱斗 · 全服同图</p>
-          <h1 id="title-heading">MOONSHOT<br />OPEN WORLD</h1>
+          <h1 id="title-heading">MOONSHOT<br />FRISBEE GAMES</h1>
           <dl class="match-facts">
             <div><dt>地图</dt><dd>FF-01 校园一层</dd></div>
             <div><dt>规则</dt><dd>两次命中淘汰</dd></div>
@@ -164,7 +164,7 @@ const MARKUP = `
     <div class="update-card">
       <span class="update-badge">新版本</span>
       <h2 id="update-title">游戏已更新</h2>
-      <p id="update-detail">刷新页面即可使用最新版本。你的探索进度保存在本机，不会丢失。</p>
+      <p id="update-detail">刷新页面即可使用最新版本。你的设置和登录状态都保存在本机，不会丢失。</p>
       <div class="update-actions">
         <button class="primary" id="update-reload" type="button">立即刷新</button>
         <button class="secondary" id="update-later" type="button">稍后</button>
@@ -176,13 +176,8 @@ const MARKUP = `
     <div class="pause-column">
       <h2 id="pause-heading">已暂停</h2>
       <div class="pause-actions">
-        <button class="primary" id="resume-button" type="button">继续探索</button>
+        <button class="primary" id="resume-button" type="button">继续游戏</button>
         <button class="secondary" id="recover-button" type="button">脱离卡死 · 回到南入口</button>
-      </div>
-      <div class="progress">
-        <span id="progress-label"></span>
-        <div class="progress-bar" aria-hidden="true"><span id="progress-fill"></span></div>
-        <ul class="recent" id="recent"></ul>
       </div>
       <fieldset>
         <legend>设置</legend>
@@ -208,7 +203,7 @@ const describe = (location: CampusRoom | undefined) => {
     };
 };
 
-export const createUi = (locations: CampusRoom[]) => {
+export const createUi = () => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
     const root = $('#app-ui');
@@ -223,10 +218,8 @@ export const createUi = (locations: CampusRoom[]) => {
     const enterButton = $<HTMLButtonElement>('#enter-button');
     const toast = $<HTMLParagraphElement>('#toast');
     const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'));
-    const byId = new Map(locations.map((location) => [location.id, location]));
     let toastTimer = 0;
     let broadcastTimer = 0;
-    let discoveredIds: readonly string[] = [];
 
     const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
 
@@ -306,31 +299,12 @@ export const createUi = (locations: CampusRoom[]) => {
         window.setTimeout(() => (item.dataset.old = 'true'), 9000);
     };
 
-    const showToast = (message: string, tone: 'info' | 'discovery' = 'info', duration = 3600) => {
+    const showToast = (message: string, tone: 'info' | 'notice' = 'info', duration = 3600) => {
         toast.textContent = message;
         toast.dataset.tone = tone;
         toast.hidden = false;
         window.clearTimeout(toastTimer);
         toastTimer = window.setTimeout(() => (toast.hidden = true), duration);
-    };
-
-    const renderProgress = (total: number) => {
-        const count = discoveredIds.length;
-        $('#progress-label').textContent = `已发现 ${count} / ${total} 处地点`;
-        $('#progress-fill').style.width = `${(count / Math.max(1, total)) * 100}%`;
-        const recent = $('#recent');
-        recent.replaceChildren(
-            ...discoveredIds
-                .slice(-5)
-                .reverse()
-                .map((id) => {
-                    const item = document.createElement('li');
-                    const code = document.createElement('b');
-                    code.textContent = id;
-                    item.append(code, ` ${byId.get(id)?.name ?? ''}`);
-                    return item;
-                })
-        );
     };
 
     const bindSlider = (
@@ -409,29 +383,18 @@ export const createUi = (locations: CampusRoom[]) => {
             reload.onclick = () => window.location.reload();
             setScreen('error');
         },
-        setLocation: (location: CampusRoom | undefined, isNew: boolean) => {
+        setLocation: (location: CampusRoom | undefined) => {
             const plate = $('#location');
             const info = describe(location);
             $('#location-code').textContent = info.code;
             $('#location-name').textContent = info.name;
             const kind = $('#location-kind');
             kind.textContent = info.kind;
-            const tag = document.createElement('span');
-            tag.className = 'new-tag';
-            tag.textContent = '新发现';
-            $('#location-code').append(tag);
-            plate.dataset.new = String(isNew);
             plate.dataset.unmapped = String(info.unmapped);
             plate.dataset.corridor = String(!location);
             if (info.colour) plate.style.setProperty('--kind-colour', info.colour);
             else plate.style.removeProperty('--kind-colour');
         },
-        setDiscovered: (ids: readonly string[], total: number) => {
-            discoveredIds = ids;
-            renderProgress(total);
-        },
-        discovered: (location: CampusRoom, count: number, total: number) =>
-            showToast(`发现新地点：${location.name}（${location.id}），已发现 ${count} / ${total}`, 'discovery'),
         notify: (message: string) => showToast(message),
         toggleMap: () => {
             if (root.dataset.screen !== 'play') return;
@@ -559,7 +522,7 @@ export const createUi = (locations: CampusRoom[]) => {
             };
             root.dataset.update = 'available';
             dialog.hidden = false;
-            if (root.dataset.screen === 'play') showToast('游戏有新版本：按 Esc 后刷新即可更新', 'discovery', 8000);
+            if (root.dataset.screen === 'play') showToast('游戏有新版本：按 Esc 后刷新即可更新', 'notice', 8000);
         },
         /** Shows or hides the escape offer when the player seems stuck. */
         stuck: (show: boolean, onEscape?: () => void) => {

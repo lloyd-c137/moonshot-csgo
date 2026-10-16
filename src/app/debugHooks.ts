@@ -15,7 +15,6 @@ export type DebugHooks = {
     raycast: (from: number[], to: number[]) => string | null;
     spawn: number[];
     roomId: () => string | null;
-    discovered: () => string[];
     /** Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed. */
     match: MatchDebug;
     setRendering: (enabled: boolean) => void;

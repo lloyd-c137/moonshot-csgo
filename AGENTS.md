@@ -1,4 +1,4 @@
-# AGENTS.md — Moonshot Open World
+# AGENTS.md — Moonshot Frisbee Games
 
 > Binding engineering instructions for coding agents working in this repository. Read this file **before** modifying the project. Read [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the authoritative roadmap.
 >

@@ -10,9 +10,25 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab')).toBeVisible();
 
+    const cameraBeforeHit = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
     await page.locator('[data-scenario="body"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(1);
     await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/2）');
+    await expect
+        .poll(async () => {
+            const current = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
+            return Math.hypot(...current.map((value, index) => value - cameraBeforeHit[index]));
+        })
+        .toBeGreaterThan(0.00005);
+    await expect
+        .poll(
+            async () => {
+                const current = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
+                return Math.hypot(...current.map((value, index) => value - cameraBeforeHit[index]));
+            },
+            { timeout: 2_000 }
+        )
+        .toBeLessThan(0.001);
 
     await page.locator('[data-scenario="head"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
@@ -57,7 +73,11 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailDensity)).toBe(1.4);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength)).toBe(0.6);
     await expect
-        .poll(() => page.locator('#app-ui').evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim()))
+        .poll(() =>
+            page
+                .locator('#app-ui')
+                .evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim())
+        )
         .toBe('1.5');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().simulatedRtt)).toBe(200);
     await expect(page.locator('[data-rtt-value]')).toHaveText('200 ms');
@@ -102,7 +122,11 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength))
         .toBe(originalTuning.trailLength);
     await expect
-        .poll(() => page.locator('#app-ui').evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim()))
+        .poll(() =>
+            page
+                .locator('#app-ui')
+                .evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim())
+        )
         .toBe('1');
 });
 

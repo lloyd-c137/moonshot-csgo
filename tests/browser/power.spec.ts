@@ -15,21 +15,27 @@ test('walk through the source power-room entrance, pull once, see blackout and g
             __powerDownCueStarts?: number;
             __blackoutThemeStarts?: number;
             __blackoutThemeLoops?: boolean;
+            __openingThemeStarts?: number;
+            __openingThemeLoops?: boolean;
             __blackoutThemeFades?: number[];
         };
         const originalStart = AudioBufferSourceNode.prototype.start;
         AudioBufferSourceNode.prototype.start = function (when?: number, offset?: number, duration?: number) {
             if (this.buffer && Math.abs(this.buffer.duration - 1.1755) < 0.0001)
                 target.__powerDownCueStarts = (target.__powerDownCueStarts ?? 0) + 1;
-            if (this.buffer && this.buffer.duration > 180) {
+            if (this.buffer && this.buffer.duration > 180 && this.buffer.duration < 300) {
                 target.__blackoutThemeStarts = (target.__blackoutThemeStarts ?? 0) + 1;
                 target.__blackoutThemeLoops = this.loop;
+            }
+            if (this.buffer && this.buffer.duration > 300) {
+                target.__openingThemeStarts = (target.__openingThemeStarts ?? 0) + 1;
+                target.__openingThemeLoops = this.loop;
             }
             return originalStart.call(this, when, offset, duration);
         };
         const originalRamp = AudioParam.prototype.linearRampToValueAtTime;
         AudioParam.prototype.linearRampToValueAtTime = function (value: number, endTime: number) {
-            if (value === 0 || Math.abs(value - 0.22) < 0.0001)
+            if (value === 0 || Math.abs(value - 0.2) < 0.0001 || Math.abs(value - 0.22) < 0.0001)
                 (target.__blackoutThemeFades ??= []).push(value);
             return originalRamp.call(this, value, endTime);
         };
@@ -37,13 +43,21 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     const errors = collectErrors(page);
     let buzzerLoaded = false;
     let themeLoaded = false;
+    let openingThemeLoaded = false;
     page.on('response', (response) => {
         const path = new URL(response.url()).pathname;
         if (path === '/assets/audio/buzzer.mp3') buzzerLoaded = response.ok();
         if (path === '/assets/audio/blackout-theme.mp3') themeLoaded = response.ok();
+        if (path === '/assets/audio/opening-theme.mp3') openingThemeLoaded = response.ok();
     });
     await loadSimulated(page);
     await enterAtSpawn(page);
+    await expect.poll(() => openingThemeLoaded).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __openingThemeStarts?: number }).__openingThemeStarts)).toBe(1);
+    expect(await page.evaluate(() => (window as Window & { __openingThemeLoops?: boolean }).__openingThemeLoops)).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __blackoutThemeFades?: number[] }).__blackoutThemeFades))
+        .toContain(0.2);
     await expect.poll(() => buzzerLoaded).toBe(true);
     // Probe the actual Ammo colliders along the full path, not only the offline raster.
     const obstructions = await page.evaluate((route) => {
@@ -87,6 +101,9 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     const power = await page.evaluate(() => window.__MOONSHOT__!.match.state().power);
     expect(power.dark).toBe(true);
     expect(power.phase).toBe('outbound');
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __blackoutThemeFades?: number[] }).__blackoutThemeFades))
+        .toContain(0);
     await expect.poll(() => page.evaluate(() => (window as Window & { __powerDownCueStarts?: number }).__powerDownCueStarts)).toBe(1);
     await expect.poll(() => themeLoaded).toBe(true);
     await expect.poll(() => page.evaluate(() => (window as Window & { __blackoutThemeStarts?: number }).__blackoutThemeStarts)).toBe(1);

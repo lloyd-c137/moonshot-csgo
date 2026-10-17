@@ -5,6 +5,7 @@
 
 import { BLACKOUT_THEME_AUDIO } from '../config/blackoutThemeAudio';
 import { COMBAT_AUDIO } from '../config/combatAudio';
+import { OPENING_THEME_AUDIO } from '../config/openingThemeAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
 import { AudioVoicePool } from './feedback/AudioVoicePool';
@@ -24,9 +25,6 @@ export const createSound = () => {
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
-    let blackoutMusicWanted = false;
-    let blackoutMusicLoad: Promise<AudioBuffer | null> | null = null;
-    let blackoutMusicVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
     const testClips = new Map<TestSoundCue, { buffer: AudioBuffer; gain: number; start: number; end: number }>();
     const testVersions = new Map<TestSoundCue, number>();
     const testVoices = new Map<TestSoundCue, { source: AudioBufferSourceNode; gain: GainNode }>();
@@ -47,54 +45,6 @@ export const createSound = () => {
             /* clip unavailable: the synthesised fallback plays instead */
             return null;
         }
-    };
-    const setBlackoutMusic = (active: boolean) => {
-        if (active === blackoutMusicWanted) return;
-        blackoutMusicWanted = active;
-        const audio = ensure();
-        if (!audio || !buses) return;
-        const now = audio.currentTime;
-        const fadeSeconds = BLACKOUT_THEME_AUDIO.fadeSeconds;
-        if (!active) {
-            const voice = blackoutMusicVoice;
-            if (!voice) return;
-            voice.gain.gain.cancelScheduledValues(now);
-            voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
-            voice.gain.gain.linearRampToValueAtTime(0, now + fadeSeconds);
-            voice.source.stop(now + fadeSeconds + 0.05);
-            blackoutMusicVoice = null;
-            return;
-        }
-        if (blackoutMusicVoice) {
-            const voice = blackoutMusicVoice;
-            voice.gain.gain.cancelScheduledValues(now);
-            voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
-            voice.gain.gain.linearRampToValueAtTime(BLACKOUT_THEME_AUDIO.gain, now + fadeSeconds);
-            return;
-        }
-        const buffer = clips.get('blackout-theme');
-        blackoutMusicLoad ??= buffer
-            ? Promise.resolve(buffer)
-            : loadClip(audio, 'blackout-theme', BLACKOUT_THEME_AUDIO.url);
-        void blackoutMusicLoad.then((decoded) => {
-            blackoutMusicLoad = null;
-            if (!decoded || !blackoutMusicWanted || ctx !== audio || !buses || blackoutMusicVoice) return;
-            const source = audio.createBufferSource();
-            const gain = audio.createGain();
-            source.buffer = decoded;
-            source.loop = true;
-            gain.gain.setValueAtTime(0, audio.currentTime);
-            source.connect(gain).connect(buses.environment);
-            const voice = { source, gain };
-            blackoutMusicVoice = voice;
-            source.onended = () => {
-                source.disconnect();
-                gain.disconnect();
-                if (blackoutMusicVoice === voice) blackoutMusicVoice = null;
-            };
-            source.start();
-            gain.gain.linearRampToValueAtTime(BLACKOUT_THEME_AUDIO.gain, audio.currentTime + fadeSeconds);
-        });
     };
     const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity, at?: V3) => {
         const buffer = clips.get(name);
@@ -151,6 +101,58 @@ export const createSound = () => {
         if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
         return ctx;
     };
+
+    const createLoopingMusic = (name: string, config: { url: string; gain: number; fadeSeconds: number }) => {
+        let wanted = false;
+        let loading: Promise<AudioBuffer | null> | null = null;
+        let voice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+        return (active: boolean) => {
+            if (active === wanted) return;
+            wanted = active;
+            const audio = ensure();
+            if (!audio || !buses) return;
+            const now = audio.currentTime;
+            if (!active) {
+                if (!voice) return;
+                voice.gain.gain.cancelScheduledValues(now);
+                voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+                voice.gain.gain.linearRampToValueAtTime(0, now + config.fadeSeconds);
+                voice.source.stop(now + config.fadeSeconds + 0.05);
+                voice = null;
+                return;
+            }
+            if (voice) {
+                voice.gain.gain.cancelScheduledValues(now);
+                voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+                voice.gain.gain.linearRampToValueAtTime(config.gain, now + config.fadeSeconds);
+                return;
+            }
+            loading ??= clips.get(name)
+                ? Promise.resolve(clips.get(name)!)
+                : loadClip(audio, name, config.url);
+            void loading.then((decoded) => {
+                loading = null;
+                if (!decoded || !wanted || ctx !== audio || !buses || voice) return;
+                const source = audio.createBufferSource();
+                const gain = audio.createGain();
+                source.buffer = decoded;
+                source.loop = true;
+                gain.gain.setValueAtTime(0, audio.currentTime);
+                source.connect(gain).connect(buses.environment);
+                const current = { source, gain };
+                voice = current;
+                source.onended = () => {
+                    source.disconnect();
+                    gain.disconnect();
+                    if (voice === current) voice = null;
+                };
+                source.start();
+                gain.gain.linearRampToValueAtTime(config.gain, audio.currentTime + config.fadeSeconds);
+            });
+        };
+    };
+    const setBlackoutMusic = createLoopingMusic('blackout-theme', BLACKOUT_THEME_AUDIO);
+    const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
 
     // Browsers only let audio start (or restart after the tab was hidden, the device changed or Safari
     // "interrupted" it) inside a user gesture. Resume on every gesture and when the page comes back, so sounds
@@ -316,6 +318,8 @@ export const createSound = () => {
         voiceCount: () => voices.count(),
         /** Loop the owner-selected theme only while campus lighting is in its blackout state. */
         blackoutMusic: setBlackoutMusic,
+        /** Loop the opening theme during active play, handing off to the blackout theme when lights go out. */
+        openingMusic: setOpeningMusic,
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;

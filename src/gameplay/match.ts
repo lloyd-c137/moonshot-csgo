@@ -1421,6 +1421,9 @@ export const createMatch = ({
                   : null
         );
         dark = nightActive || outage;
+        sound.openingMusic(
+            started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark
+        );
         sound.blackoutMusic(dark);
         if (nightActive && !wasNight) {
             if (!outage) sound.blackout();

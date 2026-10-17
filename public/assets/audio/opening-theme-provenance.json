@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-16",
+    "basis": "Owner confirmed public game-release authorization on 2026-10-16. Original creator/license was not independently identified."
+  },
+  "sourceFile": "Hans Zimmer - Drive Fast.mp3",
+  "runtimeFile": "opening-theme.mp3",
+  "durationSecondsEstimated": 377.856,
+  "sizeBytes": 15228597,
+  "sha256": "e60fbac2dbcec3c101b48804068f3c028a7c19574d1b4c4ea5f8ce3fb9855976",
+  "event": "active play from campus entry until campus lights go out; loops and fades over two seconds"
+}

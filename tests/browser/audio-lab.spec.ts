@@ -57,10 +57,11 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.locator('.audio-lab [data-action="range"]').click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
-    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.7, 0.92, 48));
+    // Use the committed derived-world arena center so the throw can be seen in an open area, away from the guard.
+    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.395, 0.92, -2.85));
     const tracerSamples = await page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples);
     // A low practice speed stays above the trail speed threshold but remains in flight for several frames.
-    expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-8.7, 0.9, 42.3, 6))).toBe(true);
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(0, 1.5, -2.85, 6))).toBe(true);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples))
         .toBeGreaterThan(tracerSamples + 3);

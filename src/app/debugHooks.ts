@@ -9,7 +9,12 @@ export type DebugHooks = {
     recover: () => void;
     collisionCount: number;
     barrierWalls: number;
-    dressing: { doors: number; furniture: number; lights: number };
+    dressing: {
+        doors: number;
+        furniture: number;
+        lights: number;
+        mirrors: { roomId: string; position: number[]; yaw: number; normal: number[] }[];
+    };
     teleport: (x: number, y: number, z: number) => void;
     recoveries: () => number;
     setLook: (pitch: number, yaw: number) => void;

@@ -60,8 +60,6 @@ const MARKUP = `
           <h1 id="title-heading">MOONSHOT<br />FRISBEE GAMES</h1>
           <dl class="match-facts">
             <div><dt>地图</dt><dd>FF-01 校园一层</dd></div>
-            <div><dt>规则</dt><dd>身体两次 · 爆头直接淘汰</dd></div>
-            <div><dt>复活</dt><dd>2.5 秒 · 1.5 秒保护</dd></div>
           </dl>
           <div class="operator" id="operator" data-mode="form">
             <form class="operator-auth" id="auth-form" novalidate>

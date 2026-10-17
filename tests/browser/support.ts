@@ -22,9 +22,22 @@ declare global {
             showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
             raycast: (from: number[], to: number[]) => string | null;
             setLook: (pitch: number, yaw: number) => void;
-            dressing: { doors: number; furniture: number; lights: number };
+            dressing: {
+                doors: number;
+                furniture: number;
+                lights: number;
+                mirrors: { roomId: string; position: number[]; yaw: number; normal: number[] }[];
+            };
             match: {
-                state: () => { players: { id: string; name: string }[] };
+                state: () => {
+                    players: { id: string; name: string }[];
+                    restroomMirror: {
+                        activeRoom: string | null;
+                        cameraEnabled: boolean;
+                        reflectionEnabled: boolean;
+                        headTextured: boolean;
+                    };
+                };
                 avatarHeadTextured: (id: string) => boolean;
             };
         };

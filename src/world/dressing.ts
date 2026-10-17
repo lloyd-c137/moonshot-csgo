@@ -2,7 +2,7 @@
 // fixtures. Everything here is GAMEPLAY_AUTHORED presentation built from the source meshes (read-only) and the
 // offline-derived world data; no source mesh is modified, only hidden or given a new material.
 import type { AppBase, Texture } from 'playcanvas';
-import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial, Vec2 } from 'playcanvas';
+import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, Layer, MeshInstance, StandardMaterial, Vec2 } from 'playcanvas';
 
 import { ARENA_WALL_HEIGHT, DERIVED_GRID } from '../config/presentation';
 import { worldTriangles } from '../physics/collisionWorld';
@@ -10,7 +10,11 @@ import { MeshBuilder } from '../render/meshBuilder';
 import { createTexture } from '../render/textures';
 
 import type { Doorway } from './doorways';
+import type { RestroomMirrorLayout } from './restroomMirrors';
+import { restroomMirrorLayouts } from './restroomMirrors';
 import type { CampusRoom } from './roomIndex';
+
+export type RestroomMirrorMount = RestroomMirrorLayout & { surface: Entity; material: StandardMaterial };
 
 export type Vec2Tuple = [number, number];
 export type DerivedWorld = {
@@ -174,6 +178,9 @@ export const buildDressing = (
     const device = app.graphicsDevice;
     const root = new Entity('GameplayAuthored_Dressing');
     campus.addChild(root);
+    const mirrorLayer = new Layer({ name: 'Restroom_Mirror_Surfaces' });
+    const worldLayer = app.scene.layers.getLayerByName('World');
+    app.scene.layers.insert(mirrorLayer, worldLayer ? app.scene.layers.getOpaqueIndex(worldLayer) + 1 : 0);
     const textures = Object.fromEntries(
         ['terrazzo', 'wood', 'tile', 'carpet', 'ceiling', 'court', 'laminate', 'epoxy'].map((name, index) => [
             name,
@@ -508,6 +515,66 @@ export const buildDressing = (
         makeMaterial('light-panel', { emissive: [1, 0.97, 0.9], emissiveIntensity: 5 })
     );
 
+    // GAMEPLAY_AUTHORED mirrors: one lightweight surface per restroom. The active in-world reflection camera
+    // supplies a render texture only to the nearest mirror the player is facing.
+    const mirrors: RestroomMirrorMount[] = restroomMirrorLayouts(rooms).map((mount) => {
+        const [x, y, z] = mount.position;
+        const halfWidth = mount.width / 2;
+        const normalOffset = 0.018;
+        const frontX = x + mount.normal[0] * normalOffset;
+        const frontZ = z + mount.normal[2] * normalOffset;
+        const frame = new MeshBuilder();
+        const tangent: [number, number, number] = [Math.cos(mount.yaw), 0, Math.sin(mount.yaw)];
+        for (const side of [-1, 1]) {
+            frame.box(
+                x + tangent[0] * side * (mount.width / 2 + 0.045),
+                y + mount.height / 2,
+                z + tangent[2] * side * (mount.width / 2 + 0.045),
+                0.06,
+                0.055,
+                mount.height + 0.12,
+                mount.yaw
+            );
+        }
+        frame.box(x, y - 0.03, z, mount.width + 0.12, 0.055, 0.06, mount.yaw);
+        frame.box(x, y + mount.height - 0.03, z, mount.width + 0.12, 0.055, 0.06, mount.yaw);
+        addMesh(
+            app,
+            root,
+            `Mirror_Frame_${mount.roomId}`,
+            frame,
+            makeMaterial(`mirror-frame-${mount.roomId}`, { colour: [0.14, 0.19, 0.21], gloss: 0.68 })
+        );
+        const mirror = new MeshBuilder();
+        const left: [number, number, number] = [
+            frontX - tangent[0] * halfWidth,
+            y + 0.06,
+            frontZ - tangent[2] * halfWidth
+        ];
+        const right: [number, number, number] = [
+            frontX + tangent[0] * halfWidth,
+            y + 0.06,
+            frontZ + tangent[2] * halfWidth
+        ];
+        mirror.quad(
+            [left, right, [right[0], y + mount.height - 0.06, right[2]], [left[0], y + mount.height - 0.06, left[2]]],
+            mount.normal,
+            // The quad's first edge is the bottom edge; reverse V for the render target's top-origin texture.
+            [
+                [0, 1],
+                [1, 1],
+                [1, 0],
+                [0, 0]
+            ]
+        );
+        const material = makeMaterial(`mirror-glass-${mount.roomId}`, { colour: [0.34, 0.43, 0.46], gloss: 0.98 });
+        material.metalness = 0.72;
+        material.update();
+        const surface = addMesh(app, root, `Mirror_Surface_${mount.roomId}`, mirror, material)!;
+        surface.render!.layers = [mirrorLayer.id];
+        return { ...mount, surface, material };
+    });
+
     // Static collision for solid furniture (tables, counters), one unrendered body.
     if (!colliders.empty) {
         const body = new Entity('GameplayAuthored_FurnitureColliders');
@@ -518,6 +585,8 @@ export const buildDressing = (
     return {
         doors: world.doors.length,
         furniture: world.furniture.length,
-        lights: world.lights.length
+        lights: world.lights.length,
+        mirrors,
+        mirrorLayer
     };
 };

@@ -229,7 +229,9 @@ const boot = async () => {
         url: serverUrl,
         auth,
         arenaCenter: derivedWorld.arena.center as [number, number],
-        characters
+        characters,
+        mirrors: dressing.mirrors,
+        mirrorLayer: dressing.mirrorLayer
     });
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {
@@ -532,7 +534,17 @@ const boot = async () => {
             recover: () => recoverPlayer(player),
             collisionCount: collisions.sourceBodies,
             barrierWalls: collisions.barrierWalls,
-            dressing,
+            dressing: {
+                doors: dressing.doors,
+                furniture: dressing.furniture,
+                lights: dressing.lights,
+                mirrors: dressing.mirrors.map(({ roomId, position, yaw, normal }) => ({
+                    roomId,
+                    position,
+                    yaw,
+                    normal
+                }))
+            },
             teleport: (x: number, y: number, z: number) => {
                 player.rigidbody!.teleport(x, y, z, 0, 0, 0);
                 clearVelocity();

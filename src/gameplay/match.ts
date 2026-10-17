@@ -1,6 +1,6 @@
 // The shared-world frisbee game: throwing input, the network session, other players, eliminations and respawns.
 // Works offline as frisbee practice when no server is configured or reachable.
-import type { AppBase, RigidBodyComponentSystem } from 'playcanvas';
+import type { AppBase, RigidBodyComponentSystem, Layer } from 'playcanvas';
 import { BLEND_NORMAL, Color, Entity, Mesh, MeshInstance, StandardMaterial, Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
@@ -30,6 +30,7 @@ import { setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
 import type { Ui } from '../ui/shell';
+import type { RestroomMirrorMount } from '../world/dressing';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
@@ -61,6 +62,7 @@ import {
 import { createMonitorView } from './monitorView';
 import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
+import { createRestroomMirrors } from './restroomMirrors';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
 import { createSound } from './sound';
 import { TEACHER } from './teacher';
@@ -77,15 +79,38 @@ type Options = {
     /** Middle of the 莲花球场 (X/Z): the final showdown is fought there. */
     arenaCenter: [number, number];
     characters: CharacterAssetLoader;
+    mirrors: RestroomMirrorMount[];
+    mirrorLayer: Layer;
 };
 
-export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaCenter, characters }: Options) => {
+export const createMatch = ({
+    app,
+    player,
+    camera,
+    canvas,
+    ui,
+    url,
+    auth,
+    arenaCenter,
+    characters,
+    mirrors,
+    mirrorLayer
+}: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
     const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
         auth.avatarUrl(id, version)
     );
     const roster = new Map<string, PlayerSummary>();
+    const restroomMirrors = createRestroomMirrors(
+        app,
+        camera,
+        mirrors,
+        mirrorLayer,
+        characters,
+        auth,
+        () => roster.get('local')?.colour ?? colourFor('local')
+    );
     let netState: NetState = 'offline';
     let alive = true;
     let deadUntil = 0;
@@ -567,6 +592,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             if (extra.account) {
                 auth.account = extra.account;
                 ui.account(extra.account);
+                restroomMirrors.setAvatar(extra.account.avatarId, extra.account.avatarVersion);
             }
             roundState = extra.round;
             ammo = extra.ammo;
@@ -578,6 +604,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 roster.set(each.id, each);
                 if (each.id !== me.id) avatars.add(each.id, each.name, each.colour, each.avatarId, each.avatarVersion);
             }
+            const ownSummary = players.find((each) => each.id === me.id);
+            if (ownSummary) restroomMirrors.setColour(ownSummary.colour);
             refreshCount();
             hp = me.hp;
             refreshBoard();
@@ -604,6 +632,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 profile.avatarVersion = avatarVersion;
             }
             avatars.setAvatar(playerId, avatarId, avatarVersion);
+            if (playerId === selfId()) restroomMirrors.setAvatar(avatarId, avatarVersion);
         },
         thrown: (from, record, ageMs) => {
             const thrower = roster.get(from);
@@ -787,6 +816,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         account: (account) => {
             auth.account = account;
             ui.account(account);
+            restroomMirrors.setAvatar(account.avatarId, account.avatarVersion);
         },
         gold: (gold, event) => {
             const previous = goldView.state?.holder ?? null;
@@ -1708,6 +1738,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
             poses = net.poses();
+            const localPose = pose();
+            const velocity = player.rigidbody?.linearVelocity;
+            restroomMirrors.update(
+                localPose,
+                camera.forward,
+                alive && !spectating && !executionView.hasActor(selfId()),
+                velocity ? Math.hypot(velocity.x, velocity.z) : 0
+            );
             if (audioLab) {
                 // Network state changes clear remote avatars, including on first entering offline practice.
                 // Keep the local target registered independently of that remote-player lifecycle.
@@ -1879,6 +1917,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 tracerSamples: effects.tracerSamples(),
                 practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
                 practiceExecution: labExecution ? { id: labExecution.id, endsAt: labExecution.endsAt } : null,
+                restroomMirrorRoom: restroomMirrors.activeRoom(),
+                restroomMirror: restroomMirrors.state(),
                 inspecting: inspectSince !== null,
                 aim,
                 gold: goldView.state,

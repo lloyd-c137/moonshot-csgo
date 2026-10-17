@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { restroomMirrorLayouts } from '../src/world/restroomMirrors.ts';
 import {
     createAnchorTriggers,
     findLocationAt,
@@ -21,6 +22,24 @@ test('imports all source room IDs and preserves the six label-only spaces', () =
         data.rooms.filter((room) => !room.hasRegion).map((room) => room.id),
         ['S407', 'TEA-ROOM-01', 'ENTRANCE-EAST', 'ENTRANCE-SOUTH', 'INNOVATION-01', 'ENTRANCE-WEST']
     );
+});
+
+test('authors one finite, inward-facing mirror mount for every polygonal restroom', () => {
+    const data = parseCampusRooms(asset);
+    const restrooms = data.rooms.filter((room) => room.kind === 'restroom' && room.hasRegion);
+    const mounts = restroomMirrorLayouts(data.rooms);
+    assert.equal(restrooms.length, 14);
+    assert.deepEqual(
+        mounts.map((mount) => mount.roomId),
+        restrooms.map((room) => room.id)
+    );
+    for (const mount of mounts) {
+        assert.ok(mount.width > 0.5 && mount.width <= 0.82, `${mount.roomId} has a usable width`);
+        assert.equal(mount.height, 1.78);
+        assert.ok(mount.position.every(Number.isFinite), `${mount.roomId} position is finite`);
+        assert.ok(Math.abs(Math.hypot(...mount.normal) - 1) < 1e-9, `${mount.roomId} has a unit facing normal`);
+        assert.equal(findRoomAt([mount.position[0], mount.position[2]], restrooms)?.id, mount.roomId);
+    }
 });
 
 test('contains concave, negative-coordinate and outer-boundary points; excludes polygon holes', () => {

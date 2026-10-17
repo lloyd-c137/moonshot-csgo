@@ -12,6 +12,7 @@ import type { ServerMessage } from '../src/net/protocol.ts';
 import { sqlAccountDb } from './accountDb.ts';
 import { Accounts } from './accounts.ts';
 import { AVATAR_IMAGE, webpDimensions } from './avatarImage.ts';
+import { originAllowed, requestOriginAllowed } from './originPolicy.ts';
 import { Room } from './room.ts';
 
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
@@ -26,21 +27,6 @@ type Env = {
     AVATARS?: R2Bucket;
 };
 
-const originAllowed = (origin: string | null, allowed: string) => {
-    if (!origin) return false;
-    let host: string;
-    try {
-        host = new URL(origin).hostname;
-    } catch {
-        return false;
-    }
-    return allowed.split(',').some((pattern) => {
-        const rule = pattern.trim();
-        if (rule.startsWith('*.')) return host.endsWith(rule.slice(1)) || host === rule.slice(2);
-        return host === rule;
-    });
-};
-
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url);
@@ -49,6 +35,7 @@ export default {
         const allowed = originAllowed(origin, env.ALLOWED_ORIGINS);
         const room = env.WORLD.get(env.WORLD.idFromName(ROOM_NAME));
         if (url.pathname.startsWith('/api/')) {
+            const requestAllowed = requestOriginAllowed(request, env.ALLOWED_ORIGINS);
             const cors: Record<string, string> = allowed
                 ? {
                       'access-control-allow-origin': origin!,
@@ -59,7 +46,7 @@ export default {
                   }
                 : {};
             if (request.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
-            if (!allowed) return new Response('Origin not allowed', { status: 403 });
+            if (!requestAllowed) return new Response('Origin not allowed', { status: 403 });
             const response = await room.fetch(request);
             const headers = new Headers(response.headers);
             for (const [key, value] of Object.entries(cors)) headers.set(key, value);

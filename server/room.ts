@@ -61,6 +61,8 @@ type Player = Omit<PlayerSummary, 'account'> & {
     spawnedAt: number;
     /** Registered username when signed in; lifetime stats are recorded under it. */
     accountName: string | null;
+    avatarId: string | null;
+    avatarVersion: string | null;
     chatTimes: number[];
     /** Discs in hand. */
     ammo: number;
@@ -244,6 +246,14 @@ export class Room {
         return [...this.players.values()].map((player) => summary(player));
     }
 
+    updateAvatar(name: string, avatarId: string | null, avatarVersion: string | null) {
+        const player = [...this.players.values()].find((entry) => entry.accountName === name);
+        if (!player) return;
+        player.avatarId = avatarId;
+        player.avatarVersion = avatarVersion;
+        this.out.all({ type: 'profileUpdated', playerId: player.id, avatarId, avatarVersion });
+    }
+
     private hello(id: string, version: number, rawName: string, token: string | undefined, now: number) {
         if (!this.pending.has(id)) return;
         this.pending.delete(id);
@@ -294,6 +304,8 @@ export class Room {
             hurtAt: 0,
             spawnedAt: now,
             accountName: account?.name ?? null,
+            avatarId: account?.avatarId ?? null,
+            avatarVersion: account?.avatarVersion ?? null,
             chatTimes: [],
             ammo: this.startAmmo,
             spectating: false,
@@ -845,7 +857,9 @@ const summary = ({
     hp,
     score,
     kills,
-    deaths
+    deaths,
+    avatarId,
+    avatarVersion
 }: Player): PlayerSummary => ({
     id,
     name,
@@ -856,5 +870,7 @@ const summary = ({
     hp,
     score,
     kills,
-    deaths
+    deaths,
+    avatarId,
+    avatarVersion
 });

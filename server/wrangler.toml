@@ -12,6 +12,10 @@ ALLOWED_ORIGINS = "moonshot-csgo.pages.dev,*.moonshot-csgo.pages.dev"
 name = "WORLD"
 class_name = "World"
 
+[[r2_buckets]]
+binding = "AVATARS"
+bucket_name = "moonshot-character-avatars"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["World"]

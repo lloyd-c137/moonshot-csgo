@@ -1,17 +1,33 @@
-import { ANIM_LAYER_ADDITIVE, Asset, AnimStateGraph, Entity } from 'playcanvas';
-import type { AppBase, ContainerResource, AnimTrack, StandardMaterial } from 'playcanvas';
+import {
+    ADDRESS_CLAMP_TO_EDGE,
+    ADDRESS_REPEAT,
+    ANIM_LAYER_ADDITIVE,
+    Asset,
+    AnimStateGraph,
+    Entity,
+    Texture
+} from 'playcanvas';
+import type { AppBase, ContainerResource, AnimTrack, GraphicsDevice, StandardMaterial } from 'playcanvas';
 
 import {
     createFrisbeeThrowTrack,
     FRISBEE_THROW_DURATION,
     FRISBEE_THROW_RELEASE_OFFSET,
     FRISBEE_THROW_REMAINING
-} from './frisbeeThrowTrack';
+} from './frisbeeThrowTrack.ts';
 
 export const CHARACTER_ASSET_URL = '/assets/characters/moonshot-humanoid.glb';
 export const CHARACTER_SOURCE_HEIGHT = 1.829;
 export const CHARACTER_VISUAL_HEIGHT = 2.1;
 export const CHARACTER_VISUAL_SCALE = CHARACTER_VISUAL_HEIGHT / CHARACTER_SOURCE_HEIGHT;
+
+export const characterMaterialColour = (
+    name: string,
+    colour: [number, number, number],
+    overrides: Partial<Record<'M_Main' | 'M_Joints' | 'M_Head', [number, number, number]>> = {}
+) =>
+    overrides[name as 'M_Main' | 'M_Joints' | 'M_Head'] ??
+    (name === 'M_Main' ? colour : name === 'M_Joints' ? [1, 1, 1] : null);
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
@@ -20,11 +36,18 @@ export class CharacterAssetLoader {
     private readonly resource: ContainerResource;
     private readonly tracks: Map<string, AnimTrack>;
     private readonly frisbeeThrowTrack: AnimTrack;
+    private readonly device: GraphicsDevice;
 
-    private constructor(resource: ContainerResource, tracks: Map<string, AnimTrack>, frisbeeThrowTrack: AnimTrack) {
+    private constructor(
+        resource: ContainerResource,
+        tracks: Map<string, AnimTrack>,
+        frisbeeThrowTrack: AnimTrack,
+        device: GraphicsDevice
+    ) {
         this.resource = resource;
         this.tracks = tracks;
         this.frisbeeThrowTrack = frisbeeThrowTrack;
+        this.device = device;
     }
 
     static load(app: AppBase) {
@@ -46,7 +69,7 @@ export class CharacterAssetLoader {
                     reject(new Error('Character container is missing required idle/walk/sprint clips'));
                     return;
                 }
-                resolve(new CharacterAssetLoader(resource, tracks, createFrisbeeThrowTrack()));
+                resolve(new CharacterAssetLoader(resource, tracks, createFrisbeeThrowTrack(), app.graphicsDevice));
             });
             app.assets.add(asset);
             app.assets.load(asset);
@@ -76,9 +99,7 @@ export class CharacterAssetLoader {
                 if (!material) {
                     material = source.clone();
                     material.name = `${source.name}-${options.name}`;
-                    const colour =
-                        options.materialColours?.[source.name as 'M_Main' | 'M_Joints' | 'M_Head'] ??
-                        (source.name === 'M_Main' ? options.colour : null);
+                    const colour = characterMaterialColour(source.name, options.colour, options.materialColours);
                     if (colour) {
                         material.diffuse.set(...colour);
                         material.update();
@@ -172,8 +193,10 @@ export class CharacterAssetLoader {
                 true
             );
         const tracks = this.tracks;
+        const device = this.device;
         let visualScale = CHARACTER_VISUAL_SCALE;
         let throwTimer = 0;
+        let headTexture: Texture | null = null;
         let disposed = false;
         return {
             root,
@@ -209,9 +232,34 @@ export class CharacterAssetLoader {
                 window.clearTimeout(throwTimer);
                 throwLayer?.blendToWeight(0, 0.05);
             },
+            setHeadImage(image: HTMLImageElement | HTMLCanvasElement | null) {
+                const material = materials.get('M_Head');
+                if (!material || disposed) return;
+                headTexture?.destroy();
+                headTexture = null;
+                material.diffuseMap = null;
+                if (image) {
+                    headTexture = new Texture(device, {
+                        name: `${options.name}-head-avatar`,
+                        width: image.width,
+                        height: image.height,
+                        addressU: ADDRESS_REPEAT,
+                        addressV: ADDRESS_CLAMP_TO_EDGE,
+                        mipmaps: true
+                    });
+                    headTexture.setSource(image);
+                    material.diffuse.set(1, 1, 1);
+                    material.diffuseMap = headTexture;
+                }
+                material.update();
+            },
+            hasHeadImage() {
+                return headTexture !== null;
+            },
             dispose() {
                 disposed = true;
                 window.clearTimeout(throwTimer);
+                headTexture?.destroy();
                 root.destroy();
                 for (const material of materials.values()) material.destroy();
             }

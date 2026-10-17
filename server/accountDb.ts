@@ -16,6 +16,9 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
     for (const column of ['wins', 'rounds', 'losses']) {
         if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
     }
+    for (const column of ['avatarId', 'avatarVersion']) {
+        if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
+    }
     sql.exec('CREATE INDEX IF NOT EXISTS users_kills ON users (kills DESC, score DESC)');
     sql.exec(
         'CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, key TEXT NOT NULL, expires INTEGER NOT NULL)'
@@ -90,6 +93,13 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
                 'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
                 key,
                 value
+            ),
+        setAvatar: (key, avatarId, avatarVersion) =>
+            void sql.exec(
+                'UPDATE users SET avatarId = ?, avatarVersion = ? WHERE key = ?',
+                avatarId,
+                avatarVersion,
+                key
             ),
         top: (limit) =>
             sql

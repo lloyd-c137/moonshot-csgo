@@ -94,6 +94,32 @@ export const createAuth = (base: string | null) => {
                 }).catch(() => undefined);
             }
         },
+        avatarUrl(id: string, version: string) {
+            return base ? `${base}/api/avatars/${encodeURIComponent(id)}?v=${encodeURIComponent(version)}` : null;
+        },
+        async uploadAvatar(image: Blob) {
+            if (!base || !token) throw new Error('请先登录后再上传头像');
+            const response = await fetch(`${base}/api/avatar`, {
+                method: 'POST',
+                headers: { authorization: `Bearer ${token}`, 'content-type': 'image/webp' },
+                body: image
+            });
+            const body = (await response.json().catch(() => ({}))) as { account?: AccountStats; error?: string };
+            if (!response.ok || !body.account) throw new Error(body.error ?? `头像上传失败（${response.status}）`);
+            account = body.account;
+            return account;
+        },
+        async deleteAvatar() {
+            if (!base || !token) throw new Error('请先登录后再修改头像');
+            const response = await fetch(`${base}/api/avatar`, {
+                method: 'DELETE',
+                headers: { authorization: `Bearer ${token}` }
+            });
+            const body = (await response.json().catch(() => ({}))) as { account?: AccountStats; error?: string };
+            if (!response.ok || !body.account) throw new Error(body.error ?? `恢复默认头像失败（${response.status}）`);
+            account = body.account;
+            return account;
+        },
         board: () => call<Board>('/api/leaderboard')
     };
 };

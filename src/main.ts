@@ -213,11 +213,13 @@ const boot = async () => {
     const { sun, setNight } = atmosphere;
     let night = false;
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
-    const serverUrl = audioLab && !new URLSearchParams(window.location.search).has('server')
-        ? null
-        : multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
+    const serverUrl =
+        audioLab && !new URLSearchParams(window.location.search).has('server')
+            ? null
+            : multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
     const auth = createAuth(apiBase(serverUrl));
-    shell.accountsAvailable(auth.available);
+    const audioLabEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
+    shell.accountsAvailable(auth.available, audioLabEnabled);
     const match = createMatch({
         app,
         player,
@@ -493,6 +495,10 @@ const boot = async () => {
                 await auth.logout();
                 shell.account(null);
             },
+            uploadAvatar: (image) => auth.uploadAvatar(image),
+            deleteAvatar: () => auth.deleteAvatar(),
+            avatarUrl: (id, version) => auth.avatarUrl(id, version),
+            setLocalTestAvatar: (image) => match.setTrainingDummyAvatar(image),
             loadBoard: async () => {
                 const board = await auth.board();
                 shell.king(board.king);

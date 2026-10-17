@@ -61,6 +61,7 @@ type Handlers = {
     chat: (line: ChatLine) => void;
     king: (king: King, isNew: boolean) => void;
     account: (account: AccountStats) => void;
+    profileUpdated: (playerId: string, avatarId: string | null, avatarVersion: string | null) => void;
     healed: (id: string, hp: number) => void;
     respawn: (id: string, spawn: number) => void;
     gold: (gold: GoldState, event: 'spawned' | 'taken' | 'dropped') => void;
@@ -193,6 +194,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'account':
                 handlers.account(message.account);
+                break;
+            case 'profileUpdated':
+                handlers.profileUpdated(message.playerId, message.avatarId, message.avatarVersion);
                 break;
             case 'healed':
                 handlers.healed(message.id, message.hp);

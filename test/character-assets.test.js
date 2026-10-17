@@ -3,12 +3,16 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { Entity } from 'playcanvas';
+
+import { characterMaterialColour } from '../src/characters/CharacterAssetLoader.ts';
 import {
     createFrisbeeThrowTrack,
     FRISBEE_THROW_DURATION,
     FRISBEE_THROW_RELEASE_OFFSET,
     FRISBEE_THROW_REMAINING
 } from '../src/characters/frisbeeThrowTrack.ts';
+import { attachHeldItemSocket, RIGHT_HAND_SOCKET_POSITION } from '../src/characters/heldItemSocket.ts';
 
 const root = new URL('../', import.meta.url);
 const sourcePath = new URL('assets/source/characters/UAL1_Standard.fbx', root);
@@ -151,6 +155,21 @@ test('right-hand grip animation covers every finger used by held props', () => {
     for (const name of ['thumb_01_r', 'index_01_r', 'middle_01_r', 'ring_01_r', 'pinky_01_r']) {
         assert.ok(nodes.has(name), `grip pose animates ${name}`);
     }
+});
+
+test('all mannequin joint regions default to white unless a role explicitly overrides them', () => {
+    assert.deepEqual(characterMaterialColour('M_Joints', [0.1, 0.4, 0.8]), [1, 1, 1]);
+    assert.deepEqual(characterMaterialColour('M_Joints', [0, 0, 0], { M_Joints: [1, 1, 1] }), [1, 1, 1]);
+    assert.deepEqual(characterMaterialColour('M_Main', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);
+});
+
+test('held props share one palm socket positioned at the fingers rather than through the fist', () => {
+    const character = new Entity('character');
+    const hand = new Entity('hand_r');
+    character.addChild(hand);
+    const socket = attachHeldItemSocket(character, 'held-item-socket');
+    assert.equal(socket.parent, hand);
+    assert.deepEqual(socket.getLocalPosition().toArray(), [...RIGHT_HAND_SOCKET_POSITION]);
 });
 
 test('the authored frisbee release track is an upper-body, non-root-motion action', () => {

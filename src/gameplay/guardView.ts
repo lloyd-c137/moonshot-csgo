@@ -6,6 +6,7 @@ import { BLEND_ADDITIVE, Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, Stand
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { CHARACTER_VISUAL_HEIGHT } from '../characters/CharacterAssetLoader';
+import { attachHeldItemSocket } from '../characters/heldItemSocket';
 import { cylinder, place } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
@@ -27,7 +28,7 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
     const character = characters.create({
         name: 'guard',
         colour: [0, 0, 0],
-        materialColours: { M_Main: [0, 0, 0], M_Joints: [0, 0, 0], M_Head: [0, 0, 0] },
+        materialColours: { M_Main: [0, 0, 0], M_Joints: [1, 1, 1], M_Head: [0, 0, 0] },
         gripRightHand: true
     });
     const root = new Entity('guard-world-root');
@@ -35,19 +36,15 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
     const lens = new StandardMaterial();
     lens.emissive = new Color(1, 0.96, 0.8);
     lens.update();
-    const hand = root.findByName('hand_r') as EntityType | null;
+    const hand = attachHeldItemSocket(root, 'guard-right-hand-socket');
     const flashlight = new Entity('guard-flashlight');
     flashlight.addComponent('render', {
         type: 'cylinder',
         material: character.materials.get('M_Joints'),
         castShadows: false
     });
-    if (hand) {
-        hand.addChild(flashlight);
-        flashlight.setLocalPosition(0, 0, -0.12);
-        flashlight.setLocalScale(0.075, 0.28, 0.075);
-        flashlight.setLocalEulerAngles(90, 0, 0);
-    }
+    hand.addChild(flashlight);
+    flashlight.setLocalScale(0.075, 0.15, 0.075);
     // The torch: a spot light and a soft visible beam (off until the blackout), parented to the hand bone.
     const torch = new Entity('guard-torch');
     torch.addComponent('light', {
@@ -59,10 +56,10 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
         outerConeAngle: GUARD.halfAngle,
         castShadows: false
     });
-    torch.setLocalPosition(0, 0, -0.26);
+    torch.setLocalPosition(0, 0.18, -0.26);
     // Spot lights shine down their -Y axis: tip it forward (toward -Z) and a little down.
     torch.setLocalEulerAngles(-84, 0, 0);
-    root.addChild(torch);
+    hand.addChild(torch);
     const beamMaterial = new StandardMaterial();
     beamMaterial.useLighting = false;
     beamMaterial.diffuse = new Color(0, 0, 0);
@@ -84,10 +81,9 @@ export const createGuard = (app: AppBase, camera: EntityType, layer: HTMLElement
             )
         ]
     });
-    beam.setLocalPosition(0, 0, -0.26);
+    beam.setLocalPosition(0, 0.18, -0.26);
     beam.setLocalEulerAngles(-84, 0, 0);
-    (hand ?? root).addChild(torch);
-    (hand ?? root).addChild(beam);
+    hand.addChild(beam);
     app.root.addChild(root);
 
     const tag = document.createElement('span');

@@ -34,7 +34,9 @@ test('SQLite migration preserves accounts; round stats and loss ordering survive
                 created: 1,
                 wins: 0,
                 rounds: 0,
-                losses: 0
+                losses: 0,
+                avatarId: null,
+                avatarVersion: null
             }
         );
         new Accounts(db).record('Old', { wins: 1, rounds: 2 });

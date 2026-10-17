@@ -17,6 +17,8 @@ export type UserRow = {
     rounds: number;
     losses: number;
     created: number;
+    avatarId?: string | null;
+    avatarVersion?: string | null;
 };
 
 export type AccountDb = {
@@ -39,6 +41,7 @@ export type AccountDb = {
     deleteSession(token: string): void;
     getMeta(key: string): string | null;
     setMeta(key: string, value: string): void;
+    setAvatar(key: string, avatarId: string | null, avatarVersion: string | null): void;
     top(limit: number): UserRow[];
 };
 
@@ -85,7 +88,9 @@ const statsOf = (row: UserRow): AccountStats => ({
     score: row.score,
     wins: row.wins,
     rounds: row.rounds,
-    losses: row.losses ?? 0
+    losses: row.losses ?? 0,
+    avatarId: row.avatarId ?? null,
+    avatarVersion: row.avatarVersion ?? null
 });
 
 export type AuthResult =
@@ -168,6 +173,14 @@ export class Accounts {
 
     isRegistered(name: string) {
         return !!this.db.findUser(usernameKey(name));
+    }
+
+    setAvatar(name: string, avatarId: string | null, avatarVersion: string | null) {
+        const key = usernameKey(name);
+        if (!this.db.findUser(key)) return null;
+        this.db.setAvatar(key, avatarId, avatarVersion);
+        const row = this.db.findUser(key);
+        return row ? statsOf(row) : null;
     }
 
     /** Adds to an account's lifetime stats; returns the new totals. */
@@ -270,6 +283,11 @@ export class MemoryAccountDb implements AccountDb {
     }
     setMeta(key: string, value: string) {
         this.meta.set(key, value);
+    }
+
+    setAvatar(key: string, avatarId: string | null, avatarVersion: string | null) {
+        const row = this.users.get(key);
+        if (row) Object.assign(row, { avatarId, avatarVersion });
     }
     top(limit: number) {
         return [...this.users.values()]

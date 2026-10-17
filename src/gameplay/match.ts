@@ -82,7 +82,9 @@ type Options = {
 export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaCenter, characters }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
-    const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters);
+    const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
+        auth.avatarUrl(id, version)
+    );
     const roster = new Map<string, PlayerSummary>();
     let netState: NetState = 'offline';
     let alive = true;
@@ -133,6 +135,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const labTargetId = 'audio-lab-target';
     const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 0, pitch: 0 };
     let labHp: number = MAX_HP;
+    let labAvatarImage: HTMLImageElement | null = null;
     let labDummyHeight = 2.1;
     let labRespawnAt = 0;
     let labExecution: Execution | null = null;
@@ -573,7 +576,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             avatars.setGold(extra.gold.holder);
             for (const each of players) {
                 roster.set(each.id, each);
-                if (each.id !== me.id) avatars.add(each.id, each.name, each.colour);
+                if (each.id !== me.id) avatars.add(each.id, each.name, each.colour, each.avatarId, each.avatarVersion);
             }
             refreshCount();
             hp = me.hp;
@@ -582,7 +585,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         },
         joined: (summary) => {
             roster.set(summary.id, summary);
-            avatars.add(summary.id, summary.name, summary.colour);
+            avatars.add(summary.id, summary.name, summary.colour, summary.avatarId, summary.avatarVersion);
             refreshCount();
             ui.notify(`${summary.name} 进入了校园`);
             sound.join();
@@ -593,6 +596,14 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             avatars.remove(id);
             refreshCount();
             ui.notify(`${name} 离开了校园`);
+        },
+        profileUpdated: (playerId, avatarId, avatarVersion) => {
+            const profile = roster.get(playerId);
+            if (profile) {
+                profile.avatarId = avatarId;
+                profile.avatarVersion = avatarVersion;
+            }
+            avatars.setAvatar(playerId, avatarId, avatarVersion);
         },
         thrown: (from, record, ageMs) => {
             const thrower = roster.get(from);
@@ -1608,6 +1619,24 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     };
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return {
+        async setTrainingDummyAvatar(image: Blob | null) {
+            if (!audioLab) throw new Error('训练人偶头像只在开发音效测试环境可用');
+            if (!image) {
+                labAvatarImage = null;
+                avatars.setHeadImage(labTargetId, null);
+                return;
+            }
+            const url = URL.createObjectURL(image);
+            const decoded = new Image();
+            try {
+                decoded.src = url;
+                await decoded.decode();
+                labAvatarImage = decoded;
+                avatars.setHeadImage(labTargetId, decoded);
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        },
         /**
          * Draws every gameplay visual once while the title screen still covers the canvas — thrown disc and its
          * physics body, in-hand disc with stripe, inspect afterimages, hit sparks and ring, another player — so their
@@ -1685,6 +1714,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 if (!avatars.has(labTargetId)) {
                     avatars.add(labTargetId, '固定测试人偶', colourFor(labTargetId));
                     avatars.setScale(labTargetId, labDummyHeight / CHARACTER_SOURCE_HEIGHT);
+                    if (labAvatarImage) avatars.setHeadImage(labTargetId, labAvatarImage);
                 }
                 if (labHp === 0 && now >= labRespawnAt) labHp = MAX_HP;
                 if (labHp > 0) poses.set(labTargetId, labTargetPose);
@@ -1860,6 +1890,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             }),
             avatarAction: (id: string) => avatars.actionState(id),
             avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),
+            avatarHeadTextured: (id: string) => avatars.hasHeadImage(id),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,
             /** Browser tests isolate traversal from patrol timing while teacher behavior is tested separately. */

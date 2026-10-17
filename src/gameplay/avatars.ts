@@ -5,6 +5,7 @@ import { Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { FRISBEE_THROW_REMAINING } from '../characters/frisbeeThrowTrack';
+import { attachHeldItemSocket } from '../characters/heldItemSocket';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
 import { box, merge, place } from '../render/shapes';
@@ -33,6 +34,9 @@ type Avatar = {
     throwUntil: number;
     heldPose: PlayerPose | null;
     heldUntil: number;
+    avatarRequest: number;
+    avatarId: string | null;
+    avatarVersion: string | null;
 };
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -51,7 +55,8 @@ export const createAvatars = (
     app: AppBase,
     camera: EntityType,
     layer: HTMLElement,
-    characters: CharacterAssetLoader
+    characters: CharacterAssetLoader,
+    avatarUrl: (id: string, version: string) => string | null
 ) => {
     // Scope glint: a bright four-point star in front of an aiming player's visor, so snipers can be spotted.
     const glintMesh = meshOf(
@@ -84,26 +89,59 @@ export const createAvatars = (
     const head = new Vec3();
     const eye = new Vec3();
 
-    const add = (id: string, name: string, hue: number) => {
+    const setAvatar = (id: string, avatarId: string | null, avatarVersion: string | null) => {
+        const avatar = avatars.get(id);
+        if (!avatar) return;
+        avatar.avatarId = avatarId;
+        avatar.avatarVersion = avatarVersion;
+        const request = ++avatar.avatarRequest;
+        if (!avatarId || !avatarVersion) {
+            avatar.character.setHeadImage(null);
+            return;
+        }
+        const url = avatarUrl(avatarId, avatarVersion);
+        if (!url) return;
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.src = url;
+        void image
+            .decode()
+            .then(() => {
+                if (
+                    avatars.get(id) === avatar &&
+                    avatar.avatarRequest === request &&
+                    avatar.avatarId === avatarId &&
+                    avatar.avatarVersion === avatarVersion
+                )
+                    avatar.character.setHeadImage(image);
+            })
+            .catch(() => {
+                if (avatars.get(id) === avatar && avatar.avatarRequest === request) avatar.character.setHeadImage(null);
+            });
+    };
+
+    const add = (
+        id: string,
+        name: string,
+        hue: number,
+        avatarId: string | null = null,
+        avatarVersion: string | null = null
+    ) => {
         if (avatars.has(id)) return;
         const character = characters.create({ name: `avatar-${id}-rig`, colour: hueColour(hue), gripRightHand: true });
         const root = new Entity(`avatar-${id}`);
         root.addChild(character.root);
         // The capsule uses centre origin. Offset the model down so scaled feet still meet the floor.
         character.root.setLocalPosition(0, -0.9, 0);
-        const hand = character.root.findByName('hand_r');
+        const hand = attachHeldItemSocket(character.root, `avatar-${id}-right-hand-socket`);
         const disc = new Entity(`avatar-disc-${id}`);
         disc.addComponent('render', {
             type: 'cylinder',
             material: character.materials.get('M_Main'),
             castShadows: false
         });
-        if (hand) {
-            hand.addChild(disc);
-            disc.setLocalPosition(0, 0.07, 0.025);
-            disc.setLocalScale(0.25, 0.035, 0.25);
-            disc.setLocalEulerAngles(90, 0, 0);
-        }
+        hand.addChild(disc);
+        disc.setLocalScale(0.25, 0.035, 0.25);
         root.enabled = false;
         app.root.addChild(root);
         const glint = new Entity('glint');
@@ -142,8 +180,12 @@ export const createAvatars = (
             actionUntil: 0,
             throwUntil: 0,
             heldPose: null,
-            heldUntil: 0
+            heldUntil: 0,
+            avatarRequest: 0,
+            avatarId: null,
+            avatarVersion: null
         });
+        setAvatar(id, avatarId, avatarVersion);
         if (goldHolder === id) setGold(id);
     };
 
@@ -206,6 +248,7 @@ export const createAvatars = (
                 avatar.glint.rotateLocal(0, 0, now / 20);
             }
             avatar.root.enabled = true;
+            avatar.disc.enabled = now >= avatar.throwUntil;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);
             avatar.root.setEulerAngles(0, pose.yaw, 0);
             const delta = now - avatar.lastMovedAt;
@@ -264,6 +307,10 @@ export const createAvatars = (
 
     return {
         add,
+        setAvatar,
+        setHeadImage(id: string, image: HTMLImageElement | HTMLCanvasElement | null) {
+            avatars.get(id)?.character.setHeadImage(image);
+        },
         remove,
         update,
         setScale(id: string, scale: number) {
@@ -312,6 +359,7 @@ export const createAvatars = (
             if (avatar) flashes.set(avatar.hue, now + 220);
         },
         has: (id: string) => avatars.has(id),
+        hasHeadImage: (id: string) => avatars.get(id)?.character.hasHeadImage() ?? false,
         clear: () => {
             for (const id of [...avatars.keys()]) remove(id);
         }

@@ -118,6 +118,9 @@ export type PlayerSummary = {
     score: number;
     kills: number;
     deaths: number;
+    /** Public, opaque R2 object reference for the mannequin head texture. */
+    avatarId?: string | null;
+    avatarVersion?: string | null;
 };
 
 /** A pose stamped with the room's receive time (ms, server clock). */
@@ -134,6 +137,8 @@ export type AccountStats = {
     rounds: number;
     /** Losses recorded since the loss-only display baseline was initialized. */
     losses: number;
+    avatarId?: string | null;
+    avatarVersion?: string | null;
 };
 
 /** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */
@@ -220,6 +225,7 @@ export type ServerMessage =
     | { type: 'chat'; line: ChatLine }
     | { type: 'king'; king: King; isNew: boolean }
     | { type: 'account'; account: AccountStats }
+    | { type: 'profileUpdated'; playerId: string; avatarId: string | null; avatarVersion: string | null }
     | { type: 'healed'; id: string; hp: number }
     | { type: 'respawn'; id: string; spawn: number }
     | { type: 'gold'; gold: GoldState; event: 'spawned' | 'taken' | 'dropped' }

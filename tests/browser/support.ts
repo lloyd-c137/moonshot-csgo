@@ -23,6 +23,10 @@ declare global {
             raycast: (from: number[], to: number[]) => string | null;
             setLook: (pitch: number, yaw: number) => void;
             dressing: { doors: number; furniture: number; lights: number };
+            match: {
+                state: () => { players: { id: string; name: string }[] };
+                avatarHeadTextured: (id: string) => boolean;
+            };
         };
     }
 }

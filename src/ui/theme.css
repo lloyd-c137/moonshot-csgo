@@ -1067,6 +1067,28 @@ input {
     letter-spacing: -0.01em;
 }
 
+.avatar-editor {
+    display: grid;
+    justify-items: start;
+    gap: 0.75rem;
+}
+
+.avatar-editor img {
+    width: 9rem;
+    height: 4.5rem;
+    object-fit: cover;
+    border: 1px solid var(--line, #52675b);
+    border-radius: 0.5rem;
+    background: #f5f5f5;
+}
+
+.avatar-editor p,
+#avatar-status {
+    margin: 0;
+    color: var(--muted, #aab8ad);
+    font-size: 0.85rem;
+}
+
 .pause-actions {
     display: grid;
     gap: 10px;

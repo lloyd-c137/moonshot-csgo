@@ -11,6 +11,7 @@ import type { ServerMessage } from '../src/net/protocol.ts';
 
 import { sqlAccountDb } from './accountDb.ts';
 import { Accounts } from './accounts.ts';
+import { AVATAR_IMAGE, webpDimensions } from './avatarImage.ts';
 import { Room } from './room.ts';
 
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
@@ -22,6 +23,7 @@ type Env = {
     ALLOWED_ORIGINS: string;
     START_AMMO?: string;
     COMBAT_TEST?: string;
+    AVATARS?: R2Bucket;
 };
 
 const originAllowed = (origin: string | null, allowed: string) => {
@@ -50,7 +52,7 @@ export default {
             const cors: Record<string, string> = allowed
                 ? {
                       'access-control-allow-origin': origin!,
-                      'access-control-allow-methods': 'GET, POST, OPTIONS',
+                      'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
                       'access-control-allow-headers': 'content-type, authorization',
                       'access-control-max-age': '600',
                       vary: 'origin'
@@ -79,6 +81,7 @@ export class World extends DurableObject<Env> {
     private accounts: Accounts;
     private failures = new Map<string, number[]>();
     private readonly combatTestEnabled: boolean;
+    private avatarUploads = new Map<string, number[]>();
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
@@ -160,6 +163,69 @@ export class World extends DurableObject<Env> {
             new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
         const now = Date.now();
         const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+        const publicAvatar = url.pathname.match(/^\/api\/avatars\/([0-9a-f-]{36})$/i);
+        if (request.method === 'GET' && publicAvatar) {
+            if (!this.env.AVATARS) return json({ error: '头像存储暂不可用' }, 503);
+            const object = await this.env.AVATARS.get(`avatars/${publicAvatar[1]}.webp`);
+            if (!object) return json({ error: '头像不存在' }, 404);
+            return new Response(object.body, {
+                headers: {
+                    'content-type': 'image/webp',
+                    'cache-control': 'public, max-age=31536000, immutable',
+                    'x-content-type-options': 'nosniff',
+                    'cross-origin-resource-policy': 'cross-origin'
+                }
+            });
+        }
+        if (url.pathname === '/api/avatar' && request.method === 'POST') {
+            if (!this.env.AVATARS) return json({ error: '头像存储暂不可用' }, 503);
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            const recent = (this.avatarUploads.get(account.name) ?? []).filter((at) => now - at < 600_000);
+            if (recent.length >= 5) return json({ error: '头像更新过于频繁，请稍后再试' }, 429);
+            if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'image/webp')
+                return json({ error: '只支持处理后的 WebP 头像' }, 400);
+            const declaredLength = Number(request.headers.get('content-length') ?? 0);
+            if (declaredLength > AVATAR_IMAGE.maxBytes) return json({ error: '头像不能超过 250 KiB' }, 413);
+            const bytes = new Uint8Array(await request.arrayBuffer());
+            if (bytes.length > AVATAR_IMAGE.maxBytes) return json({ error: '头像不能超过 250 KiB' }, 413);
+            const dimensions = webpDimensions(bytes);
+            if (
+                !dimensions ||
+                dimensions.width > AVATAR_IMAGE.maxWidth ||
+                dimensions.height > AVATAR_IMAGE.maxHeight ||
+                dimensions.width * dimensions.height > AVATAR_IMAGE.maxPixels
+            )
+                return json({ error: '头像必须是有效的 1024×512 以内 WebP 图片' }, 400);
+            const avatarId = crypto.randomUUID();
+            const avatarVersion = crypto.randomUUID();
+            const key = `avatars/${avatarId}.webp`;
+            try {
+                await this.env.AVATARS.put(key, bytes, {
+                    httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000, immutable' }
+                });
+                const updated = this.accounts.setAvatar(account.name, avatarId, avatarVersion);
+                if (!updated) throw new Error('Account disappeared during avatar save');
+                this.room.updateAvatar(account.name, avatarId, avatarVersion);
+                recent.push(now);
+                this.avatarUploads.set(account.name, recent);
+                return json({ account: updated });
+            } catch {
+                await this.env.AVATARS.delete(key).catch(() => undefined);
+                return json({ error: '头像保存失败，请重试' }, 503);
+            }
+        }
+        if (url.pathname === '/api/avatar' && request.method === 'DELETE') {
+            if (!this.env.AVATARS) return json({ error: '头像存储暂不可用' }, 503);
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            const updated = this.accounts.setAvatar(account.name, null, null);
+            if (!updated) return json({ error: '账号不存在' }, 404);
+            this.room.updateAvatar(account.name, null, null);
+            if (account.avatarId)
+                await this.env.AVATARS.delete(`avatars/${account.avatarId}.webp`).catch(() => undefined);
+            return json({ account: updated });
+        }
         if (url.pathname === '/api/__test/round-clock' && request.method === 'POST') {
             if (!this.combatTestEnabled) return json({ error: 'not found' }, 404);
             if (!this.accounts.resolve(bearer, now)) return json({ error: '登录已过期，请重新登录' }, 401);

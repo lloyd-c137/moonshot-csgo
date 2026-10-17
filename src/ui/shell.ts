@@ -29,6 +29,10 @@ type Actions = {
     loadBoard: () => Promise<BoardView>;
     recover: () => void;
     settingsChanged: (settings: Settings) => void;
+    uploadAvatar: (image: Blob) => Promise<AccountView>;
+    deleteAvatar: () => Promise<AccountView>;
+    avatarUrl: (id: string, version: string) => string | null;
+    setLocalTestAvatar: (image: Blob | null) => Promise<void>;
 };
 
 const MARKUP = `
@@ -250,6 +254,17 @@ const MARKUP = `
         <button class="primary" id="resume-button" type="button">继续游戏</button>
         <button class="secondary" id="recover-button" type="button">脱离卡死 · 回到南入口</button>
       </div>
+      <fieldset id="avatar-settings" hidden>
+        <legend>自定义角色头像</legend>
+        <div class="avatar-editor">
+          <img id="avatar-preview" alt="当前角色头部纹理预览" hidden />
+          <span id="avatar-default">默认无头像</span>
+          <div><button class="secondary" id="avatar-choose" type="button">上传头像</button><button class="link" id="avatar-reset" type="button" hidden>恢复默认</button></div>
+          <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+          <p>支持 JPG、PNG、WebP，原图最大 8 MiB。图片会覆盖人偶整个头部，并向其他玩家显示。</p>
+          <output id="avatar-status" role="status" aria-live="polite"></output>
+        </div>
+      </fieldset>
       <fieldset>
         <legend>设置</legend>
         <label class="slider">鼠标灵敏度<output id="sensitivity-value"></output>
@@ -338,12 +353,47 @@ export const createUi = () => {
 
     // ---------- title: tabs, identity, board ----------
     let signedIn = false;
+    let currentAccount: AccountView | null = null;
+    let makeAvatarUrl: Actions['avatarUrl'] = () => null;
+    let avatarPreviewUrl: string | null = null;
+    let localTestAvatar = false;
+    let localTestAvatarSet = false;
     const scopeShown = { aim: -1, ready: false };
     let goldKillTimer = 0;
     const authError = (message: string) => {
         const error = $('#auth-error');
         error.textContent = message;
         error.hidden = false;
+    };
+    const renderAccount = (account: AccountView | null) => {
+        currentAccount = account;
+        signedIn = !!account;
+        $('#operator').dataset.mode = signedIn ? 'signed' : 'form';
+        $('#avatar-settings').hidden =
+            (!account && !localTestAvatar) || ($('#operator').dataset.accounts === 'false' && !localTestAvatar);
+        if (account) {
+            $('#auth-error').hidden = true;
+            $<HTMLInputElement>('#auth-password').value = '';
+            $('#account-name').textContent = account.name;
+            $('#account-kills').textContent = String(account.kills);
+            $('#account-win-rate').textContent = formatWinRate(account);
+            $('#account-deaths').textContent = String(account.deaths);
+            $('#account-rounds').textContent = String(account.rounds ?? 0);
+        }
+        const preview = $<HTMLImageElement>('#avatar-preview');
+        const hasImage = localTestAvatar ? localTestAvatarSet : !!(account?.avatarId && account.avatarVersion);
+        if (hasImage) {
+            if (!localTestAvatar && account)
+                preview.src = makeAvatarUrl(account.avatarId!, account.avatarVersion!) ?? '';
+            preview.hidden = false;
+            $('#avatar-default').hidden = true;
+            $('#avatar-reset').hidden = false;
+        } else {
+            preview.removeAttribute('src');
+            preview.hidden = true;
+            $('#avatar-default').hidden = false;
+            $('#avatar-reset').hidden = true;
+        }
     };
     const renderBoard = (board: BoardView) => {
         const rows = board.top.map((row, index) => {
@@ -451,6 +501,12 @@ export const createUi = () => {
             if (state === 'active') $('#stage-label').textContent = `正在加载${item?.textContent ?? ''}…`;
         },
         ready: (actions: Actions, settings: Settings) => {
+            makeAvatarUrl = actions.avatarUrl;
+            localTestAvatar = $('#operator').dataset.testAvatar === 'true';
+            $('#avatar-settings p')!.textContent = localTestAvatar
+                ? '测试环境中，这张图片只会应用到固定测试人偶，并在当前页面内有效。'
+                : '支持 JPG、PNG、WebP，原图最大 8 MiB。图片会覆盖人偶整个头部，并向其他玩家显示。';
+            renderAccount(currentAccount);
             for (const item of stagesList.querySelectorAll<HTMLElement>('li')) item.dataset.state = 'done';
             $('#stage-label').textContent = '准备就绪';
             enterButton.disabled = false;
@@ -459,6 +515,80 @@ export const createUi = () => {
             bindTitle(actions);
             $('#resume-button').addEventListener('click', actions.enter);
             $('#recover-button').addEventListener('click', actions.recover);
+            const avatarInput = $<HTMLInputElement>('#avatar-file');
+            const avatarStatus = $<HTMLOutputElement>('#avatar-status');
+            const avatarChoose = $<HTMLButtonElement>('#avatar-choose');
+            const avatarReset = $<HTMLButtonElement>('#avatar-reset');
+            const releasePreview = () => {
+                if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+                avatarPreviewUrl = null;
+            };
+            avatarChoose.addEventListener('click', () => {
+                if (!signedIn && !localTestAvatar) {
+                    avatarStatus.textContent = '请先登录账号，再保存头像。';
+                    return;
+                }
+                avatarInput.click();
+            });
+            avatarInput.addEventListener('change', () => {
+                const file = avatarInput.files?.[0];
+                avatarInput.value = '';
+                if (!file) return;
+                avatarChoose.disabled = true;
+                avatarReset.disabled = true;
+                avatarStatus.textContent = '正在裁剪并上传…';
+                void import('../characters/headAtlas')
+                    .then(({ createHeadAtlas }) => createHeadAtlas(file))
+                    .then(async (image) => {
+                        releasePreview();
+                        avatarPreviewUrl = URL.createObjectURL(image);
+                        const preview = $<HTMLImageElement>('#avatar-preview');
+                        preview.src = avatarPreviewUrl;
+                        preview.hidden = false;
+                        $('#avatar-default').hidden = true;
+                        if (localTestAvatar) {
+                            await actions.setLocalTestAvatar(image);
+                            localTestAvatarSet = true;
+                            renderAccount(currentAccount);
+                            avatarStatus.textContent = '已应用到固定测试人偶，仅保存在当前测试页面。';
+                        } else {
+                            const account = await actions.uploadAvatar(image);
+                            renderAccount(account);
+                            avatarStatus.textContent = '已保存。其他玩家看到你的角色时，图片会贴在头部表面。';
+                        }
+                    })
+                    .catch((error: Error) => {
+                        avatarStatus.textContent = error.message;
+                    })
+                    .finally(() => {
+                        avatarChoose.disabled = false;
+                        avatarReset.disabled = false;
+                    });
+            });
+            avatarReset.addEventListener('click', () => {
+                avatarChoose.disabled = true;
+                avatarReset.disabled = true;
+                avatarStatus.textContent = '正在恢复默认头像…';
+                void (localTestAvatar ? actions.setLocalTestAvatar(null).then(() => null) : actions.deleteAvatar())
+                    .then((account) => {
+                        releasePreview();
+                        if (localTestAvatar) {
+                            localTestAvatarSet = false;
+                            renderAccount(currentAccount);
+                            avatarStatus.textContent = '测试人偶已恢复默认头像。';
+                        } else {
+                            renderAccount(account);
+                            avatarStatus.textContent = '已恢复默认头像。';
+                        }
+                    })
+                    .catch((error: Error) => {
+                        avatarStatus.textContent = error.message;
+                    })
+                    .finally(() => {
+                        avatarChoose.disabled = false;
+                        avatarReset.disabled = false;
+                    });
+            });
             const current = { ...settings };
             root.dataset.reducedFlashes = String(current.reducedFlashes);
             bindSlider(
@@ -667,21 +797,12 @@ export const createUi = () => {
         },
         /** Signed-in account (title card), or null when signed out. */
         account: (account: AccountView | null) => {
-            signedIn = !!account;
-            $('#operator').dataset.mode = signedIn ? 'signed' : 'form';
-            if (account) {
-                $('#auth-error').hidden = true;
-                $<HTMLInputElement>('#auth-password').value = '';
-                $('#account-name').textContent = account.name;
-                $('#account-kills').textContent = String(account.kills);
-                $('#account-win-rate').textContent = formatWinRate(account);
-                $('#account-deaths').textContent = String(account.deaths);
-                $('#account-rounds').textContent = String(account.rounds ?? 0);
-            }
+            renderAccount(account);
         },
         /** Whether account features are available (a server is configured). */
-        accountsAvailable: (available: boolean) => {
+        accountsAvailable: (available: boolean, testAvatar = false) => {
             $('#operator').dataset.accounts = String(available);
+            $('#operator').dataset.testAvatar = String(testAvatar);
             if (!available) $('#operator-hint').textContent = '离线练习模式：无需登录，直接进入。';
         },
         /** The standing 淘汰王 (title card and HUD), shown whether or not they are online. */

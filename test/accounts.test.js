@@ -18,7 +18,9 @@ test('register, log in, resolve sessions; names are unique case-insensitively; b
         score: 0,
         wins: 0,
         rounds: 0,
-        losses: 0
+        losses: 0,
+        avatarId: null,
+        avatarVersion: null
     });
     assert.equal((await accounts.register('lloyd', 'another1', 1000)).ok, false, 'taken');
     assert.equal((await accounts.register('x', 'secret1', 1000)).ok, false, 'too short');
@@ -182,7 +184,9 @@ test('only signed-in players may join; they play under their username, keep stat
         score: 0,
         wins: 0,
         rounds: 0,
-        losses: 0
+        losses: 0,
+        avatarId: null,
+        avatarVersion: null
     });
     assert.equal(a[0].king, null);
     // No guests: a hello without a valid session is refused.
@@ -214,7 +218,9 @@ test('only signed-in players may join; they play under their username, keep stat
         score: 1,
         wins: 0,
         rounds: 0,
-        losses: 0
+        losses: 0,
+        avatarId: null,
+        avatarVersion: null
     });
     assert.deepEqual(inbox.get('b').find((message) => message.type === 'king').king.name, '甲同学');
     assert.ok(inbox.get('b').some((message) => message.type === 'chat' && message.line.system));

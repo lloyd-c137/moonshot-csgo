@@ -137,7 +137,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let labExecution: Execution | null = null;
     let labGolden = false;
     let labUi: AudioLabUi | undefined;
-    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden') => void = () => undefined;
+    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void = () => undefined;
     if (audioLab) {
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
@@ -323,7 +323,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         if (!audioLab || labHp === 0) return;
         const head = scenario === 'head';
         const golden = scenario === 'golden' || labGolden;
-        const out = head || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
+        const execution = scenario === 'execution';
+        const out = head || execution || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
         labHp = out ? 0 : labHp - 1;
         const now = performance.now();
         const at: V3 = [
@@ -349,7 +350,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 : head
                   ? '人偶 · 爆头淘汰'
                   : out
-                    ? '人偶 · 击杀'
+                    ? execution
+                        ? '人偶 · 处决淘汰'
+                        : '人偶 · 击杀'
                     : '人偶 · 身体命中（1/2）',
             out ? 'kill' : head ? 'head' : 'hit'
         );
@@ -1673,7 +1676,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 const record = labExecution;
                 labExecution = null;
                 executionView.stop(record.id);
-                simulateDummyHit(labGolden ? 'golden' : 'elimination');
+                simulateDummyHit('execution');
             }
             const local = executionView.localRecord(selfId());
             ui.executionState(

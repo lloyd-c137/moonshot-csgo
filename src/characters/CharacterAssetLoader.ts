@@ -215,10 +215,26 @@ export class CharacterAssetLoader {
                 visualScale = Math.max(0.2, Math.min(1.2, scale));
                 root.setLocalScale(visualScale, visualScale, visualScale);
             },
-            play(name: string, blend = 0.12) {
+            /** Cross-fades to a clip; `offset` (s) starts it part-way, so late joiners land on the same frame. */
+            play(name: string, blend = 0.12, offset?: number) {
                 const layer = modelRoot.anim!.baseLayer!;
                 if (!tracks.has(name) || layer.activeState === name) return;
-                layer.transition(name, blend);
+                layer.transition(name, blend, offset);
+            },
+            /** Playback speed of every clip on this character (1 = authored speed). */
+            setSpeed(speed: number) {
+                modelRoot.anim!.speed = speed;
+            },
+            /** Re-tints a reused character (body, joints and bare head) without rebuilding it. */
+            setColour(colour: [number, number, number]) {
+                for (const [name, material] of materials) {
+                    const tint = characterMaterialColour(name, colour, options.materialColours);
+                    if (!tint) continue;
+                    baseColours.set(name, tint);
+                    if (name === 'M_Head' && headTexture) continue;
+                    material.diffuse.set(...tint);
+                    material.update();
+                }
             },
             playThrow() {
                 if (!throwLayer || disposed) return;

@@ -77,5 +77,44 @@ export const executionFrame = (progress: number) => {
         impact: u >= T.impact
     };
 };
+/** Authored clip lengths (s) of the CC0 rig's clips used by the finisher; the view passes the loaded values. */
+export const FINISHER_CLIPS = { Sword_Attack: 1.57, Hit_Chest: 0.37, Death01: 2.43 } as const;
+/** The target's flinch lasts until this fraction, then the death clip plays (faster than authored). */
+const DEATH_AT = 0.52;
+const DEATH_SPEED = 1.25;
+export type ClipCue = { clip: string; offset: number; speed: number };
+
+/**
+ * Which clip each actor plays at `progress`, where inside it (s) and how fast. One continuous swing spans
+ * close → recover so its contact lands on the impact moment instead of being cut between clips; the target stands,
+ * flinches at the blow and falls. Offsets follow progress, so a client that joins late lands on the same frame.
+ */
+export const finisherClips = (
+    progress: number,
+    durationSeconds: number,
+    clips: { Sword_Attack: number; Hit_Chest: number; Death01: number } = FINISHER_CLIPS
+) => {
+    const u = clamp(progress),
+        T = EXECUTION_TIMELINE;
+    const swingSpeed = clips.Sword_Attack / ((T.recover - T.close) * durationSeconds);
+    const attacker: ClipCue =
+        u < T.close
+            ? { clip: 'Idle_Loop', offset: 0, speed: 1 }
+            : u < T.recover
+              ? { clip: 'Sword_Attack', offset: (u - T.close) * durationSeconds * swingSpeed, speed: swingSpeed }
+              : { clip: 'Idle_Loop', offset: 0, speed: 1 };
+    const target: ClipCue =
+        u < T.impact
+            ? { clip: 'Idle_Loop', offset: 0, speed: 1 }
+            : u < DEATH_AT
+              ? { clip: 'Hit_Chest', offset: Math.min(clips.Hit_Chest, (u - T.impact) * durationSeconds), speed: 1 }
+              : { clip: 'Death01', offset: (u - DEATH_AT) * durationSeconds * DEATH_SPEED, speed: DEATH_SPEED };
+    return { attacker, target };
+};
+
+/** How long (ms) the fallen target stays after the move so the death clip finishes instead of vanishing mid-fall. */
+export const finisherLingerMs = (durationSeconds: number, death = FINISHER_CLIPS.Death01) =>
+    Math.max(0, (death - (1 - DEATH_AT) * durationSeconds * DEATH_SPEED) / DEATH_SPEED) * 1000;
+
 export const executionProgress = (execution: Execution, now: number) =>
     clamp((now - execution.startsAt) / (execution.endsAt - execution.startsAt));

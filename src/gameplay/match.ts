@@ -916,7 +916,7 @@ export const createMatch = ({
         executionStarted: (record) => executionView.start(record),
         executionEnded: (id, completed, reason) => {
             const local = executionView.localRecord(selfId())?.id === id;
-            executionView.stop(id);
+            executionView.stop(id, completed);
             if (local && !completed) ui.notify(`处决中断：${reason}`);
         },
         executionDenied: (reason) => ui.notify(reason),
@@ -1754,6 +1754,8 @@ export const createMatch = ({
             guard.showAt(at[0] + 1, at[2]);
             ghosts[0].entity.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
             avatars.add('prewarm', '', colourFor('local'));
+            // The finisher pair is pooled and drawn here once, so a real move starts without a hitch.
+            const coolExecution = executionView.warm(at);
             avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0, aim: 1 }]]), 0);
             discs.launch({
                 owner: 'warm-up',
@@ -1768,6 +1770,7 @@ export const createMatch = ({
             viewmodel.enabled = false;
             for (const ghost of ghosts) ghost.entity.enabled = false;
             avatars.remove('prewarm');
+            coolExecution();
             discs.clear();
             effects.clear();
             goldView.set(null);
@@ -1880,7 +1883,7 @@ export const createMatch = ({
             if (labExecution && roomNow() >= labExecution.endsAt) {
                 const record = labExecution;
                 labExecution = null;
-                executionView.stop(record.id);
+                executionView.stop(record.id, true);
                 simulateDummyHit('execution');
             }
             const local = executionView.localRecord(selfId());

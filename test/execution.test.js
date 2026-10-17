@@ -187,3 +187,27 @@ test('no execution inside 纪老师 watch circle (owner rule), on the client gat
     assert.equal(room.executions.size, 0);
     assert.ok(messages.get('a').some((m) => m.type === 'executionDenied' && m.reason.includes('纪老师')));
 });
+
+test('finisher clips: one swing whose middle lands on the impact, then a full, unclipped fall', async () => {
+    const { finisherClips, finisherLingerMs, FINISHER_CLIPS } = await import('../src/gameplay/execution.ts');
+    const D = EXECUTION.durationMs / 1000;
+    const at = (u) => finisherClips(u, D);
+    assert.equal(at(0.05).attacker.clip, 'Idle_Loop');
+    const swing = [0.2, 0.44, 0.7].map((u) => at(u).attacker);
+    assert.ok(swing.every((cue) => cue.clip === 'Sword_Attack' && cue.speed === swing[0].speed));
+    // The swing reaches the end of its clip exactly when the recovery begins: never cut part-way.
+    const last = finisherClips(EXECUTION_TIMELINE.recover - 1e-9, D).attacker;
+    assert.ok(Math.abs(last.offset - FINISHER_CLIPS.Sword_Attack) < 1e-6);
+    // Offsets advance with progress at the clip's speed (smooth for late joiners).
+    const a = at(0.3).attacker,
+        b = at(0.31).attacker;
+    assert.ok(Math.abs(b.offset - a.offset - 0.01 * D * a.speed) < 1e-9);
+    assert.equal(at(0.43).target.clip, 'Idle_Loop', 'the target does not react before the blow');
+    assert.equal(at(0.45).target.clip, 'Hit_Chest');
+    assert.equal(at(0.9).target.clip, 'Death01');
+    // The fall finishes after the move; the remaining clip time is covered by the linger.
+    const end = at(1).target;
+    const remaining = (FINISHER_CLIPS.Death01 - end.offset) / end.speed;
+    assert.ok(Math.abs(finisherLingerMs(D) / 1000 - remaining) < 1e-9);
+    assert.ok(finisherLingerMs(D) > 0 && finisherLingerMs(D) < 1500);
+});

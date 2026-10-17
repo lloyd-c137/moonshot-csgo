@@ -3099,6 +3099,10 @@ legend {
     font-variant-numeric: tabular-nums;
 }
 
+.kill-icons small[data-headshot-distance='true'] {
+    color: #ffc21a;
+}
+
 @keyframes killfeed-in {
     from {
         opacity: 0;

@@ -109,9 +109,7 @@ test('remote near-miss audio is placed at the swept closest point and plays once
     await Promise.all([a.page.context().close(), b.page.context().close()]);
 });
 
-test('lifetime board shows eliminations and loss-only win-rate indices, including no recorded history', async ({
-    page
-}) => {
+test('lifetime board shows eliminations and wins, including players without recorded wins', async ({ page }) => {
     const base = { deaths: 3, hits: 99, score: 999 };
     await page.route('**/api/leaderboard', (route) =>
         route.fulfill({
@@ -130,10 +128,10 @@ test('lifetime board shows eliminations and loss-only win-rate indices, includin
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     await page.getByRole('tab', { name: '排行榜' }).click();
-    await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜率指数']);
-    await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '95.0%']);
-    await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '85.7%']);
-    await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '100.0%']);
+    await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜场']);
+    await expect(page.locator('#board-rows tr').nth(0).locator('td')).toHaveText(['1', 'HalfWins', '8', '1']);
+    await expect(page.locator('#board-rows tr').nth(1).locator('td')).toHaveText(['2', 'NoWins', '7', '0']);
+    await expect(page.locator('#board-rows tr').nth(2).locator('td')).toHaveText(['3', 'NoHistory', '6', '0']);
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 
@@ -204,7 +202,9 @@ test('one shared round clock moves both surviving clients through blackout and f
     await expect.poll(() => state(b.page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
     await expect(b.page.locator('#broadcast')).toContainText('最终对决');
-    await expect.poll(() => page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen)).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen))
+        .toBe(true);
     await expect
         .poll(() => b.page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen))
         .toBe(true);
@@ -251,6 +251,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await a.page.getByRole('button', { name: '进入校园' }).click();
     await expect(a.page.locator('#auth-error')).toHaveText('请输入用户名和密码');
     await enter(a.page, nameA, 'secret-123');
+    await expect(a.page.locator('#account-wins')).toHaveText('0');
     // The same name with another password is now refused; the right password signs in again.
     const wrong = await request.post(`${API}/api/signin`, {
         data: { name: nameA, password: 'whatever1' },
@@ -343,7 +344,8 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
     await expect(b.page.locator('#eliminated')).toBeVisible();
-    await expect(a.page.locator('#broadcast')).toContainText(`${nameA} 淘汰了 ${nameB}`);
+    await expect(a.page.locator('#killfeed li').first()).toContainText(nameA);
+    await expect(a.page.locator('#killfeed li').first()).toContainText(nameB);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
     expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idB)).toBe('Death01');
     await a.page.screenshot({ path: 'test-results/combat-elimination.png' });
@@ -393,6 +395,11 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
         .toMatchObject({ alive: false, hp: 0, hitsClaimed: 3 });
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
     await expect(a.page.locator('#popup')).toContainText('爆头淘汰');
+    await expect(a.page.locator('#popup')).toContainText(/爆头距离 \d+\.\d m/);
+    await expect(a.page.locator('#killfeed [data-headshot-distance]')).toHaveAttribute(
+        'aria-label',
+        /爆头距离 \d+\.\d 米/
+    );
     await expect(b.page.locator('#popup')).toHaveText('被爆头淘汰');
     expect((await state(a.page)).players.find((p) => p.name === nameA)?.kills).toBe(2);
 
@@ -405,7 +412,10 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     );
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'snipe');
-    await expect(a.page.locator('#broadcast')).toContainText('狙击爆头');
+    await expect(a.page.locator('#killfeed li').first()).toContainText(nameA);
+    await expect(a.page.locator('#killfeed li').first()).toContainText(nameB);
+    await expect(a.page.locator('#killfeed li').first()).toHaveAttribute('data-tone', 'mine');
+    await expect(a.page.locator('#killfeed li').first()).toContainText(/\d+\.\d+m/);
     await expect(b.page.locator('#popup')).toHaveText('被狙击爆头');
 
     // A walks onto it: taken, equipped, and everyone sees who holds it.

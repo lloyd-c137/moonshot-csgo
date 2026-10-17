@@ -2,7 +2,6 @@ import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 
 import { changelogHtml } from './changelog';
-import { formatWinRate } from './formatStats';
 import type { KillIcon } from './killFeed';
 import { KILL_ICON_LABEL, KILL_ICON_SVG, streakName } from './killFeed';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
@@ -75,7 +74,7 @@ const MARKUP = `
               <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
               <dl class="operator-stats">
                 <div><dt>累计淘汰</dt><dd id="account-kills">0</dd></div>
-                <div><dt>胜率指数</dt><dd id="account-win-rate">—</dd></div>
+                <div><dt>胜场</dt><dd id="account-wins">0</dd></div>
                 <div><dt>被淘汰</dt><dd id="account-deaths">0</dd></div>
                 <div><dt>已结算局数</dt><dd id="account-rounds">0</dd></div>
               </dl>
@@ -85,8 +84,7 @@ const MARKUP = `
         </section>
         <section class="tab-panel" data-panel="board" hidden>
           <h2 class="panel-title">全服累计排行</h2>
-          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜率指数</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
-          <p class="fine-print">指数初始为 100%；每场明确落败后乘以 0.95，胜局与平局保持不变。实际胜负场数仍单独记录；这是按输局递减的展示指数，不是胜场比例。</p>
+          <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜场</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
         </section>
         <section class="tab-panel changelog-panel" data-panel="changelog" hidden>
           <h2 class="panel-title">更新日志</h2>
@@ -387,7 +385,7 @@ export const createUi = () => {
             $<HTMLInputElement>('#auth-password').value = '';
             $('#account-name').textContent = account.name;
             $('#account-kills').textContent = String(account.kills);
-            $('#account-win-rate').textContent = formatWinRate(account);
+            $('#account-wins').textContent = String(account.wins);
             $('#account-deaths').textContent = String(account.deaths);
             $('#account-rounds').textContent = String(account.rounds ?? 0);
         }
@@ -410,7 +408,7 @@ export const createUi = () => {
         const rows = board.top.map((row, index) => {
             const tr = document.createElement('tr');
             if (board.king && row.name === board.king.name) tr.dataset.king = 'true';
-            for (const value of [String(index + 1), row.name, String(row.kills), formatWinRate(row)]) {
+            for (const value of [String(index + 1), row.name, String(row.kills), String(row.wins)]) {
                 const td = document.createElement('td');
                 td.textContent = value;
                 tr.append(td);
@@ -1033,11 +1031,15 @@ export const createUi = () => {
                 glyph.title = KILL_ICON_LABEL[icon];
                 glyph.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${KILL_ICON_SVG[icon]}</svg>`;
                 glyphs.append(glyph);
-                if (icon === 'long' && range !== null) {
-                    const metres = document.createElement('small');
-                    metres.textContent = `${Math.round(range)}m`;
-                    glyphs.append(metres);
+            }
+            if (range !== null && (icons.includes('head') || icons.includes('long'))) {
+                const metres = document.createElement('small');
+                metres.textContent = `${range.toFixed(1)}m`;
+                if (icons.includes('head')) {
+                    metres.dataset.headshotDistance = 'true';
+                    metres.setAttribute('aria-label', `爆头距离 ${range.toFixed(1)} 米`);
                 }
+                glyphs.append(metres);
             }
             glyphs.setAttribute('aria-label', icons.map((icon) => KILL_ICON_LABEL[icon]).join('、'));
             item.append(who(killer, 'killer'), glyphs, who(victim, 'victim'));

@@ -790,6 +790,8 @@ export const createMatch = ({
             const entryFinal = roster.get(target);
             if (entryFinal && final) entryFinal.spectating = true;
             const snipe = sniper && head && out;
+            const headshotDistance =
+                head && typeof shot?.range === 'number' ? ` · 爆头距离 ${shot.range.toFixed(1)} m` : '';
             if (goldKill) goldView.flourish(at);
             effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
             if (snipe) effects.snipe(at);
@@ -857,13 +859,13 @@ export const createMatch = ({
                 if (goldKill) {
                     sound.snipeConfirm(head, true);
                     ui.hitMarker('snipe');
-                    if (presentation.showHud) ui.popup(`金飞盘淘汰 · ${nameOf(target)}  +1`, 'gold');
+                    if (presentation.showHud) ui.popup(`金飞盘淘汰 · ${nameOf(target)}${headshotDistance}  +1`, 'gold');
                     punch = Math.max(punch, 1.8);
                     cameraImpulses.trigger(0.55);
                 } else if (snipe) {
                     sound.snipeConfirm();
                     ui.hitMarker('snipe');
-                    if (presentation.showHud) ui.popup(`狙击爆头 · ${nameOf(target)}  +1`, 'snipe');
+                    if (presentation.showHud) ui.popup(`狙击爆头 · ${nameOf(target)}${headshotDistance}  +1`, 'snipe');
                     punch = Math.max(punch, 1.8);
                     cameraImpulses.trigger(0.5);
                 } else {
@@ -872,7 +874,7 @@ export const createMatch = ({
                     if (presentation.showHud)
                         ui.popup(
                             out
-                                ? `${execution ? '处决淘汰' : head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}  +1`
+                                ? `${execution ? '处决淘汰' : head ? '爆头淘汰' : '淘汰'} ${nameOf(target)}${headshotDistance}  +1`
                                 : '命中！',
                             out ? 'kill' : head ? 'head' : 'hit'
                         );

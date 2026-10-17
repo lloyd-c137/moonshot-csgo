@@ -42,9 +42,12 @@ export class CameraImpulseController {
             const impulse = this.impulses[index];
             impulse.age += Math.max(0, deltaTime);
             const envelope = Math.exp(-impulse.age * 9);
+            if (impulse.age > 0.7 || envelope < 0.002) {
+                this.impulses.splice(index, 1);
+                continue;
+            }
             x += Math.sin(impulse.age * 42 + impulse.phase) * envelope * impulse.strength * 0.025 * scale;
             y += Math.sin(impulse.age * 56 + impulse.phase + 1.1) * envelope * impulse.strength * 0.015 * scale;
-            if (impulse.age > 0.7 || envelope < 0.002) this.impulses.splice(index, 1);
         }
         return [Math.max(-0.035, Math.min(0.035, x)), Math.max(-0.02, Math.min(0.02, y))];
     }

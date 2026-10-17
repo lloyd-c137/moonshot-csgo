@@ -37,8 +37,24 @@ export const STADIUM = {
     roofOverhang: 2.5,
     /** Each petal's outer edge bulges this much at its middle, giving the lotus outline. */
     petalBulge: 1.8,
-    /** Facade: leans outward from the building roof up to the roof edge. */
+    /** Base of the outer shell: the building roof the stadium stands on. */
     facadeBottom: 3.6,
+    /**
+     * Outer shell (owner model stadium-shell.mjs, 2026-10-17 photos): twelve flat petals leaning out over a recessed
+     * base. Each petal's foot sits `footOut` outside the bowl's back at `footHeight`, its top `lean` further out at
+     * `topHeight`; it spans ±footSpread/±topSpread of its half-sector, leaving gaps between petals. Roof plates have
+     * a central `ridge` and a `fascia`-deep outer edge.
+     */
+    shell: {
+        footOut: 0.4,
+        footHeight: 9,
+        topHeight: 19,
+        lean: 5.5,
+        footSpread: 0.8,
+        topSpread: 0.95,
+        ridge: 0.6,
+        fascia: 1.05
+    },
     /** Samples around the ring. */
     segments: 96
 } as const;

@@ -99,3 +99,15 @@ test('tennis court: ITF dimensions on the FF-01 court, a raised net that sags to
     assert.equal(lines.length, 12);
     for (const [x0, z0, x1, z1] of lines) assert.ok(x1 > x0 && z1 > z0);
 });
+
+test('outer shell: twelve separate petals leaning outward, clear of the bowl, under the roof', () => {
+    const { shell } = STADIUM;
+    assert.equal(STADIUM.petals, 12);
+    assert.ok(shell.footSpread < shell.topSpread && shell.topSpread < 1, 'gaps between neighbouring petals');
+    const leanDeg = (Math.atan2(shell.lean, shell.topHeight - shell.footHeight) * 180) / Math.PI;
+    assert.ok(leanDeg > 20 && leanDeg < 40, `petals lean out like the photo (${leanDeg.toFixed(0)}°)`);
+    // The bowl's back (top tier plus glazing) stays inside the petals' foot ring and below their top.
+    const bowlTop = tierHeight(STADIUM.tiers - 1) + STADIUM.tierRise;
+    assert.ok(shell.footOut > 0 && bowlTop < shell.topHeight, `bowl top ${bowlTop.toFixed(1)} m`);
+    assert.ok(shell.footHeight > STADIUM.facadeBottom && STADIUM.roofInnerHeight > shell.topHeight);
+});

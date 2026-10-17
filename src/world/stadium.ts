@@ -5,7 +5,7 @@
 // facade outside. Decoration only: every collider (floor, stands, the 10 m arena wall) is unchanged, so routes, the
 // nav audit and the bowl's unreachability stay as they were.
 import type { AppBase, Entity as EntityType, StandardMaterial as StandardMaterialType } from 'playcanvas';
-import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial } from 'playcanvas';
+import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial, Texture } from 'playcanvas';
 
 import { MeshBuilder } from '../render/meshBuilder';
 
@@ -17,8 +17,6 @@ import {
     courtSurroundPath,
     inSurroundGap,
     netHeightAt,
-    petalJoinDistance,
-    petalShape,
     ringRadii,
     spectatorSeats,
     STADIUM,
@@ -70,6 +68,40 @@ const quad = (builder: MeshBuilder, a: V3, b: V3, c: V3, d: V3) => {
     builder.triangle(i0, i0 + 2, i0 + 3);
 };
 
+/** "莲花球场" and gate numbers 1–12 in red, one 4 × 3 atlas; only the letters draw (alpha-tested). */
+const letteringMaterial = (app: AppBase) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 768;
+    const g = canvas.getContext('2d')!;
+    for (let p = 0; p < 12; p++) {
+        const x = (p % 4) * 256,
+            y = Math.floor(p / 4) * 256;
+        g.fillStyle = '#c8282d';
+        g.textAlign = 'center';
+        g.font = '700 34px "PingFang SC", "Microsoft YaHei", sans-serif';
+        g.fillText('莲花球场', x + 128, y + 52);
+        g.font = '600 18px Arial, sans-serif';
+        g.fillText('LOTUS COURT', x + 128, y + 78);
+        g.font = '800 140px Arial, sans-serif';
+        g.fillText(String(p + 1), x + 128, y + 220);
+    }
+    const texture = new Texture(app.graphicsDevice, {
+        name: 'stadium-lettering',
+        width: 1024,
+        height: 768,
+        mipmaps: true
+    });
+    texture.setSource(canvas);
+    const m = material('stadium-lettering', [1, 1, 1], { gloss: 0.18 });
+    m.diffuseMap = texture;
+    m.opacityMap = texture;
+    m.opacityMapChannel = 'a';
+    m.alphaTest = 0.4;
+    m.update();
+    return m;
+};
+
 export const buildStadium = (
     app: AppBase,
     parent: EntityType,
@@ -93,8 +125,12 @@ export const buildStadium = (
     const roofLight = new MeshBuilder();
     const roofDark = new MeshBuilder();
     const ribs = new MeshBuilder();
-    const facade = new MeshBuilder();
-    const mullions = new MeshBuilder();
+    const petalLight = new MeshBuilder();
+    const petalDark = new MeshBuilder();
+    const shellBase = new MeshBuilder();
+    const roofUnder = new MeshBuilder();
+    const fascia = new MeshBuilder();
+    const lettering = new MeshBuilder();
     const bannerBlue = new MeshBuilder();
     const bannerWhite = new MeshBuilder();
     const glazing = new MeshBuilder();
@@ -187,64 +223,120 @@ export const buildStadium = (
             const [x, , z] = at(i, backI - 0.15, 0);
             columns.box(x, backY, z, 0.5, 0.5, STADIUM.roofOuterHeight - backY, mid);
         }
-        // Roof petal: from the inner edge over the court down to a scalloped outer edge beyond the glazing.
-        const innerI = radii[i] - STADIUM.roofInnerInset,
-            innerJ = radii[j] - STADIUM.roofInnerInset;
-        const outerI = backI + STADIUM.roofOverhang + STADIUM.petalBulge * petalShape(a0),
-            outerJ = backJ + STADIUM.roofOverhang + STADIUM.petalBulge * petalShape(a1);
-        const roof = petal % 2 ? roofDark : roofLight;
-        // Slight gap at each petal join so the twelve leaves read separately.
-        const join = petalJoinDistance(mid) < 0.012;
-        if (!join) {
-            quad(
-                roof,
-                at(i, innerI, STADIUM.roofInnerHeight),
-                at(j, innerJ, STADIUM.roofInnerHeight),
-                at(j, outerJ, STADIUM.roofOuterHeight),
-                at(i, outerI, STADIUM.roofOuterHeight)
-            );
-            // Facade petal, leaning outward as it rises from the building roof to the roof edge.
-            const footI = backI - 1.5,
-                footJ = backJ - 1.5;
-            quad(
-                facade,
-                // Wound so the visible (front) side faces outward, away from the court.
-                at(i, footI, STADIUM.facadeBottom),
-                at(i, outerI - 0.4, STADIUM.roofOuterHeight - 0.6),
-                at(j, outerJ - 0.4, STADIUM.roofOuterHeight - 0.6),
-                at(j, footJ, STADIUM.facadeBottom)
-            );
-        }
-        // Ribs: radial at every second sample, heavier at petal joins; floodlight bars along the inner edge.
-        if (i % 2 === 0 || join) {
-            const [x0, , z0] = at(i, innerI, 0),
-                [x1, , z1] = at(i, outerI, 0);
-            const length = Math.hypot(x1 - x0, z1 - z0);
-            const steps = 6;
-            const w = join ? 0.45 : 0.24;
-            for (let s = 0; s < steps; s++) {
-                const t = (s + 0.5) / steps;
-                const r = innerI + (outerI - innerI) * t;
-                const y = STADIUM.roofInnerHeight + (STADIUM.roofOuterHeight - STADIUM.roofInnerHeight) * t - 0.25;
-                const [x, , z] = at(i, r, 0);
-                ribs.box(x, y, z, length / steps + 0.05, w, w, mid);
-            }
-        }
         if (i % 2 === 0) {
-            const [x, , z] = at(i, innerI + 0.6, 0);
+            const [x, , z] = at(i, radii[i] - STADIUM.roofInnerInset + 0.6, 0);
             floodlights.box(x, STADIUM.roofInnerHeight - 0.55, z, 1.1, 0.35, 0.18, mid + Math.PI / 2);
         }
-        // Facade mullions at petal joins.
-        if (join) {
-            const footI = backI - 1.5;
-            const [fx, , fz] = at(i, footI, 0);
-            const [tx, , tz] = at(i, outerI - 0.4, 0);
-            const segs = 8;
-            for (let s = 0; s < segs; s++) {
-                const t = (s + 0.5) / segs;
-                const y = STADIUM.facadeBottom + (STADIUM.roofOuterHeight - 0.6 - STADIUM.facadeBottom) * t - 0.9;
-                mullions.box(fx + (tx - fx) * t, y, fz + (tz - fz) * t, 0.5, 0.5, 1.9, mid);
-            }
+    }
+
+    // Outer shell, after the owner's model (stadium-shell.mjs) and the 2026-10-17 photos: twelve separate, flat,
+    // inverted-trapezoid concrete petals leaning out over a recessed base, with deep gaps between them; a folded roof
+    // plate on each with a thick fascia; "莲花球场" and the gate number in red on every petal.
+    const sampleAt = (values: readonly number[], a: number) => {
+        const f = ((((a / (Math.PI * 2)) % 1) + 1) % 1) * n;
+        const i0 = Math.floor(f) % n,
+            i1 = (i0 + 1) % n;
+        return values[i0] + (values[i1] - values[i0]) * (f - Math.floor(f));
+    };
+    const back = radii.map((_, i) => tierRadius(radii, i, topTier) + tierRun);
+    const polar = (a: number, r: number, y: number): V3 => [cx + Math.cos(a) * r, y, cz + Math.sin(a) * r];
+    const solid = (builder: MeshBuilder, face: V3[], offset: V3) => {
+        const backFace = face.map(([x, y, z]) => [x + offset[0], y + offset[1], z + offset[2]] as V3);
+        quad(builder, face[0], face[1], face[2], face[3]);
+        quad(builder, backFace[3], backFace[2], backFace[1], backFace[0]);
+        for (let k = 0; k < 4; k++) {
+            const l = (k + 1) % 4;
+            quad(builder, face[k], backFace[k], backFace[l], face[l]);
+        }
+    };
+    const { shell } = STADIUM;
+    const half = Math.PI / STADIUM.petals;
+    for (let p = 0; p < STADIUM.petals; p++) {
+        const a = (p + 0.5) * 2 * half;
+        const backR = sampleAt(back, a);
+        const footR = backR + shell.footOut,
+            topR = footR + shell.lean;
+        const [a0, a1] = [a - half * shell.footSpread, a + half * shell.footSpread];
+        const [t0, t1] = [a - half * shell.topSpread, a + half * shell.topSpread];
+        // The petal: a flat slab leaning outward (outer face front, 0.6 m thick toward the court).
+        const face: V3[] = [
+            polar(a0, footR, shell.footHeight),
+            polar(a1, footR, shell.footHeight),
+            polar(t1, topR, shell.topHeight),
+            polar(t0, topR, shell.topHeight)
+        ];
+        const inward: V3 = [-Math.cos(a) * 0.6, 0, -Math.sin(a) * 0.6];
+        solid(p % 2 ? petalDark : petalLight, face, inward);
+        // Lettering low on the outer face: a quad just proud of it, mapped to this petal's cell of the atlas.
+        {
+            const along = (lo: number, hi: number, t: number) => lo + (hi - lo) * t;
+            const height = (y: number) => (y - shell.footHeight) / (shell.topHeight - shell.footHeight);
+            const at2 = (s: number, y: number): V3 => {
+                const t = height(y);
+                const r = along(footR, topR, t) + 0.03;
+                const spread = along(shell.footSpread, shell.topSpread, t);
+                return polar(a + half * spread * s, r, y);
+            };
+            const [y0, y1] = [shell.footHeight + 1.6, shell.footHeight + 4.4];
+            const cell = p % 12;
+            const [cu, cv] = [(cell % 4) / 4, Math.floor(cell / 4) / 3];
+            // The petal's own outward normal (leaning out and down), so the label shades exactly like the panel.
+            const rise = shell.topHeight - shell.footHeight;
+            const length = Math.hypot(rise, shell.lean);
+            const n0: V3 = [(Math.cos(a) * rise) / length, -shell.lean / length, (Math.sin(a) * rise) / length];
+            // Seen from outside, increasing angle runs right to left: the atlas u runs the other way.
+            const corners: [V3, [number, number]][] = [
+                [at2(-0.32, y0), [cu + 1 / 4, cv + 1 / 3]],
+                [at2(0.32, y0), [cu, cv + 1 / 3]],
+                [at2(0.32, y1), [cu, cv]],
+                [at2(-0.32, y1), [cu + 1 / 4, cv]]
+            ];
+            const i0 = lettering.vertex(corners[0][0], n0, corners[0][1]);
+            for (const [pos, uv] of corners.slice(1)) lettering.vertex(pos, n0, uv);
+            lettering.triangle(i0, i0 + 1, i0 + 2);
+            lettering.triangle(i0, i0 + 2, i0 + 3);
+        }
+        // Recessed base under the petal: a dark glazed wall on the building roof, and two concrete legs.
+        const baseR = backR + 0.15;
+        quad(
+            shellBase,
+            polar(a - half * 0.98, baseR, STADIUM.facadeBottom),
+            polar(a + half * 0.98, baseR, STADIUM.facadeBottom),
+            polar(a + half * 0.98, baseR, shell.footHeight + 0.2),
+            polar(a - half * 0.98, baseR, shell.footHeight + 0.2)
+        );
+        for (const sgn of [-1, 1]) {
+            const angle = a + sgn * half * shell.footSpread * 0.85;
+            const [x, , z] = polar(angle, footR - 0.2, 0);
+            columns.box(x, STADIUM.facadeBottom, z, 0.9, 0.9, shell.footHeight - STADIUM.facadeBottom + 0.3, angle);
+        }
+        // Folded roof plate: inner edge over the bowl, outer edge on the petal top, a ridge down the middle.
+        const innerR = sampleAt(radii, a) - STADIUM.roofInnerInset;
+        const roofOut = topR + 0.4;
+        const ri0 = polar(a - half * 0.84, innerR, STADIUM.roofInnerHeight),
+            ri1 = polar(a + half * 0.84, innerR, STADIUM.roofInnerHeight),
+            ro1 = polar(t1 + half * 0.03, roofOut, shell.topHeight + 0.5),
+            ro0 = polar(t0 - half * 0.03, roofOut, shell.topHeight + 0.5);
+        const ridgeIn = polar(a, innerR, STADIUM.roofInnerHeight + shell.ridge),
+            ridgeOut = polar(a, roofOut, shell.topHeight + 0.5 + shell.ridge);
+        const roofBuilder = p % 2 ? roofDark : roofLight;
+        quad(roofBuilder, ri0, ridgeIn, ridgeOut, ro0);
+        quad(roofBuilder, ridgeIn, ri1, ro1, ridgeOut);
+        // Underside and the thick fascia along the outer edge.
+        const drop = (v: V3): V3 => [v[0], v[1] - shell.fascia, v[2]];
+        quad(roofUnder, drop(ri0), drop(ri1), drop(ro1), drop(ro0));
+        quad(fascia, ro0, ridgeOut, drop(ridgeOut), drop(ro0));
+        quad(fascia, ridgeOut, ro1, drop(ro1), drop(ridgeOut));
+        quad(fascia, ri0, ro0, drop(ro0), drop(ri0));
+        quad(fascia, ro1, ri1, drop(ri1), drop(ro1));
+        // Radial ribs under the roof plate, as in the photo's underside.
+        for (let k = 1; k < 6; k++) {
+            const angle = a - half * 0.8 + ((half * 1.6) / 6) * k;
+            const [x0, , z0] = polar(angle, innerR, 0),
+                [x1, , z1] = polar(angle, roofOut - 0.5, 0);
+            const length = Math.hypot(x1 - x0, z1 - z0);
+            const y = (STADIUM.roofInnerHeight + shell.topHeight + 0.5) / 2 - shell.fascia - 0.15;
+            ribs.box((x0 + x1) / 2, y, (z0 + z1) / 2, length, 0.22, 0.3, angle);
         }
     }
 
@@ -321,12 +413,16 @@ export const buildStadium = (
         ['Stadium_Aisles', aisle, material('stadium-aisle', [0.82, 0.83, 0.84], { gloss: 0.15 })],
         ['Stadium_SeatsGrey', seatsGrey, material('stadium-seat-grey', [0.8, 0.82, 0.84], { gloss: 0.4 })],
         ['Stadium_SeatsBlue', seatsBlue, material('stadium-seat-blue', [0.16, 0.3, 0.72], { gloss: 0.45 })],
-        ['Stadium_RoofLight', roofLight, material('stadium-roof-light', [0.6, 0.63, 0.64], { gloss: 0.35 })],
-        ['Stadium_RoofDark', roofDark, material('stadium-roof-dark', [0.52, 0.56, 0.57], { gloss: 0.35 })],
+        ['Stadium_RoofLight', roofLight, material('stadium-roof-light', [0.72, 0.74, 0.74], { gloss: 0.4 })],
+        ['Stadium_RoofDark', roofDark, material('stadium-roof-dark', [0.66, 0.69, 0.69], { gloss: 0.4 })],
         ['Stadium_RoofRibs', ribs, material('stadium-ribs', [0.93, 0.94, 0.91], { gloss: 0.3 })],
         // The facade faces outward only: from inside the bowl you see the roof's underside, not a wall.
-        ['Stadium_Facade', facade, material('stadium-facade', [0.66, 0.66, 0.62], { gloss: 0.2, oneSided: true })],
-        ['Stadium_Mullions', mullions, material('stadium-mullion', [0.58, 0.6, 0.59], { gloss: 0.2 })],
+        ['Stadium_PetalLight', petalLight, material('stadium-petal-light', [0.72, 0.72, 0.68], { gloss: 0.18 })],
+        ['Stadium_PetalDark', petalDark, material('stadium-petal-dark', [0.66, 0.66, 0.62], { gloss: 0.18 })],
+        ['Stadium_ShellBase', shellBase, material('stadium-shell-base', [0.24, 0.3, 0.32], { gloss: 0.7 })],
+        ['Stadium_RoofUnder', roofUnder, material('stadium-roof-under', [0.78, 0.8, 0.8], { gloss: 0.2 })],
+        ['Stadium_Fascia', fascia, material('stadium-fascia', [0.74, 0.76, 0.77], { gloss: 0.3 })],
+        ['Stadium_Lettering', lettering, letteringMaterial(app)],
         ['Stadium_Rail', rail, material('stadium-rail', [0.62, 0.76, 0.82], { gloss: 0.8 })],
         [
             'Stadium_Glazing',

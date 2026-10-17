@@ -28,6 +28,7 @@ import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { ROOM_NAMING } from './config/roomNaming';
+import { createIntro } from './gameplay/intro';
 import { createMatch } from './gameplay/match';
 import { StuckDetector } from './gameplay/stuck';
 import { apiBase, createAuth } from './net/auth';
@@ -48,6 +49,7 @@ import { buildAuthoredRoom } from './world/authoredRoom';
 import { loadCampus } from './world/campusLoader';
 import { cutDoorwaysInto } from './world/doorwayCutter';
 import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressing';
+import { buildExterior } from './world/exterior';
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
@@ -212,7 +214,10 @@ const boot = async () => {
     buildSigns(app, campus.root, derivedWorld, namedRooms);
     // The rebuilt 莲花球场 (decoration only; colliders unchanged) and its spectator seats.
     const stadium = buildStadium(app, campus.root, campus.root, derivedWorld.arena);
+    // The campus seen from outside (roof, south gate, street, lawn) for the entry flyover.
+    buildExterior(app, campus.root, namedRooms);
     const { player, camera } = createPlayer(app);
+    const intro = createIntro(app, camera, shell);
     shell.stage('characters', 'active');
     const characters = await CharacterAssetLoader.load(app);
     shell.stage('characters', 'done');
@@ -443,7 +448,16 @@ const boot = async () => {
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
-            if (!hasEntered) match.start('');
+            if (!hasEntered) {
+                match.start('');
+                // First entry: the flyover over the campus and through the south gate, input held until it ends.
+                // Automated browsers skip it (tests drive input at once) unless ?intro=1 asks for it.
+                const query = new URLSearchParams(window.location.search);
+                if (!query.has('noIntro') && (!navigator.webdriver || query.has('intro'))) {
+                    match.setInputPaused(true);
+                    intro.play(() => match.setInputPaused(false));
+                }
+            }
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
             shell.playing();

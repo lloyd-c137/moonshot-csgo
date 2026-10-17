@@ -14,6 +14,7 @@ import {
 
 import { MeshBuilder } from './meshBuilder';
 
+/** Inside the player camera's 180 m far clip; the intro flyover scales the dome up while it runs. */
 const RADIUS = 150;
 
 /** Gradient sky with soft procedural clouds, painted once on a canvas (u = azimuth, v = elevation). */

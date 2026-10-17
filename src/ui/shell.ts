@@ -42,6 +42,7 @@ const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
   <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
   <div class="finisher-bars" aria-hidden="true"><i></i><i></i></div>
+  <div id="intro" class="intro" hidden><div class="intro-bars" aria-hidden="true"><i></i><i></i></div><div class="intro-card" id="intro-card"></div><span class="intro-skip">点击或按空格跳过</span></div>
   <div id="finisher-flash" class="finisher-flash" aria-hidden="true"></div>
   <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>GLOBAL FINISHER · THE BOOMERANG</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
@@ -328,6 +329,7 @@ export const createUi = () => {
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
     // The execute button is a real hold: pressing starts it, releasing (or sliding off) ends it.
     let executeHold: { begin: () => void; end: () => void } | null = null;
+    let introTyping = 0;
     const executeButton = $('#execute-button');
     executeButton.addEventListener('pointerdown', (event) => {
         event.preventDefault();
@@ -1128,6 +1130,39 @@ export const createUi = () => {
             $('#execution-banner').hidden = text === null;
             if (text !== null && $('#execution-label').textContent !== text) $('#execution-label').textContent = text;
             $('#execution-progress').style.transform = `scaleX(${Math.max(0, Math.min(1, progress))})`;
+        },
+        /** Entry flyover overlay: letterbox and a title card typed out line by line; null hides it. */
+        intro: (lines: string[] | null) => {
+            const overlay = $('#intro');
+            const card = $('#intro-card');
+            window.clearInterval(introTyping);
+            root.dataset.intro = lines ? 'active' : 'inactive';
+            overlay.hidden = !lines;
+            card.replaceChildren();
+            if (!lines) return;
+            const rows = lines.map((line, index) => {
+                const row = document.createElement('p');
+                row.className = index === 0 ? 'intro-title' : 'intro-line';
+                card.append(row);
+                return { row, text: [...line] };
+            });
+            // One character every 45 ms after a short beat, like a field-report caption.
+            let line = 0,
+                char = 0,
+                wait = 14;
+            introTyping = window.setInterval(() => {
+                if (wait-- > 0) return;
+                const current = rows[line];
+                if (!current) return window.clearInterval(introTyping);
+                current.row.textContent = current.text.slice(0, ++char).join('');
+                current.row.classList.add('typing');
+                if (char >= current.text.length) {
+                    current.row.classList.remove('typing');
+                    line++;
+                    char = 0;
+                    wait = 6;
+                }
+            }, 45);
         },
         /** The finisher's strike: white flash and a punch on the title card. */
         finisherImpact: () => {

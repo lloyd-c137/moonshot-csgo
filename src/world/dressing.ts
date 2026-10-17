@@ -271,6 +271,23 @@ export const buildDressing = (
         })
     );
 
+    // Roof seen from outside (the intro flyover): the same slab and open-air mask as the ceiling, just above the wall
+    // tops so it caps them. Indoors the ceiling hides it.
+    const roofBuilder = new MeshBuilder();
+    addHorizontal(roofBuilder, slabTop, world.wallHeight + 0.04, false);
+    addMesh(
+        app,
+        root,
+        'Roof',
+        roofBuilder,
+        makeMaterial('roof', {
+            texture: textures.ceiling,
+            colour: [0.78, 0.8, 0.79],
+            opacityMask: ceilingMask,
+            gloss: 0.15
+        })
+    );
+
     // Tall perimeter wall around the open-air arena, standing on the source walls along the derived outline.
     // The visible wall is now the stadium's lower-bowl fascia (to STADIUM.fasciaTop); the collider keeps the full
     // ARENA_WALL_HEIGHT so the upper bowl built above it (world/stadium.ts) stays out of reach.

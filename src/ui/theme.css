@@ -3466,3 +3466,95 @@ legend {
 #app-ui[data-reduced-flashes='true'] .finisher-flash.show {
     animation: none;
 }
+
+/* Entry flyover: letterbox, a typed field-report title card, a skip hint; the HUD stays hidden. */
+.intro {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    pointer-events: none;
+}
+
+.intro[hidden] {
+    display: none;
+}
+
+.intro-bars > i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 12vh;
+    background: #000;
+    animation: intro-bar 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.intro-bars > i:first-child {
+    top: 0;
+    --from: -100%;
+}
+
+.intro-bars > i:last-child {
+    bottom: 0;
+    --from: 100%;
+}
+
+@keyframes intro-bar {
+    from {
+        transform: translateY(var(--from));
+    }
+}
+
+.intro-card {
+    position: absolute;
+    left: max(24px, 6vw);
+    bottom: calc(12vh + 28px);
+    display: grid;
+    gap: 6px;
+    color: #fff;
+    font-family: 'SFMono-Regular', Menlo, Consolas, 'PingFang SC', monospace;
+    text-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+}
+
+.intro-card p {
+    margin: 0;
+    min-height: 1.3em;
+    white-space: nowrap;
+}
+
+.intro-title {
+    font-size: clamp(20px, 2.6vw, 34px);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+}
+
+.intro-line {
+    font-size: clamp(13px, 1.3vw, 17px);
+    color: rgb(238 242 244 / 0.86);
+    letter-spacing: 0.04em;
+}
+
+.intro-card p.typing::after {
+    content: '▌';
+    margin-left: 2px;
+    color: var(--gold, #ffc21a);
+}
+
+.intro-skip {
+    position: absolute;
+    right: max(24px, 4vw);
+    bottom: calc(12vh - 34px);
+    color: rgb(238 242 244 / 0.7);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+}
+
+#app-ui[data-intro='active'] .screen-hud,
+#app-ui[data-intro='active'] .execute-button {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .intro-bars > i {
+        animation: none;
+    }
+}

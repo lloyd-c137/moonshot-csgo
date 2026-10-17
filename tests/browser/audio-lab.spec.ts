@@ -7,10 +7,12 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
 }) => {
     await page.addInitScript(() => {
         const durations: number[] = [];
-        Object.assign(window, { __loopingMusicDurations: durations });
+        const clips: number[] = [];
+        Object.assign(window, { __loopingMusicDurations: durations, __combatClipDurations: clips });
         const start = AudioBufferSourceNode.prototype.start;
         AudioBufferSourceNode.prototype.start = function (when = 0, offset = 0, duration?: number) {
             if (this.loop) durations.push(this.buffer?.duration ?? 0);
+            else if (this.buffer) clips.push(duration ?? this.buffer.duration - offset);
             start.call(this, when, offset, duration);
         };
     });
@@ -42,15 +44,34 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.locator('[data-scenario="head"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 爆头淘汰');
+    const headCuePlayed = await page.evaluate(() =>
+        (window as unknown as { __combatClipDurations: number[] }).__combatClipDurations.some(
+            (duration) => Math.abs(duration - 1.05299) < 0.0001
+        )
+    );
+    expect(headCuePlayed, 'the existing selected headshot clip remains active').toBe(true);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp))
         .toBe(2, {
             timeout: 6000
         });
 
+    const clipsBeforeGolden = await page.evaluate(
+        () => (window as unknown as { __combatClipDurations: number[] }).__combatClipDurations.length
+    );
     await page.locator('[data-scenario="golden"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
+    await expect
+        .poll(() =>
+            page.evaluate((start) => {
+                const played = (window as unknown as { __combatClipDurations: number[] }).__combatClipDurations.slice(
+                    start
+                );
+                return played.some((duration) => Math.abs(duration - 0.93) < 0.0001);
+            }, clipsBeforeGolden)
+        )
+        .toBe(true);
 
     const originalTuning = await page.evaluate(() => window.__MOONSHOT__!.match.state());
     await page.locator('[data-camera-kick]').evaluate((element: HTMLInputElement) => {
@@ -285,7 +306,7 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
                         id: 'gold-fixture',
                         label: '06 split fixture',
                         url: 'clips/gold.wav',
-                        duration: 0.74299,
+                        duration: 0.93,
                         mixed: true,
                         cues: ['goldKill']
                     },
@@ -302,7 +323,7 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
         })
     );
     await page.route('**/.audio-lab-local/clips/gold.wav', (route) =>
-        route.fulfill({ path: 'public/assets/audio/kill-v12.wav', contentType: 'audio/wav' })
+        route.fulfill({ path: 'public/assets/audio/gold-kill-06-01.wav', contentType: 'audio/wav' })
     );
     await page.route('**/.audio-lab-local/clips/whoosh.wav', (route) =>
         route.fulfill({ path: 'public/assets/audio/body-hit-v10.wav', contentType: 'audio/wav' })
@@ -329,7 +350,7 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
     await expect(page.locator('.audio-lab-status')).toContainText('已应用');
     await expect(page.locator('[data-golden]')).toBeChecked();
     await page.locator('section[data-cue="goldKill"] [data-preview]').click();
-    await expect.poll(async () => (await played()).some((v) => Math.abs(v - 0.74299) < 0.0001)).toBe(true);
+    await expect.poll(async () => (await played()).some((v) => Math.abs(v - 0.93) < 0.0001)).toBe(true);
     await page.locator('section[data-cue="throw"] select').selectOption('whoosh-fixture');
     await expect(page.locator('.audio-lab-status')).toContainText('飞盘破空');
     await page.locator('section[data-cue="throw"] [data-preview]').click();
@@ -343,7 +364,7 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
     await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
     const actual = (await played()).slice(before);
     const selectedCandidates = actual.filter((duration) =>
-        [0.54299, 0.74299].some((expected) => Math.abs(duration - expected) < 0.0001)
+        [0.54299, 0.93].some((expected) => Math.abs(duration - expected) < 0.0001)
     );
     expect(selectedCandidates).toHaveLength(2);
     await page.keyboard.press('p');

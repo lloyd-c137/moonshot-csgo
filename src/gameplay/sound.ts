@@ -429,11 +429,21 @@ export const createSound = () => {
                 tone(audio, out, 'sawtooth', 900, 120, now, 0.12, 0.2);
                 hiss(audio, out, now + 0.03, 0.45, 0.35, 2600, 6000, 2.4);
             }),
-        /** Sniper or golden elimination: use the selected head/kill clip, with the original synthesis as fallback. */
+        /** Sniper or golden elimination; gold always keeps a distinct cue, including while its clip loads. */
         snipeConfirm: (head = true, golden = false) =>
             play(
                 (audio, now) => {
-                    if (golden && (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill'))) return;
+                    if (golden) {
+                        if (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill')) return;
+                        // The first confirmation can arrive before the selected WAV has decoded. Never
+                        // fall through to the ordinary kill/head clip: that made golden eliminations
+                        // indistinguishable whenever the asset was still loading or unavailable.
+                        tone(audio, bus(), 'sawtooth', 196, 392, now, 0.34, 0.28);
+                        tone(audio, bus(), 'triangle', 784, 1568, now + 0.04, 0.58, 0.22);
+                        tone(audio, bus(), 'triangle', 1174, 1760, now + 0.12, 0.46, 0.16);
+                        hiss(audio, bus(), now + 0.02, 0.32, 0.16, 4200, 9000, 2.5);
+                        return;
+                    }
                     const cue = head ? 'head' : 'kill';
                     if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
                     tone(audio, bus(), 'sine', 120, 40, now, 0.5, 0.7);

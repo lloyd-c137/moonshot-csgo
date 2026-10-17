@@ -123,6 +123,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await a.page.waitForTimeout(1_800);
     // Keep only the observing client rendered so the remote arm animation advances without doubling scene load.
     await b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true));
+    await b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90));
 
     // First body hit: damaged, not out.
     const armBeforeThrow = await b.page.evaluate(
@@ -136,6 +137,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'), idA))
         .not.toEqual(armBeforeThrow);
+    await b.page.screenshot({ path: 'test-results/combat-throw-release.png' });
     await expect
         .poll(
             async () => [

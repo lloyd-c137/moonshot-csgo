@@ -4,6 +4,28 @@ import { advance, collectErrors, enterAtSpawn, enterCampus, hold, loadSimulated,
 
 const horizontal = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
+test('reduced-flash damage cues fade away instead of leaving a persistent screen tint', async ({ page }) => {
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    await page.evaluate(() => {
+        document.querySelector<HTMLElement>('#app-ui')!.dataset.reducedFlashes = 'true';
+        document.querySelector('#damage')!.classList.add('show');
+        document.querySelector('#damage-dir')!.classList.add('show');
+    });
+    const durations = await page.evaluate(() =>
+        ['#damage', '#damage-dir'].map((selector) =>
+            document.querySelector(selector)!.getAnimations()[0]?.effect?.getTiming().duration
+        )
+    );
+    expect(durations).toEqual([280, 280]);
+    await page.evaluate(() => {
+        document.querySelector('#damage')!.getAnimations()[0].finish();
+        document.querySelector('#damage-dir')!.getAnimations()[0].finish();
+    });
+    expect(await page.locator('#damage').evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
+    expect(await page.locator('#damage-dir').evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
+});
+
 test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and recover', async ({ page }) => {
     const errors = collectErrors(page);
     await loadSimulated(page);

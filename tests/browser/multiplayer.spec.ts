@@ -130,6 +130,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
         (id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'),
         idA
     );
+    const damageFlash = b.page.locator('#damage.show').waitFor({ state: 'attached', timeout: 5_000 });
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 0.65, 39.6))).toBe(true);
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idA), { timeout: 1_000 })
@@ -152,6 +153,8 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect((await state(b.page)).alive).toBe(true);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
     await expect(a.page.locator('#hitmarker')).not.toHaveAttribute('data-prediction');
+    await damageFlash;
+    await b.page.screenshot({ path: 'test-results/combat-victim-damage.png' });
     await a.page.screenshot({ path: 'test-results/combat-body-hit.png' });
 
     // Second hit (after the throw cooldown): eliminated and broadcast to everyone.

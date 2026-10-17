@@ -56,9 +56,12 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | Blackout/floodlight fade browser regression | Local blackout visibly passes through nonzero pooled-light and fixture intensity before reaching zero; repair restores lighting; two clients receive the same authoritative outage/repair route | PASS, `tests/browser/power.spec.ts` 2/2 |
 | Typecheck/lint/build after lighting transition | TS client and Worker checks, ESLint, production bundle | PASS; bundle 1,887.05 kB raw / 484.27 kB gzip with existing chunk warning |
 | Combat Feel Lab dummy presets | Development-only P panel buttons exercise shared dummy body-hit, headshot, normal elimination and golden-elimination feedback; browser test checks hit state, kill copy, respawn and golden confirmation | PASS, targeted browser test 1/1 |
+| Body-hit visual clarity and reduced-flash behavior | Dual-client combat hit capture; normal and reduced-flash damage cues use a restrained 280 ms opacity fade and return to zero rather than leaving a static tint | PASS, targeted multiplayer capture 1/1 and reduced-flash browser test 1/1 |
 | Practice execution copy regression | Shared dummy feedback initially replaced the execution-specific confirmation; restored `人偶 · 处决淘汰` while keeping the shared hit/effect pipeline | PASS, preset and execution browser tests 2/2 |
 | Full development browser suite after fixes | Audio lab, dummy execution, every authored doorway, campus movement/interaction, route, multiplayer combat/execution and power-switch scenarios | PASS, 16/16 in 2.5 min |
 | Production browser smoke after all current changes | Production preview loads FF-01 and physics, then enters through pointer lock | PASS, 1/1 |
+| Damage vignette and reduced-flash checks | Multiplayer body hit captured from the victim client; reduced-flash test checks both cues have a 280 ms animation and end at zero; movement/sprint/pause/recovery route rerun | PASS, 3 targeted browser tests |
+| Typecheck/lint/build/production smoke after damage-feedback adjustment | Client and Worker type checks, ESLint, production bundle and production entry smoke | PASS; 1,886.88 kB raw / 484.24 kB gzip, existing chunk-size warning |
 | E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
 | Live rendered training-dummy capture | Separate Chromium window against local Vite; idle, confirmed body reaction, death reaction, fixed-position respawn; zero page errors | PASS for the observed sequence |
 | Baseline `typecheck` and `lint` | Ran after smoke correction | PASS |
@@ -77,6 +80,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | Feedback priority director | IN PROGRESS | Deduplication and HUD priority windows are implemented and unit-tested; round-result audio routes through the director. Full scenario coverage remains. |
 | Throw animation and flight feedback | PARTIAL | A custom 0.72 s upper-body additive frisbee throw track is attached to the rig at load. Remote clients start at its authored release marker when the server `thrown` event arrives, then play the follow-through. Browser E2E confirms the action state and a changed remote upper-arm quaternion with rendering active. Full visual review of release timing, hand/disc alignment, and trail tuning remains. |
 | Character hit reactions | PARTIAL | Rigged body/head/death reaction clips are connected and visually captured. The provided clips do not include a frisbee throw, so the dedicated throw action is authored as an upper-body additive track; its gameplay dispatch and bone response are browser-tested, while its visual quality review remains. Firearm clips are intentionally not substituted. |
+| Damage feedback clarity | PARTIAL | Reduced the full-screen red vignette/wash and shortened the body damage cue from 600 ms to 280 ms. `reducedFlashes` now uses lower-opacity fades for both the vignette and directional arc and still clears; browser capture and end-frame check pass. Audio quality and subjective comfort remain unverified. |
 | Camera impulses / reduced motion | IN PROGRESS | Random per-frame camera jitter and random yaw kick removed; bounded damped position/FOV response leaves mouse aim unchanged. Off/Low/Normal mode and settings persistence are implemented. Unit test passes; browser QA pending. |
 | Audio buses, attenuation, voice caps | IN PROGRESS | Combat/confirmation/environment/UI buses, master/combat/confirmation volumes, confirmation ducking, per-bus source caps, and ended-source cleanup implemented. Owner-selected clips remain intact; browser/performance evidence pending. |
 | HUD hierarchy and duplicate suppression | IN PROGRESS | Hit/kill/golden/personal-damage/round-result priority windows and server-event dedupe are integrated. More combat and simultaneous-event browser coverage remains. |
@@ -101,6 +105,8 @@ Captured in an independent Chromium window with real rendering enabled at 1440×
 - Body hit: [dummy-body-hit.png](evidence/combat-feel-2.0/dummy-body-hit.png)
 - Elimination: [dummy-elimination.png](evidence/combat-feel-2.0/dummy-elimination.png)
 - Respawn: [dummy-respawn.png](evidence/combat-feel-2.0/dummy-respawn.png)
+- Networked frisbee release: [remote-throw-release.png](evidence/combat-feel-2.0/remote-throw-release.png)
+- Victim-side body damage: [victim-damage.png](evidence/combat-feel-2.0/victim-damage.png)
 
 ## Outstanding acceptance
 

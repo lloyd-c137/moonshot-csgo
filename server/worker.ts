@@ -6,7 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { parseClientMessage, SNAPSHOT_HZ } from '../src/net/protocol.ts';
+import { parseClientMessage, ROUND, SNAPSHOT_HZ } from '../src/net/protocol.ts';
 import type { ServerMessage } from '../src/net/protocol.ts';
 
 import { sqlAccountDb } from './accountDb.ts';
@@ -17,7 +17,12 @@ import { Room } from './room.ts';
 const ROOM_NAME = 'campus-v2';
 
 /** START_AMMO: local test rooms only (npm run server:dev) — lets browser tests throw repeatedly. */
-type Env = { WORLD: DurableObjectNamespace<World>; ALLOWED_ORIGINS: string; START_AMMO?: string };
+type Env = {
+    WORLD: DurableObjectNamespace<World>;
+    ALLOWED_ORIGINS: string;
+    START_AMMO?: string;
+    COMBAT_TEST?: string;
+};
 
 const originAllowed = (origin: string | null, allowed: string) => {
     if (!origin) return false;
@@ -73,9 +78,11 @@ export class World extends DurableObject<Env> {
     private counter = 0;
     private accounts: Accounts;
     private failures = new Map<string, number[]>();
+    private readonly combatTestEnabled: boolean;
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
+        this.combatTestEnabled = env.COMBAT_TEST === '1';
         this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(ctx.storage.sql)));
         const send = (socket: WebSocket | undefined, message: ServerMessage) => {
             try {
@@ -153,6 +160,25 @@ export class World extends DurableObject<Env> {
             new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
         const now = Date.now();
         const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+        if (url.pathname === '/api/__test/round-clock' && request.method === 'POST') {
+            if (!this.combatTestEnabled) return json({ error: 'not found' }, 404);
+            if (!this.accounts.resolve(bearer, now)) return json({ error: '登录已过期，请重新登录' }, 401);
+            let body: { remainingSeconds?: unknown };
+            try {
+                body = (await request.json()) as typeof body;
+            } catch {
+                return json({ error: '请求格式不正确' }, 400);
+            }
+            const remainingSeconds = body.remainingSeconds;
+            if (
+                typeof remainingSeconds !== 'number' ||
+                ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft].some((seconds) => seconds === remainingSeconds)
+            )
+                return json({ error: '无效的回合测试时间' }, 400);
+            return this.room.setTestRoundRemaining(now, remainingSeconds * 1000)
+                ? json({ ok: true })
+                : json({ error: '当前没有进行中的回合' }, 409);
+        }
         switch (`${request.method} ${url.pathname}`) {
             case 'GET /api/king':
                 return json({ king: this.accounts.king(), online: this.room.online });

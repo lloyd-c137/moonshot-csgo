@@ -62,38 +62,83 @@ test('lifetime board shows eliminations and loss-only win-rate indices, includin
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 
-test('the live final-minute trigger announces the showdown and relocates the survivor to the arena', async ({
+test('one shared round clock moves both surviving clients through blackout and final showdown', async ({
     browser
 }) => {
-    const { page, errors } = await open(browser, true);
-    await enter(page, `终局${Date.now().toString(36).slice(-6)}`, 'secret-789');
+    const a = await open(browser, true);
+    const b = await open(browser);
+    const name = Date.now().toString(36).slice(-6);
+    await enter(a.page, `终局甲${name}`, 'secret-789');
+    await enter(b.page, `终局乙${name}`, 'secret-789');
+    const page = a.page;
     await expect.poll(() => state(page).then((value) => value.round?.phase)).toBe('playing');
-    const before = await page.evaluate(() => window.__MOONSHOT__!.position());
+    await expect.poll(() => state(b.page).then((value) => value.round?.phase)).toBe('playing');
+    await expect.poll(() => state(page).then((value) => value.players.length)).toBe(2);
+    // Keep both test players outside the south-gate guard's sight/range during the accelerated night.
+    await Promise.all([
+        page.evaluate(() => {
+            window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6);
+            window.__MOONSHOT__!.setLook(0, 90);
+        }),
+        b.page.evaluate(() => {
+            window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6);
+            window.__MOONSHOT__!.setLook(0, -90);
+        })
+    ]);
+    const [beforeA, beforeB] = await Promise.all([
+        page.evaluate(() => window.__MOONSHOT__!.position()),
+        b.page.evaluate(() => window.__MOONSHOT__!.position())
+    ]);
+    const originalEnd = (await state(page)).round?.endsAt;
     await page.keyboard.press('p');
     await page.locator('[data-phase="blackout"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的终局夜晚');
     await page.locator('.audio-lab [data-action="close"]').click();
+    await expect.poll(() => state(page).then((value) => value.round?.endsAt)).not.toBe(originalEnd);
+    await expect.poll(() => state(b.page).then((value) => value.round?.endsAt)).toBe((await state(page)).round?.endsAt);
     await expect.poll(() => state(page).then((value) => value.power.dark)).toBe(true);
+    await expect.poll(() => state(b.page).then((value) => value.power.dark)).toBe(true);
+    expect((await state(page)).alive).toBe(true);
+    expect((await state(b.page)).alive).toBe(true);
+    expect((await state(page)).round?.endsAt).toBe((await state(b.page)).round?.endsAt);
     await expect(page.locator('#broadcast')).toContainText('终局夜晚开始');
+    await expect(b.page.locator('#broadcast')).toContainText('终局夜晚开始');
 
     await page.keyboard.press('p');
     await page.locator('[data-phase="final"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的最终对决');
     await page.locator('.audio-lab [data-action="close"]').click();
     await expect.poll(() => state(page).then((value) => value.finalShown)).toBe(true);
+    await expect.poll(() => state(b.page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
+    await expect(b.page.locator('#broadcast')).toContainText('最终对决');
     await expect
         .poll(() => page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
         .toBe('cover');
+    await expect
+        .poll(() => b.page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
+        .toBe('cover');
     await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown-curtain.png' });
     await expect.poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 }).toBe('relocated');
-    const [x, , z] = await page.evaluate(() => window.__MOONSHOT__!.position());
-    expect(Math.hypot(x - before[0], z - before[2])).toBeGreaterThan(20);
-    expect(Math.hypot(x + 8.395, z + 2.85)).toBeLessThanOrEqual(9.1);
+    await expect.poll(() => state(b.page).then((value) => value.finalRelocationResult), { timeout: 3_000 }).toBe('relocated');
+    const [afterA, afterB] = await Promise.all([
+        page.evaluate(() => window.__MOONSHOT__!.position()),
+        b.page.evaluate(() => window.__MOONSHOT__!.position())
+    ]);
+    for (const [before, after] of [
+        [beforeA, afterA],
+        [beforeB, afterB]
+    ] as const) {
+        expect(Math.hypot(after[0] - before[0], after[2] - before[2])).toBeGreaterThan(20);
+        expect(Math.hypot(after[0] + 8.395, after[2] + 2.85)).toBeLessThanOrEqual(9.1);
+    }
     await expect(page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
+    await expect(b.page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
     expect((await state(page)).alive).toBe(true);
-    expect(errors).toEqual([]);
-    await page.close();
+    expect((await state(b.page)).alive).toBe(true);
+    expect(a.errors).toEqual([]);
+    expect(b.errors).toEqual([]);
+    await Promise.all([page.close(), b.page.close()]);
 });
 
 test('accounts, chat, headshots and eliminations in the shared campus', async ({ browser, request }) => {

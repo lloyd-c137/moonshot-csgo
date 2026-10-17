@@ -618,6 +618,18 @@ export class Room {
         }
     }
 
+    /** Local-development QA only: broadcast one of the authored climax thresholds to the whole room. */
+    setTestRoundRemaining(now: number, remainingMs: number) {
+        if (
+            this.round?.phase !== 'playing' ||
+            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft].some((seconds) => seconds * 1000 === remainingMs)
+        )
+            return false;
+        this.round = { ...this.round, endsAt: now + remainingMs };
+        this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        return true;
+    }
+
     private endRound(now: number, winner: Player | null, line: string | null, outcome: RoundOutcome) {
         if (this.round?.phase !== 'playing') return;
         this.cancelAllExecutions('本局结束');

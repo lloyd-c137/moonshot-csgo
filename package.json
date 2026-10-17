@@ -14,7 +14,7 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "server:deploy": "wrangler deploy --config server/wrangler.toml",
-        "server:dev": "wrangler dev --config server/wrangler.toml --port 8787 --var ALLOWED_ORIGINS:localhost,127.0.0.1 --var START_AMMO:9",
+        "server:dev": "wrangler dev --config server/wrangler.toml --port 8787 --var ALLOWED_ORIGINS:localhost,127.0.0.1 --var START_AMMO:9 --var COMBAT_TEST:1",
         "spawns": "node tools/spawnPointsCli.ts",
         "start": "vite preview",
         "test": "node --test",

@@ -9,6 +9,7 @@ import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { SPAWN_POINTS } from '../config/spawns';
 import { MONITOR_CONSOLE, SPECIAL_LOCATIONS } from '../config/specialLocations';
+import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
@@ -139,6 +140,20 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let labUi: AudioLabUi | undefined;
     let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void = () =>
         undefined;
+    const setRoundTestClock = async (remainingSeconds: number) => {
+        const base = import.meta.env.DEV ? apiBase(url) : null;
+        if (!base || !auth.token) return false;
+        try {
+            const response = await fetch(`${base}/api/__test/round-clock`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: `Bearer ${auth.token}` },
+                body: JSON.stringify({ remainingSeconds })
+            });
+            return response.ok;
+        } catch {
+            return false;
+        }
+    };
     if (audioLab) {
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
@@ -164,38 +179,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 getHudDuration: () => ui.combatHudDuration(),
                 getSimulatedRtt: () => net.simulatedRtt,
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
-                simulateBlackout: () => {
-                    const serverNow = net.serverNow();
-                    if (
-                        !import.meta.env.DEV ||
-                        net.state !== 'online' ||
-                        !roundState ||
-                        roundState.phase !== 'playing' ||
-                        serverNow === null
-                    )
-                        return false;
-                    roundState = { ...roundState, endsAt: serverNow + ROUND.blackoutSecondsLeft * 1000 };
-                    finalShown = false;
-                    finalDone = false;
-                    finalRelocationResult = 'idle';
-                    return true;
-                },
-                simulateFinalMinute: () => {
-                    const serverNow = net.serverNow();
-                    if (
-                        !import.meta.env.DEV ||
-                        net.state !== 'online' ||
-                        !roundState ||
-                        roundState.phase !== 'playing' ||
-                        serverNow === null
-                    )
-                        return false;
-                    roundState = { ...roundState, endsAt: serverNow + ROUND.finalSecondsLeft * 1000 };
-                    finalShown = false;
-                    finalDone = false;
-                    finalRelocationResult = 'idle';
-                    return true;
-                },
+                simulateBlackout: () => setRoundTestClock(ROUND.blackoutSecondsLeft),
+                simulateFinalMinute: () => setRoundTestClock(ROUND.finalSecondsLeft),
                 simulateRoundResult: (outcome, mine) => {
                     const now = performance.now();
                     const presentation = feedback.submit(
@@ -1868,6 +1853,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 aim,
                 gold: goldView.state,
                 round: roundState,
+                roomNow: roomNow(),
+                blackoutAt: blackoutAt(),
                 detained: performance.now() < detainedUntil,
                 power: { ...power, phase: powerPhase(roomNow(), power), dark, guard: { ...guard.pose } }
             }),

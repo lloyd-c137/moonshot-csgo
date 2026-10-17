@@ -24,8 +24,8 @@ type Options = {
     getHudDuration: () => number;
     getSimulatedRtt: () => number;
     simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void;
-    simulateBlackout: () => boolean;
-    simulateFinalMinute: () => boolean;
+    simulateBlackout: () => Promise<boolean>;
+    simulateFinalMinute: () => Promise<boolean>;
     simulateRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
 };
 
@@ -156,13 +156,13 @@ export const mountAudioLab = async ({
     host.querySelectorAll<HTMLButtonElement>('[data-scenario]').forEach((button) => {
         button.addEventListener('click', () => simulateDummyHit(button.dataset.scenario as 'body' | 'head' | 'elimination' | 'golden' | 'execution'));
     });
-    host.querySelector<HTMLButtonElement>('[data-phase="blackout"]')!.addEventListener('click', () => {
-        status.textContent = simulateBlackout()
+    host.querySelector<HTMLButtonElement>('[data-phase="blackout"]')!.addEventListener('click', async () => {
+        status.textContent = (await simulateBlackout())
             ? '已触发当前回合的终局夜晚；关闭面板观察校园照明与保安。'
             : '终局夜晚场景需要登录并连接本地开发测试服（?server=ws://127.0.0.1:8787/ws）。';
     });
-    host.querySelector<HTMLButtonElement>('[data-phase="final"]')!.addEventListener('click', () => {
-        status.textContent = simulateFinalMinute()
+    host.querySelector<HTMLButtonElement>('[data-phase="final"]')!.addEventListener('click', async () => {
+        status.textContent = (await simulateFinalMinute())
             ? '已触发当前回合的最终对决；关闭面板观察公告、遮罩、灯光与传送。'
             : '最终对决场景需要登录并连接本地开发测试服（?server=ws://127.0.0.1:8787/ws）。';
     });

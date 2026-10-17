@@ -7,17 +7,25 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
     await loadSimulated(page, '/?offline=1&noIntro=1&noLobby=1');
     await enterCampus(page);
 
-    const pickup = async (x: number, z: number, ability: string) => {
+    const moveTo = async (x: number, z: number) => {
         await page.evaluate(([px, pz]) => {
             window.__MOONSHOT__!.teleport(px, 0.92, pz);
-            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }));
         }, [x, z]);
+        await advance(page, 100);
+    };
+    const pickup = async (x: number, z: number, ability: string) => {
+        await moveTo(x, z);
+        await page.keyboard.press('e');
         await advance(page, 100);
         await expect.poll(() => page.evaluate((key) => window.__MOONSHOT__!.match.state().abilities?.[key], ability)).toBe(true);
     };
 
     await pickup(-64.68, -8.64, 'revive');
-    await pickup(-44.24, 25.54, 'frc');
+    await moveTo(-44.24, 25.54);
+    await expect(page.locator('#interaction')).toContainText('替换当前技能');
+    await page.keyboard.press('e');
+    await advance(page, 100);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().abilities?.frc)).toBe(true);
     await expect.poll(() => page.evaluate(() => {
         const state = window.__MOONSHOT__!.match.state();
         return [state.abilities?.revive, state.abilities?.frc, state.items?.find((item) => item.id === 'item-revive')?.available];

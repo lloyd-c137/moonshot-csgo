@@ -2077,7 +2077,11 @@ export const createMatch = ({
             near
                   ? (() => {
                         const talk = near.id.startsWith('coach-') || near.id === 'mark';
-                        return `E ${talk ? '交谈' : '拾取'} ${near.name}`;
+                        const skill = activeLocalSkill();
+                        const item = worldItems.find((candidate) => candidate.id === near.id);
+                        const replacesSkill =
+                            skill !== null && (item ? item.kind !== skill : near.id === 'mark' && skill !== 'creation');
+                        return `E ${talk ? '交谈' : '拾取'} ${near.name}${replacesSkill ? ' · 替换当前技能' : ''}`;
                     })()
                   : started && alive && !spectating && nearBreaker(pose().p)
                     ? activePower.pulledAt === null

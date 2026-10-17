@@ -14,7 +14,7 @@ Moonshot's version uses these game-authored conditions:
 - Completion after 2.6 seconds always eliminates the target for the rest of the round (owner decision: at any time of the round) and switches them to spectating. The attacker returns to first person. A hit on either participant, a disconnect, or round change interrupts the move.
 - Movement, frisbee throws, and other interactions are frozen for the pair. Spectators can continue watching.
 
-The online room revalidates proximity, facing, pose freshness, spawn protection, availability, and collision mask before starting a move. Protocol version is 11; both the browser and Worker must be deployed together.
+The online room revalidates proximity, facing, pose freshness, spawn protection, availability, and collision mask before starting a move. Protocol version is 10. The 2026-10-17 additions (hit `rt`/`path`, pose `tp`, dead chat lines) are optional fields, so browser and Worker builds on either side of a deploy keep working together (an older client's hits are judged at the default render delay and on a straight flight).
 
 ## Offline audio-lab dummy
 

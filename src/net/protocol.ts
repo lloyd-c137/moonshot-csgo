@@ -12,7 +12,7 @@ import type { Execution } from '../gameplay/execution.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 10;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;

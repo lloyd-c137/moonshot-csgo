@@ -14,7 +14,7 @@ test('walk through the source power-room entrance, pull once, see blackout and g
         const target = window as Window & { __powerDownCueStarts?: number };
         const originalStart = AudioBufferSourceNode.prototype.start;
         AudioBufferSourceNode.prototype.start = function (when?: number, offset?: number, duration?: number) {
-            if (this.buffer && Math.abs(this.buffer.duration - 1.2016) < 0.03)
+            if (this.buffer && Math.abs(this.buffer.duration - 1.1755) < 0.0001)
                 target.__powerDownCueStarts = (target.__powerDownCueStarts ?? 0) + 1;
             return originalStart.call(this, when, offset, duration);
         };

@@ -232,6 +232,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     app.root.addChild(goldLight);
     let finalDone = false;
     let finalShown = false;
+    let finalRelocationResult = 'idle';
     let floodlightTransitionAt = performance.now();
     let floodlightFrom = 0;
     let groundCap = 0;
@@ -1381,6 +1382,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         if (!finalNow) finalDone = false;
         if (finalNow && !finalDone && alive && !spectating && started) {
             finalDone = true;
+            finalRelocationResult = 'pending';
             ui.arenaTransition(() => {
                 const current = roundState;
                 if (
@@ -1390,8 +1392,21 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     net.state !== 'online' ||
                     current?.phase !== 'playing' ||
                     roomNow() < current.endsAt - ROUND.finalSecondsLeft * 1000
-                )
+                ) {
+                    const reason = !alive
+                        ? 'dead'
+                        : spectating
+                          ? 'spectating'
+                          : !started
+                            ? 'not-started'
+                            : net.state !== 'online'
+                              ? 'offline'
+                              : current?.phase !== 'playing'
+                                ? 'round-ended'
+                                : 'early';
+                    finalRelocationResult = `skipped:${reason}`;
                     return;
+                }
                 // Spread out round the middle of the court (a fixed spot per player, so nobody lands on anyone).
                 const id = selfId();
                 let hash = 0;
@@ -1409,6 +1424,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 player.rigidbody!.linearVelocity = Vec3.ZERO;
                 setLook(player, 0, (Math.atan2(Math.cos(a), Math.sin(a)) * 180) / Math.PI);
                 net.pose(pose(), true);
+                finalRelocationResult = 'relocated';
             });
         }
         // Carrying the golden disc: no faster in the air than on the ground (jumping must not dodge the slowdown).
@@ -1789,6 +1805,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 throws,
                 hitsClaimed,
                 hitsPredicted,
+                finalShown,
+                finalRelocationResult,
                 activeAudioVoices: sound.voiceCount(),
                 cameraMotionScale: cameraImpulses.scale,
                 effectIntensity: effects.intensity(),
@@ -1811,6 +1829,18 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             /** Browser tests isolate traversal from patrol timing while teacher behavior is tested separately. */
             setTeacherGrace: (milliseconds: number) => {
                 teacherGraceUntil = performance.now() + Math.max(0, milliseconds);
+            },
+            /** Moves the local round clock to its final minute to exercise the complete transition in browser QA. */
+            simulateFinalMinute: () => {
+                if (!import.meta.env.DEV) return false;
+                const serverNow = net.serverNow();
+                if (net.state !== 'online' || !roundState || roundState.phase !== 'playing' || serverNow === null)
+                    return false;
+                roundState = { ...roundState, endsAt: serverNow + ROUND.finalSecondsLeft * 1000 };
+                finalShown = false;
+                finalDone = false;
+                finalRelocationResult = 'idle';
+                return true;
             },
             inspect: startInspect,
             holdInspect: (u: number | null) => (inspectHold = u),

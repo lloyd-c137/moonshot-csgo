@@ -62,6 +62,30 @@ test('lifetime board shows eliminations and loss-only win-rate indices, includin
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 
+test('the live final-minute trigger announces the showdown and relocates the survivor to the arena', async ({
+    browser
+}) => {
+    const { page, errors } = await open(browser);
+    await enter(page, `终局${Date.now().toString(36).slice(-6)}`, 'secret-789');
+    await expect.poll(() => state(page).then((value) => value.round?.phase)).toBe('playing');
+    const before = await page.evaluate(() => window.__MOONSHOT__!.position());
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.simulateFinalMinute())).toBe(true);
+    await expect.poll(() => state(page).then((value) => value.finalShown)).toBe(true);
+    await expect(page.locator('#broadcast')).toContainText('最终对决');
+    await expect
+        .poll(() => page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
+        .toBe('cover');
+    await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown-curtain.png' });
+    await expect.poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 }).toBe('relocated');
+    const [x, , z] = await page.evaluate(() => window.__MOONSHOT__!.position());
+    expect(Math.hypot(x - before[0], z - before[2])).toBeGreaterThan(20);
+    expect(Math.hypot(x + 8.395, z + 2.85)).toBeLessThanOrEqual(9.1);
+    await expect(page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
+    expect((await state(page)).alive).toBe(true);
+    expect(errors).toEqual([]);
+    await page.close();
+});
+
 test('accounts, chat, headshots and eliminations in the shared campus', async ({ browser, request }) => {
     const stamp = Date.now().toString(36).slice(-6);
     const nameA = `甲${stamp}`;

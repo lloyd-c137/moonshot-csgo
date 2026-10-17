@@ -17,6 +17,7 @@ declare global {
             teleport: (x: number, y: number, z: number) => void;
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
+            perf: () => { shadersLinked: number; compileMs: number; shaders: string[]; drawCallsPerFrame: number };
             sceneTransition: (relocate: () => void) => void;
             showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
             raycast: (from: number[], to: number[]) => string | null;

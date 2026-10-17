@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-10-16",
+  "scenario": "offline practice, one local player, stationary campus view",
+  "sampleDurationMs": 5002,
+  "frames": 301,
+  "medianFrameMs": 16.7,
+  "p95FrameMs": 16.7,
+  "medianDrawCalls": 119,
+  "p95DrawCalls": 121,
+  "maxDrawCalls": 123,
+  "host": {
+    "model": "Apple M1",
+    "gpu": "Apple M1, 7 cores",
+    "os": "macOS 26.2"
+  },
+  "browser": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "webglRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "hardwareConcurrency": 8,
+    "deviceMemoryGiB": 16,
+    "viewport": [1280, 720],
+    "devicePixelRatio": 1
+  },
+  "limitations": [
+    "One opt-in Playwright sample, not a repeated benchmark distribution.",
+    "No movement, active combat, audio burst, remote clients, or 2-32 player load was included.",
+    "This headless Chromium result is a local baseline, not a desktop release performance claim."
+  ]
+}

@@ -509,10 +509,13 @@ const boot = async () => {
                     app.graphicsDevice as unknown as { _shaderStats: { linked: number; compileTime: number } }
                 )._shaderStats;
                 const shaders = (app.graphicsDevice as unknown as { shaders: { name: string }[] }).shaders;
+                const drawCallsPerFrame = (app.graphicsDevice as unknown as { _drawCallsPerFrame: number })
+                    ._drawCallsPerFrame;
                 return {
                     shadersLinked: stats.linked,
                     compileMs: stats.compileTime,
-                    shaders: shaders.map((shader) => shader.name)
+                    shaders: shaders.map((shader) => shader.name),
+                    drawCallsPerFrame
                 };
             },
             position: () => player.getPosition().toArray(),

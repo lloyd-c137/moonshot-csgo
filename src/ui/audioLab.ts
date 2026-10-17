@@ -69,7 +69,7 @@ export const mountAudioLab = async ({
           <label>模拟网络 RTT <output data-rtt-value></output><input data-rtt type="range" min="0" max="400" step="20"><small>收发各延迟一半；0 / 80 / 200 / 400 ms。只影响当前开发测试会话。</small></label>
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
-        <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><small>直接驱动固定人偶的本地命中、动作、特效和音效流程，不影响战绩；人偶死亡后原地复活。</small></div>
+        <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><button data-action="execution-demo" type="button">处决人偶测试</button><small>命中预设直接驱动固定人偶反馈；处决按钮会进入背后站位，再按 V 播放实际双角色动作。人偶死亡后原地复活。</small></div>
         <div class="audio-lab-scenarios" aria-label="回合高潮场景"><strong>回合高潮</strong><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终对决</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>夜晚与最终对决使用当前联机回合逻辑，需要显式连接本地测试服；结果卡片为本地 UI/音效演示，不改变战绩。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
@@ -231,6 +231,11 @@ export const mountAudioLab = async ({
     host.querySelector('[data-action="resume"]')!.addEventListener('click', resume);
     host.querySelector('[data-action="range"]')!.addEventListener('click', () => {
         range();
+        resume();
+    });
+    host.querySelector('[data-action="execution-demo"]')!.addEventListener('click', () => {
+        range();
+        status.textContent = '已进入人偶背后处决站位，按 V 或点击游戏内处决按钮开始双角色动作。';
         resume();
     });
 

@@ -133,7 +133,8 @@ test('offline target stays visible after entry, uses selected defaults and respa
     await page.goto('/?audioLab=1&offline=1');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.keyboard.press('p');
-    await page.locator('[data-action="range"]').click();
+    await page.locator('[data-action="execution-demo"]').click();
+    await expect(page.locator('.audio-lab')).not.toBeVisible();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     // This was absent after net.connect() cleared all avatars, even while the invisible target could be hit.
     const tag = page.locator('.name-tag').filter({ hasText: '固定测试人偶' });

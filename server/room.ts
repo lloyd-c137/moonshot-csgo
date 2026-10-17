@@ -7,7 +7,7 @@ import type { Execution } from '../src/gameplay/execution.ts';
 import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';
 import type { GlobalFinisher } from '../src/gameplay/finisher/FinisherTypes.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
-import { nearBreaker } from '../src/gameplay/power.ts';
+import { nearBreaker, powerOut } from '../src/gameplay/power.ts';
 import type { PowerState } from '../src/gameplay/power.ts';
 import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
@@ -807,8 +807,11 @@ export class Room {
             target.deaths++;
             target.alive = false;
             target.respawnAt = now + RESPAWN_SECONDS * 1000;
-            // After the lights go out an elimination is final for the round.
-            if (this.blackout(now)) target.spectating = true;
+            // The final-round blackout and a manual breaker outage both make eliminations final.
+            if (this.blackout(now) || powerOut(now, this.power)) {
+                target.spectating = true;
+                target.respawnAt = 0;
+            }
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];

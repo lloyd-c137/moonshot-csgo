@@ -104,6 +104,33 @@ test('two valid hits eliminate (one per disc), scoring one point for the elimina
     assert.deepEqual([room.players.get('b').alive, room.players.get('b').hp], [true, MAX_HP]);
 });
 
+test('a lethal hit during a manual breaker outage sends the target to spectating without a respawn', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    pose('a', [0, 0.9, 0], 100);
+    pose('b', [8, 0.9, 0], 100);
+    const throwAndHit = (id, at) => {
+        room.message('a', { type: 'throw', throw: { id, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, at);
+        room.message('a', { type: 'hit', throwId: id, target: 'b', at: [8, 1.2, 0] }, at + 500);
+    };
+    throwAndHit(1, 1000);
+    assert.equal(room.players.get('b').hp, 1);
+
+    room.power = { pulledAt: 1800 };
+    throwAndHit(2, 2000);
+
+    const target = room.players.get('b');
+    const elimination = inbox.get('b').filter((message) => message.type === 'struck').at(-1);
+    assert.equal(target.alive, false);
+    assert.equal(target.spectating, true);
+    assert.equal(target.respawnAt, 0);
+    assert.equal(elimination.final, true);
+
+    room.tick(2000 + RESPAWN_SECONDS * 1000 + 1);
+    assert.equal(inbox.get('b').some((message) => message.type === 'respawn'), false);
+});
+
 test('a damaged player heals to full after a quiet spell', () => {
     const { room, join, pose, inbox } = harness();
     join('a', 'A');

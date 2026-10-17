@@ -243,7 +243,11 @@ test('eliminated spectators chat among themselves while the round plays; everyon
     }
     room.players.get('dead1').spectating = true;
     room.players.get('dead2').spectating = true;
-    const lines = (id) => inbox.get(id).filter((m) => m.type === 'chat').map((m) => [m.line.text, !!m.line.dead]);
+    const lines = (id) =>
+        inbox
+            .get(id)
+            .filter((m) => m.type === 'chat')
+            .map((m) => [m.line.text, !!m.line.dead]);
     room.message('dead1', { type: 'chat', text: '他在S308' }, 1000);
     assert.deepEqual(lines('alive'), [], 'the living never see dead chat');
     assert.deepEqual(lines('dead2'), [['他在S308', true]]);
@@ -253,4 +257,36 @@ test('eliminated spectators chat among themselves while the round plays; everyon
     room.tick(ROUND.roundSeconds * 1000 + 1);
     room.message('dead1', { type: 'chat', text: 'gg' }, ROUND.roundSeconds * 1000 + 100);
     assert.deepEqual(lines('alive').at(-1), ['gg', false], 'after the round everyone talks again');
+});
+
+test('lag-compensation history keeps the real room clock across a global-finisher pause', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, m) => inbox.get(id)?.push(m),
+            all: (m, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(m);
+            },
+            close: () => undefined
+        },
+        24
+    );
+    room.startAmmo = 9;
+    for (const id of ['a', 'b']) {
+        inbox.set(id, []);
+        room.connect(id);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id }, 0);
+    }
+    // Pretend a 3 s finisher pause already happened: the match clock now trails the real clock by 3 s.
+    room.matchClockOffset = 3000;
+    room.message('a', { type: 'pose', pose: at(-18) }, 10_000);
+    room.message('b', { type: 'pose', pose: at(2) }, 10_000);
+    room.message('b', { type: 'pose', pose: at(2) }, 10_050);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [-18, 1.5, -3], v: [20, 0, 0], tilt: 0 } }, 10_100);
+    // The client claims the real room time it saw (snapshot clock), as it does in play.
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [1.7, 1.2, -3], rt: 10_000 }, 10_900);
+    assert.ok(
+        inbox.get('b').some((m) => m.type === 'struck'),
+        'judged on the same clock the client reports'
+    );
 });

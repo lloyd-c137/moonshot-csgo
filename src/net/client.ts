@@ -1,6 +1,7 @@
 // Browser side of the shared-world connection: one WebSocket to the room, typed events, pose interpolation.
 // Without a configured or reachable server the game stays fully playable offline (frisbee practice).
 import type { Execution } from '../gameplay/execution';
+import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes';
 
 import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
 import type {
@@ -34,9 +35,11 @@ type Handlers = {
             round: RoundState;
             power: PowerState;
             executions: Execution[];
+            globalFinisher: GlobalFinisher | null;
             gold: GoldState;
             ammo: number;
             discs: GroundDisc[];
+            matchTime: number;
         }
     ) => void;
     joined: (player: PlayerSummary) => void;
@@ -70,6 +73,12 @@ type Handlers = {
     executionStarted: (execution: Execution) => void;
     executionEnded: (id: string, completed: boolean, reason: string) => void;
     executionDenied: (reason: string) => void;
+    executionPrepared: (requestId: string, intentId: string) => void;
+    executionPrepareDenied: (requestId: string, reason: string) => void;
+    globalFinisherStarted: (finisher: GlobalFinisher) => void;
+    globalFinisherState: (finisher: GlobalFinisher) => void;
+    globalFinisherCompleted: (id: string, resumedAt: number) => void;
+    globalFinisherCancelled: (id: string, reason: string, resumedAt: number) => void;
     caught: (id: string) => void;
     ammo: (ammo: number) => void;
     discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
@@ -128,9 +137,11 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     round: message.round,
                     power: message.power,
                     executions: message.executions,
+                    globalFinisher: message.globalFinisher,
                     gold: message.gold,
                     ammo: message.ammo,
-                    discs: message.discs
+                    discs: message.discs,
+                    matchTime: message.matchTime
                 });
                 break;
             }
@@ -233,6 +244,24 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'executionDenied':
                 handlers.executionDenied(message.reason);
+                break;
+            case 'executionPrepared':
+                handlers.executionPrepared(message.requestId, message.intentId);
+                break;
+            case 'executionPrepareDenied':
+                handlers.executionPrepareDenied(message.requestId, message.reason);
+                break;
+            case 'globalFinisherStarted':
+                handlers.globalFinisherStarted(message.finisher);
+                break;
+            case 'globalFinisherState':
+                handlers.globalFinisherState(message.finisher);
+                break;
+            case 'globalFinisherCompleted':
+                handlers.globalFinisherCompleted(message.id, message.resumedAt);
+                break;
+            case 'globalFinisherCancelled':
+                handlers.globalFinisherCancelled(message.id, message.reason, message.resumedAt);
                 break;
             case 'respawn':
                 handlers.respawn(message.id, message.spawn);
@@ -364,8 +393,16 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         pullBreaker() {
             send({ type: 'pullBreaker' });
         },
-        execute(target: string) {
-            send({ type: 'execute', target });
+        prepareExecution(target: string) {
+            const requestId = crypto.randomUUID();
+            send({ type: 'executionPrepare', requestId, target });
+            return requestId;
+        },
+        commitExecution(requestId: string) {
+            send({ type: 'executionCommit', requestId });
+        },
+        cancelExecution(requestId: string) {
+            send({ type: 'executionCancel', requestId });
         },
         /** Estimated room clock (ms), or null before the first message. */
         serverNow() {

@@ -38,8 +38,8 @@ type Actions = {
 
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
-  <button id="execute-button" class="execute-button" type="button" hidden><span class="kbd">V</span> 处决 <b id="execute-target"></b></button>
-  <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>双方动作同步 · 动画完成后淘汰并进入观战</span><i><i id="execution-progress"></i></i></div>
+  <button id="execute-button" class="execute-button" type="button" hidden><span class="kbd">V</span> 长按处决 <b id="execute-target"></b></button>
+  <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>GLOBAL FINISHER · THE BOOMERANG</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
     <div class="title-shade" aria-hidden="true"></div>
@@ -998,6 +998,10 @@ export const createUi = () => {
             $('#execution-banner').hidden = text === null;
             if (text !== null && $('#execution-label').textContent !== text) $('#execution-label').textContent = text;
             $('#execution-progress').style.transform = `scaleX(${Math.max(0, Math.min(1, progress))})`;
+        },
+        finisherMode: (active: boolean) => {
+            root.dataset.finisher = active ? 'active' : 'inactive';
+            if (!active) $('#execute-button').hidden = true;
         },
         /** Red flash, plus an arc around the crosshair pointing toward the thrower (degrees, 0 = ahead, clockwise). */
         damage: (fromAngle: number | null = null) => {

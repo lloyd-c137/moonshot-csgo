@@ -9,10 +9,11 @@
 //   and alone decides eliminations and respawns.
 
 import type { Execution } from '../gameplay/execution.ts';
+import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -191,7 +192,9 @@ export type ClientMessage =
     /** The sender was caught in the night guard's flashlight. */
     | { type: 'spotted' }
     | { type: 'pullBreaker' }
-    | { type: 'execute'; target: string }
+    | { type: 'executionPrepare'; requestId: string; target: string }
+    | { type: 'executionCommit'; requestId: string }
+    | { type: 'executionCancel'; requestId: string }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
@@ -210,11 +213,14 @@ export type ServerMessage =
           round: RoundState;
           power: PowerState;
           executions: Execution[];
+          globalFinisher: GlobalFinisher | null;
           gold: GoldState;
           ammo: number;
           discs: GroundDisc[];
           /** Room clock now (ms), so the patrol and countdown line up before the first snapshot. */
           t: number;
+          /** Match clock excludes any prior global cinematic pauses. */
+          matchTime: number;
       }
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' | 'auth' }
     | { type: 'joined'; player: PlayerSummary }
@@ -258,7 +264,13 @@ export type ServerMessage =
     | { type: 'power'; power: PowerState }
     | { type: 'executionStarted'; execution: Execution }
     | { type: 'executionEnded'; id: string; completed: boolean; reason: string }
-    | { type: 'executionDenied'; reason: string };
+    | { type: 'executionDenied'; reason: string }
+    | { type: 'executionPrepared'; requestId: string; intentId: string }
+    | { type: 'executionPrepareDenied'; requestId: string; reason: string }
+    | { type: 'globalFinisherStarted'; finisher: GlobalFinisher }
+    | { type: 'globalFinisherState'; finisher: GlobalFinisher }
+    | { type: 'globalFinisherCompleted'; id: string; sequence: number; target: string; by: string; resumedAt: number }
+    | { type: 'globalFinisherCancelled'; id: string; sequence: number; reason: string; resumedAt: number };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
 export const cleanName = (raw: unknown) => {
@@ -321,8 +333,14 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'spotted':
         case 'pullBreaker':
             return value as ClientMessage;
-        case 'execute':
-            return typeof value.target === 'string' && value.target.length <= 64 ? (value as ClientMessage) : null;
+        case 'executionPrepare':
+            return typeof value.requestId === 'string' && value.requestId.length <= 80 &&
+                typeof value.target === 'string' && value.target.length <= 64
+                ? (value as ClientMessage)
+                : null;
+        case 'executionCommit':
+        case 'executionCancel':
+            return typeof value.requestId === 'string' && value.requestId.length <= 80 ? (value as ClientMessage) : null;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':

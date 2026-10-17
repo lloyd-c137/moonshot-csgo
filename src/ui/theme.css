@@ -1358,6 +1358,19 @@ legend {
 #app-ui[data-executing='true'] .charge {
     visibility: hidden;
 }
+#app-ui[data-finisher='active'] .screen-hud {
+    display: none !important;
+}
+#app-ui[data-finisher='active'] .execution-banner {
+    top: 6%;
+    min-width: min(520px, calc(100vw - 32px));
+    border: 1px solid rgb(255 194 26 / 0.55);
+    background: rgb(12 19 27 / 0.84);
+    box-shadow: 0 12px 48px rgb(0 0 0 / 0.3);
+}
+#app-ui[data-finisher='active'] .execution-banner > i > i {
+    background: var(--gold, #ffc21a);
+}
 @media (prefers-reduced-motion: reduce) {
     .execute-button,
     .execution-banner,

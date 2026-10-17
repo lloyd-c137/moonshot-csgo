@@ -30,6 +30,9 @@ export const characterMaterialColour = (
     // Players read as one solid figure: body, joints and the bare head all take the player colour.
     (name === 'M_Main' || name === 'M_Joints' || name === 'M_Head' ? colour : null);
 
+/** How far (s) a seekable clip may drift from its timeline before playAt re-seeks it. */
+export const PLAY_AT_TOLERANCE = 0.12;
+
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
 /** Shared immutable source container; instances own their entity and cloned materials. */
@@ -67,8 +70,14 @@ export class CharacterAssetLoader {
                 for (const animation of resource.animations) {
                     if (animation.resource) tracks.set(clipName(animation.resource.name), animation.resource);
                 }
-                if (!tracks.has('Idle_Loop') || !tracks.has('Walk_Loop') || !tracks.has('Sprint_Loop')) {
-                    reject(new Error('Character container is missing required idle/walk/sprint clips'));
+                if (
+                    !tracks.has('Idle_Loop') ||
+                    !tracks.has('Walk_Loop') ||
+                    !tracks.has('Sprint_Loop') ||
+                    !tracks.has('Finisher_Boomerang_Attacker') ||
+                    !tracks.has('Finisher_Boomerang_Victim')
+                ) {
+                    reject(new Error('Character container is missing required locomotion or Boomerang finisher clips'));
                     return;
                 }
                 resolve(new CharacterAssetLoader(resource, tracks, createFrisbeeThrowTrack(), app.graphicsDevice));
@@ -211,6 +220,10 @@ export class CharacterAssetLoader {
             duration(name: string) {
                 return name === 'Frisbee_Throw' ? FRISBEE_THROW_DURATION : (tracks.get(name)?.duration ?? 0);
             },
+            animationState() {
+                const layer = modelRoot.anim!.baseLayer!;
+                return { name: layer.activeState, time: layer.activeStateCurrentTime };
+            },
             setScale(scale: number) {
                 visualScale = Math.max(0.2, Math.min(1.2, scale));
                 root.setLocalScale(visualScale, visualScale, visualScale);
@@ -219,6 +232,31 @@ export class CharacterAssetLoader {
                 const layer = modelRoot.anim!.baseLayer!;
                 if (!tracks.has(name) || layer.activeState === name) return;
                 layer.transition(name, blend);
+            },
+            /** Re-tints a reused character (body, joints and bare head) without rebuilding it. */
+            setColour(colour: [number, number, number]) {
+                for (const [name, material] of materials) {
+                    const tint = characterMaterialColour(name, colour, options.materialColours);
+                    if (!tint) continue;
+                    baseColours.set(name, tint);
+                    if (name === 'M_Head' && headTexture) continue;
+                    material.diffuse.set(...tint);
+                    material.update();
+                }
+            },
+            playAt(name: string, seconds: number, blend = 0.045) {
+                const layer = modelRoot.anim!.baseLayer!;
+                if (!tracks.has(name) || disposed) return false;
+                if (layer.activeState !== name) layer.transition(name, blend, Math.max(0, seconds));
+                // Global animation is a seekable server-time timeline. This also positions late joiners
+                // directly in the current pose rather than replaying the action from its beginning.
+                const duration = tracks.get(name)!.duration;
+                const time = Math.min(Math.max(0, seconds), Math.max(0, duration - 1 / 60));
+                // Let the clip play on its own and only re-seek on real drift: the estimated server clock is eased
+                // snapshot by snapshot, and seeking on every 1/60 s wobble made the finisher visibly stutter.
+                if (Math.abs(layer.activeStateCurrentTime - time) > PLAY_AT_TOLERANCE)
+                    layer.activeStateCurrentTime = time;
+                return true;
             },
             playThrow() {
                 if (!throwLayer || disposed) return;

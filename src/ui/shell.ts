@@ -205,6 +205,7 @@ const MARKUP = `
     </div>
     <div class="damage" id="damage" aria-hidden="true"></div>
     <span class="damage-dir" id="damage-dir" aria-hidden="true"></span>
+    <div class="arena-transition" id="arena-transition" aria-hidden="true"><span>莲花球场 · 最终对决</span></div>
     <div class="name-tags" id="name-tags" aria-hidden="true"></div>
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
     <div class="health" id="health" aria-label="生命"></div>
@@ -331,6 +332,7 @@ export const createUi = () => {
     const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'));
     let toastTimer = 0;
     let broadcastTimer = 0;
+    let arenaTransitionTimer = 0;
 
     const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
 
@@ -879,6 +881,21 @@ export const createUi = () => {
             const arc = $('#damage-dir');
             arc.style.setProperty('--angle', `${fromAngle}deg`);
             replay(arc, 'show');
+        },
+        arenaTransition: (relocate: () => void) => {
+            const curtain = $('#arena-transition');
+            window.clearTimeout(arenaTransitionTimer);
+            curtain.dataset.phase = 'cover';
+            arenaTransitionTimer = window.setTimeout(() => {
+                try {
+                    relocate();
+                } finally {
+                    curtain.dataset.phase = 'reveal';
+                    arenaTransitionTimer = window.setTimeout(() => {
+                        delete curtain.dataset.phase;
+                    }, 200);
+                }
+            }, 180);
         },
         /** Elimination broadcast across the upper centre of the screen. */
         broadcast: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me', streak = 1, snipe = false) => {

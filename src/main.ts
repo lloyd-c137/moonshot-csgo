@@ -535,6 +535,7 @@ const boot = async () => {
             spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
             match: match.debug,
+            sceneTransition: (relocate) => shell.arenaTransition(relocate),
             lighting: () => ({
                 pooled: lightPool.pool.map((light) => light.light!.intensity),
                 panels: app.root

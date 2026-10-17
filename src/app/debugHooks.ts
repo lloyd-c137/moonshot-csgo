@@ -19,6 +19,8 @@ export type DebugHooks = {
     roomId: () => string | null;
     /** Browser tests drive a virtual clock; skipping draws keeps simulation cost independent of GPU speed. */
     match: MatchDebug;
+    /** Exercise the same masked relocation UI used by the final-arena round transition. */
+    sceneTransition: (relocate: () => void) => void;
     lighting: () => { pooled: number[]; panels: number[] };
     setRendering: (enabled: boolean) => void;
     /** Current camera field of view (degrees). */

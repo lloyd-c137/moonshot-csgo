@@ -1374,23 +1374,35 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         if (!finalNow) finalDone = false;
         if (finalNow && !finalDone && alive && !spectating && started) {
             finalDone = true;
-            // Spread out round the middle of the court (a fixed spot per player, so nobody lands on anyone).
-            const id = selfId();
-            let hash = 0;
-            for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-            const a = ((hash % 360) * Math.PI) / 180;
-            const r = 5 + (hash % 5);
-            player.rigidbody!.teleport(
-                arenaCenter[0] + Math.cos(a) * r,
-                0.92,
-                arenaCenter[1] + Math.sin(a) * r,
-                0,
-                0,
-                0
-            );
-            player.rigidbody!.linearVelocity = Vec3.ZERO;
-            setLook(player, 0, (Math.atan2(Math.cos(a), Math.sin(a)) * 180) / Math.PI);
-            net.pose(pose(), true);
+            ui.arenaTransition(() => {
+                const current = roundState;
+                if (
+                    !alive ||
+                    spectating ||
+                    !started ||
+                    net.state !== 'online' ||
+                    current?.phase !== 'playing' ||
+                    roomNow() < current.endsAt - ROUND.finalSecondsLeft * 1000
+                )
+                    return;
+                // Spread out round the middle of the court (a fixed spot per player, so nobody lands on anyone).
+                const id = selfId();
+                let hash = 0;
+                for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+                const a = ((hash % 360) * Math.PI) / 180;
+                const r = 5 + (hash % 5);
+                player.rigidbody!.teleport(
+                    arenaCenter[0] + Math.cos(a) * r,
+                    0.92,
+                    arenaCenter[1] + Math.sin(a) * r,
+                    0,
+                    0,
+                    0
+                );
+                player.rigidbody!.linearVelocity = Vec3.ZERO;
+                setLook(player, 0, (Math.atan2(Math.cos(a), Math.sin(a)) * 180) / Math.PI);
+                net.pose(pose(), true);
+            });
         }
         // Carrying the golden disc: no faster in the air than on the ground (jumping must not dodge the slowdown).
         const body = player.rigidbody;

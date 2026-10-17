@@ -30,6 +30,25 @@ test('reduced-flash damage cues fade away instead of leaving a persistent screen
     expect(await page.locator('#damage-dir').evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
 });
 
+test('final-arena relocation callback runs behind the transition curtain', async ({ page }) => {
+    await loadSimulated(page);
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.sceneTransition(() => {
+            document.documentElement.dataset.relocationMaskOpacity = getComputedStyle(
+                document.querySelector('#arena-transition')!
+            ).opacity;
+            document.documentElement.dataset.relocated = 'true';
+        });
+    });
+    await advance(page, 180);
+    await expect.poll(() => page.locator('html').getAttribute('data-relocated')).toBe('true');
+    const coveredOpacity = Number(await page.locator('html').getAttribute('data-relocation-mask-opacity'));
+    expect(coveredOpacity).toBeGreaterThanOrEqual(0.95);
+    await advance(page, 220);
+    await expect(page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
+    expect(await page.locator('#arena-transition').evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
+});
+
 test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and recover', async ({ page }) => {
     const errors = collectErrors(page);
     await loadSimulated(page);

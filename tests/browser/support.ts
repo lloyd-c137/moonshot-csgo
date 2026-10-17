@@ -17,6 +17,7 @@ declare global {
             teleport: (x: number, y: number, z: number) => void;
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
+            sceneTransition: (relocate: () => void) => void;
             raycast: (from: number[], to: number[]) => string | null;
             setLook: (pitch: number, yaw: number) => void;
             dressing: { doors: number; furniture: number; lights: number };

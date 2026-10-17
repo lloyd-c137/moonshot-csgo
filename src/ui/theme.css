@@ -1430,6 +1430,55 @@ legend {
     animation: damage 0.28s ease-out;
 }
 
+.arena-transition {
+    position: absolute;
+    z-index: 40;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgb(7 12 18 / 0.94);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+}
+
+.arena-transition[data-phase='cover'] {
+    opacity: 1;
+}
+
+.arena-transition span {
+    padding: 9px 18px;
+    border: 1px solid rgb(255 194 26 / 0.45);
+    background: rgb(27 42 58 / 0.8);
+    color: var(--signal);
+    font-size: clamp(17px, 2.2vw, 25px);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    opacity: 0;
+    translate: 0 5px;
+    transition:
+        opacity 120ms ease,
+        translate 160ms ease;
+}
+
+.arena-transition[data-phase='cover'] span {
+    opacity: 1;
+    translate: 0 0;
+    transition-delay: 80ms;
+}
+
+#app-ui[data-reduced-flashes='true'] .arena-transition {
+    background: rgb(7 12 18 / 0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .arena-transition,
+    .arena-transition span {
+        transition-duration: 80ms;
+        transition-delay: 0ms;
+    }
+}
+
 #app-ui[data-reduced-flashes='true'] .damage {
     --edge-alpha: 0.21;
     --wash-alpha: 0.012;

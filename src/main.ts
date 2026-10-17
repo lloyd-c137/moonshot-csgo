@@ -235,7 +235,10 @@ const boot = async () => {
     });
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {
-        void auth.restore().then((account) => shell.account(account));
+        void auth
+            .restore()
+            .then((account) => shell.account(account))
+            .catch((error: Error) => shell.authError(`暂时无法恢复登录状态：${error.message}。已保留本地会话，请稍后刷新。`));
         void auth
             .board()
             .then((board) => {

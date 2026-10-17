@@ -4,6 +4,16 @@ import type { AccountStats, King } from './protocol';
 
 const TOKEN_KEY = 'moonshot.session';
 
+class ApiError extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+    }
+}
+
 /** HTTP base for a WebSocket room URL: wss://host/ws → https://host. */
 export const apiBase = (wsUrl: string | null) =>
     wsUrl ? wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/?$/, '') : null;
@@ -42,7 +52,7 @@ export const createAuth = (base: string | null) => {
             }
         });
         const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-        if (!response.ok) throw new Error(body.error ?? `请求失败（${response.status}）`);
+        if (!response.ok) throw new ApiError(body.error ?? `请求失败（${response.status}）`, response.status);
         return body;
     };
     /** Logs in, or registers the username when it is not taken yet. */
@@ -74,7 +84,10 @@ export const createAuth = (base: string | null) => {
             if (!token || !base) return null;
             try {
                 account = (await call<{ account: AccountStats }>('/api/me')).account;
-            } catch {
+            } catch (error) {
+                // A temporary network/authorization routing failure must never erase a valid saved session.
+                // Only an explicit server 401 means the token is expired or unknown.
+                if (!(error instanceof ApiError) || error.status !== 401) throw error;
                 token = null;
                 account = null;
                 storage.set(null);

@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.11.0',
+        date: '2026.10.17',
+        title: '全场处决「回旋飞盘」',
+        notes: [
+            '处决改为专门制作的双人动画：飞盘回旋一击，全场玩家同步观看，期间比赛计时暂停。',
+            '每人每局一次、每局最多四次，全场冷却 90 秒；纪老师监视圈内仍然禁止处决。',
+            '处决角色提前加载，开场不再卡顿；镜头从第一人称平滑过渡到处决画面。',
+            '修复处决期间其他玩家移动不均匀的问题。'
+        ]
+    },
+    {
         version: 'v0.10.0',
         date: '2026.10.17',
         title: '房间按最新图纸命名',

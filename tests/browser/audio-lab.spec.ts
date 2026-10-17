@@ -277,8 +277,19 @@ test('practice dummy can be executed from behind and respawns at its fixed posit
     const button = page.locator('#execute-button');
     await expect(button).toBeVisible();
     await expect(button).toContainText('固定测试人偶');
+    await expect(button).toHaveAttribute('data-state', 'ready');
     const initial = await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy);
+    // A quick tap is not enough: the finisher needs a 0.4 s hold, shown by the closing ring.
     await page.keyboard.press('v');
+    await expect(button).toHaveAttribute('data-state', 'ready');
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.state().executions.length)).toBe(0);
+    await page.keyboard.down('v');
+    await expect(button).toHaveAttribute('data-state', 'holding');
+    await expect
+        .poll(async () => Number(await button.evaluate((el) => getComputedStyle(el).getPropertyValue('--hold'))))
+        .toBeGreaterThan(0.3);
+    await page.waitForTimeout(500);
+    await page.keyboard.up('v');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions.length)).toBe(1);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]?.camera)).toBe(true);
     const paired = await page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]);

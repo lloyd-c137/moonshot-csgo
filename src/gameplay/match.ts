@@ -978,6 +978,7 @@ export const createMatch = ({
             finisherHoldStartedAt = null;
             finisherCommitSent = false;
             ui.executionState(null, 0);
+            ui.executionHold('denied');
             ui.notify(reason);
         },
         globalFinisherStarted: (finisher) => {
@@ -999,7 +1000,7 @@ export const createMatch = ({
             if (globalFinisher?.id === id) globalFinisher = null;
             ui.executionState(null, 0);
             ui.finisherMode(false);
-            ui.notify('GLOBAL FINISHER 完成 · 比赛继续');
+            ui.notify('全场处决结束 · 比赛继续');
         },
         globalFinisherCancelled: (id, reason, resumedAt) => {
             resumeMatchClock(resumedAt);
@@ -1290,6 +1291,7 @@ export const createMatch = ({
         finisherHoldTarget = target;
         finisherHoldStartedAt = performance.now();
         finisherCommitSent = false;
+        ui.executionHold('holding', 0);
         if (!(audioLab && target === labTargetId)) {
             finisherRequestId = net.prepareExecution(target);
             net.pose(pose(), true);
@@ -1303,6 +1305,7 @@ export const createMatch = ({
         finisherHoldStartedAt = null;
         finisherCommitSent = false;
         ui.executionState(null, 0);
+        ui.executionHold('ready');
     };
     const completeFinisherHold = () => {
         if (finisherHoldStartedAt === null || !finisherRequestId || !finisherHoldTarget) return;
@@ -1349,12 +1352,14 @@ export const createMatch = ({
         } else net.commitExecution(finisherRequestId);
         finisherCommitSent = true;
         finisherHoldStartedAt = null;
-        ui.executionState('服务器确认 GLOBAL FINISHER · THE BOOMERANG', 1);
+        ui.executionHold('confirmed', 1);
     };
-    ui.onExecute(() => {
-        beginFinisherHold();
-        window.setTimeout(completeFinisherHold, GLOBAL_FINISHER_CONFIG.holdDurationMs);
-        if (!locked()) void canvas.requestPointerLock().catch(() => undefined);
+    // The on-screen button is a real hold, like V: press to start, release to finish (early release cancels).
+    ui.onExecute({
+        begin: () => beginFinisherHold(),
+        end: () => {
+            if (finisherHoldStartedAt !== null) completeFinisherHold();
+        }
     });
     window.addEventListener('keydown', (event) => {
         if (globalFinisher) {
@@ -1947,7 +1952,7 @@ export const createMatch = ({
                 const progress = executionProgress(globalExecution(globalFinisher), realRoomNow());
                 ui.executionPrompt(null);
                 ui.executionState(
-                    `GLOBAL FINISHER · THE BOOMERANG · ${globalFinisher.attacker.name} × ${globalFinisher.target.name}`,
+                    `全场处决 · 回旋飞盘 · ${globalFinisher.attacker.name} × ${globalFinisher.target.name}`,
                     progress
                 );
                 return;
@@ -1959,7 +1964,7 @@ export const createMatch = ({
                     ui.notify('处决条件已失效');
                 } else {
                     const progress = Math.min(1, (now - finisherHoldStartedAt) / GLOBAL_FINISHER_CONFIG.holdDurationMs);
-                    ui.executionState(`准备 GLOBAL FINISHER · THE BOOMERANG · ${nameOf(current!)}`, progress);
+                    ui.executionHold('holding', progress);
                     if (progress >= 1) completeFinisherHold();
                 }
             }

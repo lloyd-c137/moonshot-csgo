@@ -38,7 +38,7 @@ type Actions = {
 
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
-  <button id="execute-button" class="execute-button" type="button" hidden><span class="kbd">V</span> 长按处决 <b id="execute-target"></b></button>
+  <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
   <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>GLOBAL FINISHER · THE BOOMERANG</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
@@ -326,8 +326,16 @@ const replay = (element: HTMLElement, className: string) => {
 export const createUi = () => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-    let executeAction: (() => void) | null = null;
-    $('#execute-button').addEventListener('click', () => executeAction?.());
+    // The execute button is a real hold: pressing starts it, releasing (or sliding off) ends it.
+    let executeHold: { begin: () => void; end: () => void } | null = null;
+    const executeButton = $('#execute-button');
+    executeButton.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        executeButton.setPointerCapture?.(event.pointerId);
+        executeHold?.begin();
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const)
+        executeButton.addEventListener(type, () => executeHold?.end());
     $('#execute-button').addEventListener('mousedown', (event) => event.stopPropagation());
     const root = $('#app-ui');
     const stagesList = $<HTMLOListElement>('.stages');
@@ -986,11 +994,38 @@ export const createUi = () => {
             prompt.hidden = text === null;
             if (text !== null && prompt.textContent !== text) prompt.textContent = text;
         },
-        onExecute: (action: () => void) => {
-            executeAction = action;
+        onExecute: (hold: { begin: () => void; end: () => void }) => {
+            executeHold = hold;
+        },
+        /**
+         * The execute button's ring: `ready` (target in reach), `holding` (the ring closes as `progress` goes 0→1),
+         * `confirmed` (full ring, waiting for the room) or `denied` (brief shake, then back to ready).
+         */
+        executionHold: (state: 'ready' | 'holding' | 'confirmed' | 'denied', progress = 0) => {
+            const button = $('#execute-button');
+            if (state === 'denied') {
+                button.dataset.state = 'denied';
+                button.style.setProperty('--hold', '0');
+                window.setTimeout(() => {
+                    if (button.dataset.state === 'denied') button.dataset.state = 'ready';
+                }, 420);
+                return;
+            }
+            if (button.dataset.state !== state) button.dataset.state = state;
+            button.style.setProperty('--hold', String(Math.max(0, Math.min(1, progress))));
+            const verb = state === 'holding' ? '处决中…' : state === 'confirmed' ? '处决！' : '长按处决';
+            const label = button.querySelector('.execute-verb')!;
+            if (label.textContent !== verb) label.textContent = verb;
         },
         executionPrompt: (name: string | null) => {
-            $('#execute-button').hidden = name === null;
+            const button = $('#execute-button');
+            if (name === null && !button.hidden) {
+                // Hidden buttons always come back empty and ready.
+                button.dataset.state = 'ready';
+                button.style.setProperty('--hold', '0');
+                button.querySelector('.execute-verb')!.textContent = '长按处决';
+            }
+            button.hidden = name === null;
             if (name !== null && $('#execute-target').textContent !== name) $('#execute-target').textContent = name;
         },
         executionState: (text: string | null, progress: number) => {

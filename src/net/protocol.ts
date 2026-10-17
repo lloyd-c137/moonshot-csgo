@@ -12,7 +12,7 @@ import type { Execution } from '../gameplay/execution.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -149,7 +149,16 @@ export type AccountStats = {
 /** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */
 export type King = { name: string; kills: number; since: number };
 
-export type ChatLine = { id: number; t: number; name: string; colour: number; text: string; system?: true };
+/** `dead`: written by an eliminated (spectating) player; only other spectators receive it while the round plays. */
+export type ChatLine = {
+    id: number;
+    t: number;
+    name: string;
+    colour: number;
+    text: string;
+    system?: true;
+    dead?: true;
+};
 
 /** Per-player [score, eliminations, times eliminated]. */
 export type Scores = Record<string, [number, number, number]>;
@@ -169,9 +178,14 @@ export type ClientMessage =
     | { type: 'hello'; version: number; name: string; token?: string }
     | { type: 'chat'; text: string }
     /** `ct`: the sender's own clock (ms) when the pose was sampled, so the room can stamp it without network jitter. */
-    | { type: 'pose'; pose: PlayerPose; ct?: number }
+    /** `tp`: the game itself moved the player (recovery, return, relocation); the room forgets their pose history. */
+    | { type: 'pose'; pose: PlayerPose; ct?: number; tp?: boolean }
     | { type: 'throw'; throw: ThrowRecord }
-    | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple }
+    /**
+     * `rt`: the room time the thrower saw the target at (their render time), for lag-compensated judging.
+     * `path`: where the disc bounced off the level between release and contact (at most 8 points).
+     */
+    | { type: 'hit'; throwId: number; target: string; at: Vec3Tuple; rt?: number; path?: Vec3Tuple[] }
     /** The sender's own disc came to rest at `at` (it now lies there for anyone to pick up). */
     | { type: 'landed'; throwId: number; at: Vec3Tuple }
     /** The sender was caught in the night guard's flashlight. */
@@ -312,7 +326,9 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':
-            return isPose(value.pose) && (value.ct === undefined || isNumber(value.ct))
+            return isPose(value.pose) &&
+                (value.ct === undefined || isNumber(value.ct)) &&
+                (value.tp === undefined || typeof value.tp === 'boolean')
                 ? (value as ClientMessage)
                 : null;
         case 'respawned':
@@ -324,7 +340,12 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
                 : null;
         }
         case 'hit':
-            return isNumber(value.throwId) && typeof value.target === 'string' && isVec3(value.at)
+            return isNumber(value.throwId) &&
+                typeof value.target === 'string' &&
+                isVec3(value.at) &&
+                (value.rt === undefined || isNumber(value.rt)) &&
+                (value.path === undefined ||
+                    (Array.isArray(value.path) && value.path.length <= 8 && value.path.every(isVec3)))
                 ? (value as ClientMessage)
                 : null;
         default:

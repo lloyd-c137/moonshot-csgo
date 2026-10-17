@@ -1928,6 +1928,16 @@ legend {
     color: var(--player-colour, var(--line));
 }
 
+.chat-log li[data-dead='true'] {
+    opacity: 0.8;
+    font-style: italic;
+}
+
+.chat-log li[data-dead='true'] b::before {
+    content: '[观战] ';
+    color: var(--muted, #9aa4a6);
+}
+
 .chat-log li[data-system='true'] {
     color: var(--signal);
 }

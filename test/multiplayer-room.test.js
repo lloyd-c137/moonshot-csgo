@@ -223,20 +223,29 @@ test('a sniper disc to the head eliminates outright; a slow throw cannot claim t
         room.connect(id);
         room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
     }
-    room.message('a', { type: 'pose', pose: { p: [0, 0.9, 0], yaw: 0, pitch: 0, aim: 1 } }, 3000);
-    room.message('b', { type: 'pose', pose: { p: [20, 0.9, 0], yaw: 0, pitch: 0 } }, 3000);
+    // Across the open arena (the room rejects flights through walls).
+    room.message('a', { type: 'pose', pose: { p: [-18, 0.9, -3], yaw: 0, pitch: 0, aim: 1 } }, 3000);
+    room.message('b', { type: 'pose', pose: { p: [2, 0.9, -3], yaw: 0, pitch: 0 } }, 3000);
     const struck = () => inbox.get('b').filter((message) => message.type === 'struck');
     // Claims sniper at normal speed: honoured as a normal throw, one point of damage to the body.
-    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [20, 0, 0], tilt: 0, sniper: true } }, 4000);
-    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [20, 1.2, 0] }, 4900);
+    room.message(
+        'a',
+        { type: 'throw', throw: { id: 1, o: [-18, 1.5, -3], v: [20, 0, 0], tilt: 0, sniper: true } },
+        4000
+    );
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [2, 1.2, -3] }, 4900);
     assert.deepEqual(
         struck().map((m) => [m.hp, m.out, m.head, m.sniper]),
         [[1, false, false, false]]
     );
     room.players.get('b').hp = MAX_HP;
     // A real sniper throw to the head: out in one from full health.
-    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [34, 0, 0], tilt: 0, sniper: true } }, 5000);
-    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [20, 1.7, 0] }, 5600);
+    room.message(
+        'a',
+        { type: 'throw', throw: { id: 2, o: [-18, 1.5, -3], v: [34, 0, 0], tilt: 0, sniper: true } },
+        5000
+    );
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [2, 1.7, -3] }, 5600);
     assert.deepEqual(struck()[1], { ...struck()[1], hp: 0, out: true, head: true, sniper: true });
     // The aim level travels with the pose so others can see the scope glint.
     const snapshot = room.players.get('a').pose;
@@ -326,12 +335,13 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
     assert.deepEqual(goldEvents(), [['taken', 'a']]);
     // B eliminates A: the disc drops where A fell, and B picks it up after the short delay.
     const [ax, , az] = room.players.get('a').pose.p;
-    room.message('b', { type: 'pose', pose: { p: [ax + 6, 0.92, az], yaw: 0, pitch: 0 } }, 3000);
+    // Along the corridor the spawn lies in (the room rejects flights through walls).
+    room.message('b', { type: 'pose', pose: { p: [ax, 0.92, az - 6], yaw: 0, pitch: 0 } }, 3000);
     for (const [id, at] of [
         [1, 4000],
         [2, 5000]
     ]) {
-        room.message('b', { type: 'throw', throw: { id, o: [ax + 6, 1.5, az], v: [-15, 0, 0], tilt: 0 } }, at);
+        room.message('b', { type: 'throw', throw: { id, o: [ax, 1.5, az - 6], v: [0, 0, 15], tilt: 0 } }, at);
         room.message('b', { type: 'hit', throwId: id, target: 'a', at: [ax, 1.0, az] }, at + 300);
     }
     assert.deepEqual(goldEvents().slice(1), [['dropped', null]]);

@@ -46,6 +46,8 @@ type Disc = {
     hue: number;
     gold: boolean;
     flybyPlayed: boolean;
+    /** Where a local disc has bounced off the level so far (sent with a hit claim so the room can check walls). */
+    bounces: V3[];
 };
 
 /** Discs in the world at once; the oldest is removed first. Fewer bodies keep physics steps cheap. */
@@ -53,6 +55,8 @@ const MAX_DISCS = 24;
 const DISC_REMOVE_SECONDS = 8;
 /** A disc lying still this long is handed over to the floor list (and picked up from there). */
 const SETTLED_HANDOVER_SECONDS = 0.5;
+/** Bounce points a hit claim may carry (the room accepts at most 8). */
+const MAX_REPORTED_BOUNCES = 8;
 
 export const hueColour = (hue: number): [number, number, number] => {
     // HSL(hue, 75%, 52%) → RGB
@@ -166,13 +170,15 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             entity.setRotation(orientation);
             app.root.addChild(entity);
             const body = entity.rigidbody!;
+            const bounces: V3[] = [];
             let lastBounce = 0;
             entity.collision!.on('collisionstart', () => {
+                const p = entity.getPosition();
+                if (options.local && bounces.length < MAX_REPORTED_BOUNCES) bounces.push([p.x, p.y, p.z]);
                 const now = performance.now();
                 const speed = body.linearVelocity.length();
                 if (now - lastBounce < 120 || speed < 1.5) return;
                 lastBounce = now;
-                const p = entity.getPosition();
                 bounceHandler?.([p.x, p.y, p.z], speed);
             });
             body.teleport(new Vec3(...options.origin), orientation);
@@ -201,7 +207,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 sniper: options.sniper === true,
                 hue: options.hue,
                 gold: options.gold === true,
-                flybyPlayed: false
+                flybyPlayed: false,
+                bounces
             });
         },
         /**
@@ -211,7 +218,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
         update(
             deltaTime: number,
             targets: Map<string, V3>,
-            onHit: (throwId: number, target: string, contact: DiscContact, velocity: V3) => void,
+            onHit: (throwId: number, target: string, contact: DiscContact, velocity: V3, bounces: V3[]) => void,
             onBounce?: (at: V3, speed: number) => void,
             onTracer?: (at: V3, hue: number, speed: number) => void,
             onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void,
@@ -263,7 +270,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     const earliest = earliestDiscContact(disc.last, position, targets, disc.owner);
                     if (earliest) {
                         disc.live = false;
-                        onHit(disc.throwId, earliest.target, earliest.contact, velocity);
+                        onHit(disc.throwId, earliest.target, earliest.contact, velocity, disc.bounces);
                     }
                 }
                 if (

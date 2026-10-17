@@ -2,7 +2,7 @@
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { canExecute, EXECUTION } from '../src/gameplay/execution.ts';
+import { canExecute, EXECUTION, executionWatched } from '../src/gameplay/execution.ts';
 import type { Execution } from '../src/gameplay/execution.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
 import { nearBreaker } from '../src/gameplay/power.ts';
@@ -29,7 +29,6 @@ import {
     cleanChat,
     cleanName,
     colourFor,
-    isHeadHit,
     HEAL_SECONDS,
     MAX_HP,
     MAX_PLAYERS,
@@ -46,11 +45,12 @@ import {
 } from '../src/net/protocol.ts';
 
 import type { Accounts } from './accounts.ts';
+import { implausibleMove, judgeHit, PoseHistory } from './combatValidation.ts';
 
 /** Campus bounds (m) a reported pose must lie inside; anything else is ignored. */
 const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
-/** Slack (m) on the reach check: disc radius + capsule radius + latency/interpolation error. */
-const HIT_SLACK = 3.5;
+/** Slack (m) on the flight-length check: the disc's own radius, bounce losses and claim rounding. */
+const REACH_SLACK = 1.5;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
@@ -75,6 +75,10 @@ type Player = Omit<PlayerSummary, 'account'> & {
     clockSamples: number[];
     clockOffset: number | null;
     throws: Map<number, { record: ThrowRecord; at: number; scored: boolean; golden: boolean; landed: boolean }>;
+    /** Room-stamped recent positions, for judging hits where the thrower saw the target. */
+    history: PoseHistory;
+    /** Moves faster than sprinting allows (logged only; see combatValidation.ts). */
+    suspiciousMoves: number;
 };
 
 export type Outbox = {
@@ -172,13 +176,22 @@ export class Room {
                 }
                 player.pose = message.pose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
+                if (message.type === 'respawned' || message.tp) player.history.reset(player.poseAt, message.pose);
+                else {
+                    if (implausibleMove(player.history.latest(), player.poseAt, message.pose.p)) {
+                        // Log-only until real sprint speeds and every in-game teleport are measured in playtests.
+                        if (++player.suspiciousMoves % 20 === 1)
+                            console.warn(`implausible move #${player.suspiciousMoves} by ${player.name}`);
+                    }
+                    player.history.push(player.poseAt, message.pose);
+                }
                 this.tryPickup(player, now);
                 this.pickupDiscs(player);
                 return;
             case 'throw':
                 return this.throw(player, message.throw, now);
             case 'hit':
-                return this.hit(player, message.throwId, message.target, message.at, now);
+                return this.hit(player, message.throwId, message.target, message.at, now, message.rt, message.path);
             case 'chat':
                 return this.chat(player, message.text, now);
             case 'caught':
@@ -313,7 +326,9 @@ export class Room {
             goldCooldownUntil: 0,
             clockSamples: [],
             clockOffset: null,
-            throws: new Map()
+            throws: new Map(),
+            history: new PoseHistory(),
+            suspiciousMoves: 0
         };
         this.players.set(id, player);
         if (!this.round) this.startRound(now, false);
@@ -360,6 +375,10 @@ export class Room {
 
     private startExecution(attacker: Player, targetId: string, now: number) {
         const target = this.players.get(targetId);
+        if (target?.pose && attacker.pose && executionWatched(now, attacker.pose, target.pose)) {
+            this.out.to(attacker.id, { type: 'executionDenied', reason: '纪老师正在看着：他的监视圈内禁止处决' });
+            return;
+        }
         if (
             this.round?.phase !== 'playing' ||
             !attacker.alive ||
@@ -438,7 +457,7 @@ export class Room {
     }
 
     private throw(player: Player, record: ThrowRecord, now: number) {
-        if (this.executionFor(player.id)) return;
+        if (this.round?.phase !== 'playing' || this.executionFor(player.id)) return;
         if (!player.alive || now - player.lastThrowAt < THROW_COOLDOWN * 1000 * 0.8) return;
         const speed = Math.hypot(...record.v);
         if (speed > MAX_THROW_SPEED + 12 || player.throws.has(record.id)) return;
@@ -464,32 +483,45 @@ export class Room {
         this.out.all({ type: 'thrown', from: player.id, t: now, throw: record }, player.id);
     }
 
-    private hit(player: Player, throwId: number, targetId: string, at: Vec3Tuple, now: number) {
+    private hit(
+        player: Player,
+        throwId: number,
+        targetId: string,
+        at: Vec3Tuple,
+        now: number,
+        seenAt?: number,
+        bounces: Vec3Tuple[] = []
+    ) {
         const entry = player.throws.get(throwId);
         const target = this.players.get(targetId);
-        if (!entry || entry.scored || !target || target === player || !target.alive || !target.pose) {
-            this.out.to(player.id, { type: 'hitRejected', throwId });
-            return;
-        }
-        if (now - target.spawnedAt < SPAWN_PROTECTION * 1000) {
-            this.out.to(player.id, { type: 'hitRejected', throwId });
-            return;
-        }
+        const reject = () => this.out.to(player.id, { type: 'hitRejected', throwId });
+        if (
+            this.round?.phase !== 'playing' ||
+            !entry ||
+            entry.scored ||
+            !target ||
+            target === player ||
+            !target.alive ||
+            !target.pose
+        )
+            return reject();
+        if (now - target.spawnedAt < SPAWN_PROTECTION * 1000) return reject();
         const elapsed = (now - entry.at) / 1000;
-        if (elapsed > THROW_CLAIM_WINDOW) {
-            this.out.to(player.id, { type: 'hitRejected', throwId });
-            return;
-        }
-        // Reach: the target must be within what the disc could cover since release, and the claimed contact point
-        // must be near the target (both with slack for latency and interpolation).
-        const reach = Math.hypot(...entry.record.v) * (elapsed + 0.35) + HIT_SLACK;
-        if (distance(entry.record.o, target.pose.p) > reach || distance(at, target.pose.p) > HIT_SLACK) {
-            this.out.to(player.id, { type: 'hitRejected', throwId });
-            return;
-        }
+        if (elapsed > THROW_CLAIM_WINDOW) return reject();
+        // Judge against where the target was when the thrower saw it (capped rewind), along the reported flight.
+        const verdict = judgeHit({
+            history: target.history,
+            now,
+            claimedTime: seenAt,
+            origin: entry.record.o,
+            contact: at,
+            bounces,
+            reach: Math.hypot(...entry.record.v) * (elapsed + 0.35) + REACH_SLACK
+        });
+        if (!verdict.ok) return reject();
         entry.scored = true;
         this.cancelExecutionFor(target.id, '被飞盘命中');
-        const head = isHeadHit(at[1], target.pose.p[1]);
+        const head = verdict.head;
         const sniper = entry.record.sniper === true;
         // Every disc to the head is lethal outright; body hits take one point of health.
         target.hp = head ? 0 : Math.max(0, target.hp - 1);
@@ -778,6 +810,13 @@ export class Room {
         player.chatTimes = player.chatTimes.filter((t) => now - t < CHAT.windowSeconds * 1000);
         if (player.chatTimes.length >= CHAT.burst) return;
         player.chatTimes.push(now);
+        // Dead channel: while the round plays, the eliminated cannot tell the living where anyone is.
+        if (this.round?.phase === 'playing' && player.spectating) {
+            const line: ChatLine = { id: ++this.chatId, t: now, name: player.name, colour: player.colour, text, dead: true };
+            for (const other of this.players.values())
+                if (other.spectating) this.out.to(other.id, { type: 'chat', line });
+            return;
+        }
         this.pushChat({ id: ++this.chatId, t: now, name: player.name, colour: player.colour, text });
     }
 

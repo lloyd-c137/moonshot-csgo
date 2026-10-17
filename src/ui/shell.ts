@@ -449,9 +449,10 @@ export const createUi = () => {
     // ---------- HUD: world chat ----------
     const chatLog = $<HTMLOListElement>('#chat-log');
     let combatHudDurationScale = 1;
-    const appendChat = (line: { name: string; colour: number; text: string; system?: true }) => {
+    const appendChat = (line: { name: string; colour: number; text: string; system?: true; dead?: true }) => {
         const item = document.createElement('li');
         if (line.system) item.dataset.system = 'true';
+        if (line.dead) item.dataset.dead = 'true';
         const who = document.createElement('b');
         who.textContent = line.system ? '系统' : line.name;
         who.style.setProperty('--player-colour', `hsl(${line.colour} 75% 60%)`);

@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Room } from '../server/room.ts';
-import { canExecute, executionFrame, executionLineClear, EXECUTION } from '../src/gameplay/execution.ts';
+import {
+    canExecute,
+    executionFrame,
+    executionLineClear,
+    EXECUTION,
+    EXECUTION_TIMELINE
+} from '../src/gameplay/execution.ts';
 import { PROTOCOL_VERSION, ROUND, parseClientMessage } from '../src/net/protocol.ts';
 
 const pose = (x = -44, yaw = 90, z = 39.6) => ({ p: [x, 0.92, z], yaw, pitch: 0 });
@@ -144,16 +150,40 @@ test('executed accounts stay spectating after reconnect; new rounds reset them; 
     assert.equal(room.players.get('b2').alive, true);
 });
 
-test('paired action samples change both characters and finish in a readable defeated pose', () => {
-    const initial = executionFrame(0),
-        reach = executionFrame(0.25),
-        strike = executionFrame(0.5),
-        end = executionFrame(1);
-    assert.notEqual(initial.attackerArm, reach.attackerArm);
-    assert.notEqual(reach.attackerArm, strike.attackerArm);
-    assert.ok(end.targetLean > 70);
+test('the finisher timeline runs approach → grab → strike → fall → recover, with one impact moment', () => {
+    const phases = [];
+    let impactAt = null;
+    for (let t = 0; t <= 1.0001; t += 0.01) {
+        const frame = executionFrame(t);
+        if (phases.at(-1) !== frame.phase) phases.push(frame.phase);
+        if (frame.impact && impactAt === null) impactAt = t;
+        assert.ok(Object.values(frame).every((v) => typeof v !== 'number' || Number.isFinite(v)));
+    }
+    assert.deepEqual(phases, ['approach', 'grab', 'strike', 'fall', 'recover']);
+    assert.ok(Math.abs(impactAt - EXECUTION_TIMELINE.impact) < 0.011);
+    assert.equal(executionFrame(EXECUTION_TIMELINE.impact - 0.001).fall, 0, 'no fall before the blow');
+    const end = executionFrame(1);
     assert.equal(end.fall, 1);
     assert.equal(end.recover, 1);
-    for (let t = 0; t <= 1; t += 0.01)
-        assert.ok(Object.values(executionFrame(t)).every((v) => typeof v === 'boolean' || Number.isFinite(v)));
+    assert.equal(end.close, 1);
+});
+
+test('no execution inside 纪老师 watch circle (owner rule), on the client gate and in the room', async () => {
+    const { teacherAt, TEACHER } = await import('../src/gameplay/teacher.ts');
+    const { executionWatched } = await import('../src/gameplay/execution.ts');
+    const now = 2001;
+    const teacher = teacherAt(now);
+    const near = (dx) => ({ p: [teacher.x + dx, 0.92, teacher.z], yaw: 90, pitch: 0 });
+    assert.equal(executionWatched(now, near(3), near(2)), true);
+    const far = TEACHER.range + 5;
+    assert.equal(executionWatched(now, near(far + 1), near(far)), false);
+    // In the room: an otherwise valid pair placed in his circle is refused with a reason; nothing starts.
+    const { room, messages, move, execute } = harness();
+    const attacker = near(2),
+        target = near(1);
+    move('a', attacker, 2000);
+    move('b', target, 2000);
+    execute('a', 'b', now);
+    assert.equal(room.executions.size, 0);
+    assert.ok(messages.get('a').some((m) => m.type === 'executionDenied' && m.reason.includes('纪老师')));
 });

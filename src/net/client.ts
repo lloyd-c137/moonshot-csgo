@@ -318,13 +318,18 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             send({ type: 'chat', text });
         },
         /** Sends the local pose at most POSE_HZ times a second. */
-        pose(pose: PlayerPose, force = false) {
+        /** `teleport`: the game moved the player itself (recovery, return, relocation), not walking. */
+        pose(pose: PlayerPose, force = false, teleport = false) {
             const now = performance.now();
             const interval = 1000 / POSE_HZ;
             if (!force && now - lastPoseAt < interval) return;
             // Keep an even cadence (frames rarely land exactly on the interval) without bursting after a stall.
             lastPoseAt = now - lastPoseAt < interval * 2 ? lastPoseAt + interval : now;
-            send({ type: 'pose', pose, ct: Math.round(now) });
+            send(
+                teleport
+                    ? { type: 'pose', pose, ct: Math.round(now), tp: true }
+                    : { type: 'pose', pose, ct: Math.round(now) }
+            );
         },
         respawned(pose: PlayerPose) {
             send({ type: 'respawned', pose });
@@ -332,8 +337,17 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         throw(record: ThrowRecord) {
             send({ type: 'throw', throw: record });
         },
-        hit(throwId: number, target: string, at: Vec3Tuple) {
-            send({ type: 'hit', throwId, target, at });
+        /** Claims a hit; the room judges it where the target was drawn on this screen (server clock − render delay). */
+        hit(throwId: number, target: string, at: Vec3Tuple, path: Vec3Tuple[] = []) {
+            const serverNow = clock.toServer(performance.now());
+            send({
+                type: 'hit',
+                throwId,
+                target,
+                at,
+                ...(serverNow === null ? {} : { rt: Math.round(serverNow - RENDER_DELAY) }),
+                ...(path.length ? { path: path.slice(0, 8) } : {})
+            });
         },
         /** Reports where this player's thrown disc came to rest. */
         landed(throwId: number, at: Vec3Tuple) {

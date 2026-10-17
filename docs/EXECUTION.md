@@ -8,12 +8,13 @@ Moonshot's version uses these game-authored conditions:
 
 - Attacker is 0.55–1.45 m from the target, within 0.45 m vertically, behind the target, and facing it.
 - Source-derived collision cells must be clear between both characters and in the target's short fall direction. These inferred campus cells are gameplay occlusion checks, not survey-grade geometry.
+- Not inside 纪老师's 10 m watch circle (owner rule 2026-10-17): if either player is in it when the move would start, the room refuses with a reason and the button stays hidden. A move already under way is not interrupted when he walks closer.
 - Press **V** or use the on-screen **处决** button. The server locks both players and broadcasts the same start/end timestamps and frozen poses.
-- Both participants receive the same fixed third-person camera and procedural paired character animation. Animation parts follow the game's existing simple capsule-avatar style; this is not motion capture or a licensed animation asset.
-- Completion after 2.6 seconds eliminates the target for the rest of the round and switches them to spectating. The attacker returns to first person. A hit on either participant, a disconnect, or round change interrupts the move.
+- Both participants receive the same fixed third-person camera. The paired disc finisher (owner decision: done with the frisbee, no escape window) runs on the shared CC0 humanoid rig with each actor in their own player colour: the attacker steps in to 0.85 m and raises the disc (`Interact`), brings it down overhead on the back of the neck (`Sword_Attack`, disc in the right-hand socket), the target reacts (`Hit_Chest`) and falls (`Death01`, with no extra roll or sinking), and the attacker settles back to idle. One timeline, `EXECUTION_TIMELINE` in `src/gameplay/execution.ts` (approach 0–12 %, grab to 30 %, impact at 44 %, fall to 85 %, recover from 75 %), drives the animation and the impact feedback (head spark, positioned thud, a camera kick for the pair). Clip choice and timing are not yet reviewed visually.
+- Completion after 2.6 seconds always eliminates the target for the rest of the round (owner decision: at any time of the round) and switches them to spectating. The attacker returns to first person. A hit on either participant, a disconnect, or round change interrupts the move.
 - Movement, frisbee throws, and other interactions are frozen for the pair. Spectators can continue watching.
 
-The online room revalidates proximity, facing, pose freshness, spawn protection, availability, and collision mask before starting a move. Protocol version is 8; both the browser and Worker must be deployed together.
+The online room revalidates proximity, facing, pose freshness, spawn protection, availability, and collision mask before starting a move. Protocol version is 11; both the browser and Worker must be deployed together.
 
 ## Offline audio-lab dummy
 
@@ -25,7 +26,7 @@ While in the development audio lab, open **P → 机制快速测试** to directl
 
 ## Source mask
 
-`src/config/executionOcclusion.ts` is generated from the existing derived campus collision audit by `node tools/executionOcclusionCli.ts`. The generator uses 0.1 m cells and excludes only arena stands from the blocked mask; floor absence, walls, glazing, barriers, and furniture block an execution. It reads the local campus source through `tools/campusGeometry.ts`; do not substitute a fabricated map if the source is missing. The mask is an approximate conservative gate, not a replacement for the live Ammo raycast.
+`src/config/executionOcclusion.ts` is generated from the existing derived campus collision audit by `node tools/executionOcclusionCli.ts`. The generator uses 0.1 m cells and excludes only arena stands from the blocked mask; floor absence, walls, glazing, barriers, and furniture block an execution. It reads the local campus source through `loadCampusGeometry` in `tools/navAudit.ts` and also writes the walls-only combat mask `server/combatOcclusion.ts` used to reject disc hits through walls; do not substitute a fabricated map if the source is missing. The mask is an approximate conservative gate, not a replacement for the live Ammo raycast.
 
 ## Verification
 

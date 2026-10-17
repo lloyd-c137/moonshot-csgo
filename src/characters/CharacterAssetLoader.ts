@@ -27,7 +27,8 @@ export const characterMaterialColour = (
     overrides: Partial<Record<'M_Main' | 'M_Joints' | 'M_Head', [number, number, number]>> = {}
 ) =>
     overrides[name as 'M_Main' | 'M_Joints' | 'M_Head'] ??
-    (name === 'M_Main' ? colour : name === 'M_Joints' ? [1, 1, 1] : null);
+    // Players read as one solid figure: body, joints and the bare head all take the player colour.
+    (name === 'M_Main' || name === 'M_Joints' || name === 'M_Head' ? colour : null);
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
@@ -56,7 +57,8 @@ export class CharacterAssetLoader {
             asset.once('error', (error: string) => reject(new Error(`Character GLB failed: ${error}`)));
             asset.once('load', () => {
                 const resource = asset.resource as
-                    (ContainerResource & { animations: { resource?: AnimTrack }[] }) | null;
+                    | (ContainerResource & { animations: { resource?: AnimTrack }[] })
+                    | null;
                 if (!resource?.instantiateRenderEntity || !resource.animations?.length) {
                     reject(new Error('Character container is missing its render hierarchy or animation clips'));
                     return;
@@ -90,6 +92,7 @@ export class CharacterAssetLoader {
         modelRoot.name = `${options.name}-model`;
         root.addChild(modelRoot);
         const materials = new Map<string, StandardMaterial>();
+        const baseColours = new Map<string, [number, number, number]>();
         root.forEach((node) => {
             const render = (node as Entity).render;
             if (!render) return;
@@ -103,6 +106,7 @@ export class CharacterAssetLoader {
                     if (colour) {
                         material.diffuse.set(...colour);
                         material.update();
+                        baseColours.set(source.name, colour);
                     }
                     materials.set(source.name, material);
                 }
@@ -238,6 +242,8 @@ export class CharacterAssetLoader {
                 headTexture?.destroy();
                 headTexture = null;
                 material.diffuseMap = null;
+                const base = baseColours.get('M_Head');
+                if (base) material.diffuse.set(...base);
                 if (image) {
                     headTexture = new Texture(device, {
                         name: `${options.name}-head-avatar`,

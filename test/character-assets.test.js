@@ -157,8 +157,9 @@ test('right-hand grip animation covers every finger used by held props', () => {
     }
 });
 
-test('all mannequin joint regions default to white unless a role explicitly overrides them', () => {
-    assert.deepEqual(characterMaterialColour('M_Joints', [0.1, 0.4, 0.8]), [1, 1, 1]);
+test('players are one solid colour (body, joints, bare head) unless a role explicitly overrides a region', () => {
+    assert.deepEqual(characterMaterialColour('M_Joints', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);
+    assert.deepEqual(characterMaterialColour('M_Head', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);
     assert.deepEqual(characterMaterialColour('M_Joints', [0, 0, 0], { M_Joints: [1, 1, 1] }), [1, 1, 1]);
     assert.deepEqual(characterMaterialColour('M_Main', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);
 });

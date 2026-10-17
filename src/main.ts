@@ -238,7 +238,9 @@ const boot = async () => {
         void auth
             .restore()
             .then((account) => shell.account(account))
-            .catch((error: Error) => shell.authError(`暂时无法恢复登录状态：${error.message}。已保留本地会话，请稍后刷新。`));
+            .catch((error: Error) =>
+                shell.authError(`暂时无法恢复登录状态：${error.message}。已保留本地会话，请稍后刷新。`)
+            );
         void auth
             .board()
             .then((board) => {
@@ -294,6 +296,7 @@ const boot = async () => {
         stuckShown = false;
         shell.stuck(false);
         recoverPlayer(player);
+        match.teleported();
         shell.notify('已脱离卡死，回到南入口');
     };
     shell.stuck(false, () => {
@@ -322,6 +325,7 @@ const boot = async () => {
         if (isOutOfWorld(position.y)) {
             recoveries++;
             recoverPlayer(player);
+            match.teleported();
             shell.notify('已离开可探索范围，已回到南入口');
             return;
         }
@@ -418,6 +422,7 @@ const boot = async () => {
         const [x, z] = derivedWorld.arena.center;
         player.rigidbody!.teleport(x, 0.92, z, 0, 0, 0);
         player.rigidbody!.linearVelocity = Vec3.ZERO;
+        match.teleported();
         shell.notify('已传送到莲花球场');
     };
     let hasEntered = false;
@@ -534,7 +539,10 @@ const boot = async () => {
             position: () => player.getPosition().toArray(),
             fov: () => camera.camera!.fov,
             cameraAngles: () => camera.getEulerAngles().toArray(),
-            recover: () => recoverPlayer(player),
+            recover: () => {
+                recoverPlayer(player);
+                match.teleported();
+            },
             collisionCount: collisions.sourceBodies,
             barrierWalls: collisions.barrierWalls,
             dressing: {
@@ -551,6 +559,7 @@ const boot = async () => {
             teleport: (x: number, y: number, z: number) => {
                 player.rigidbody!.teleport(x, y, z, 0, 0, 0);
                 clearVelocity();
+                match.teleported();
             },
             recoveries: () => recoveries,
             setLook: (pitch: number, yaw: number) => setLook(player, pitch, yaw),

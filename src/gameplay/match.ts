@@ -36,7 +36,7 @@ import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
-import { canExecute, executionProgress } from './execution';
+import { canExecute, executionProgress, executionWatched } from './execution';
 import type { Execution } from './execution';
 import { createExecutionView } from './executionView';
 import { CameraImpulseController } from './feedback/CameraImpulseController';
@@ -143,18 +143,29 @@ export const createMatch = ({
     const feedback = new CombatFeedbackDirector();
     const cameraImpulses = new CameraImpulseController();
     let executionFrozen = false;
-    const executionView = createExecutionView(app, camera, characters, (active) => {
-        executionFrozen = active;
-        const script = controller();
-        if (script) script.enabled = alive && !inputPaused && !spectating && !active;
-        player.rigidbody!.linearVelocity = Vec3.ZERO;
-        player.rigidbody!.angularVelocity = Vec3.ZERO;
-        player.rigidbody!.enabled = !spectating && !active;
-        if (active) {
-            cancelCharge();
-            inspectSince = null;
+    const executionView = createExecutionView(
+        app,
+        camera,
+        characters,
+        (active) => {
+            executionFrozen = active;
+            const script = controller();
+            if (script) script.enabled = alive && !inputPaused && !spectating && !active;
+            player.rigidbody!.linearVelocity = Vec3.ZERO;
+            player.rigidbody!.angularVelocity = Vec3.ZERO;
+            player.rigidbody!.enabled = !spectating && !active;
+            if (active) {
+                cancelCharge();
+                inspectSince = null;
+            }
+        },
+        (record, at, local) => {
+            // The blow lands: a gold head spark and a positioned thud for everyone; a firm kick for the pair.
+            effects.burst(at, record.attacker.colour, 'head');
+            sound.impact(at);
+            if (local) cameraImpulses.trigger(0.3);
         }
-    });
+    );
     // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     let labNightOverride = false;
@@ -337,6 +348,8 @@ export const createMatch = ({
     const goldHolder = () => goldView.state?.holder ?? null;
     const holdingGold = () => goldHolder() === selfId();
     /** Room clock now: the server's while online, the local clock offline. */
+    /** The game moved the local player itself since the last pose sent (recovery, return to the arena…). */
+    let teleportPending = false;
     const roomNow = () => (net.state === 'online' ? (net.serverNow() ?? Date.now()) : Date.now());
     let nickname = '';
     let inputPaused = false;
@@ -1127,7 +1140,13 @@ export const createMatch = ({
         )
             return null;
         const mine = pose();
-        if (audioLab && labHp > 0 && !executionView.hasActor(labTargetId) && canExecute(mine, labTargetPose)) {
+        if (
+            audioLab &&
+            labHp > 0 &&
+            !executionView.hasActor(labTargetId) &&
+            canExecute(mine, labTargetPose) &&
+            !executionWatched(roomNow(), mine, labTargetPose)
+        ) {
             const blocked = rigidbody
                 .raycastAll(
                     new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
@@ -1146,6 +1165,7 @@ export const createMatch = ({
                         !roster.get(id)?.spectating &&
                         !executionView.hasActor(id) &&
                         canExecute(mine, other) &&
+                        !executionWatched(roomNow(), mine, other) &&
                         !rigidbody
                             .raycastAll(
                                 new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
@@ -1418,7 +1438,8 @@ export const createMatch = ({
         const time = roomNow();
         const activePower = currentPower();
         const outage = powerOut(time, activePower);
-        const nightActive = (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
+        const nightActive =
+            (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
         breakerView.update(outage);
         monitorView.setActive(performance.now() < radarUntil);
@@ -1465,8 +1486,11 @@ export const createMatch = ({
         if (goldAt) goldLight.setPosition(goldAt[0], goldAt[1] + 1.6, goldAt[2]);
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
-        const finalNow = (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
-        sound.openingMusic(started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !finalNow);
+        const finalNow =
+            (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
+        sound.openingMusic(
+            started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !finalNow
+        );
         sound.blackoutMusic(dark && !finalNow);
         sound.finalShowdownMusic(started && finalNow);
         if (finalNow !== finalShown) {
@@ -1529,7 +1553,7 @@ export const createMatch = ({
                 );
                 player.rigidbody!.linearVelocity = Vec3.ZERO;
                 setLook(player, 0, (Math.atan2(Math.cos(a), Math.sin(a)) * 180) / Math.PI);
-                net.pose(pose(), true);
+                net.pose(pose(), true, true);
                 finalRelocationResult = 'relocated';
             });
         }
@@ -1680,6 +1704,10 @@ export const createMatch = ({
     };
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return {
+        /** Call after any teleport the game performs outside match.ts (fall recovery, R, G). */
+        teleported() {
+            teleportPending = true;
+        },
         async setTrainingDummyAvatar(image: Blob | null) {
             if (!audioLab) throw new Error('训练人偶头像只在开发音效测试环境可用');
             if (!image) {
@@ -1764,7 +1792,11 @@ export const createMatch = ({
                 ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
             } else if (chargingSince !== null) ui.charge(null);
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
-            if (net.state === 'online' && alive && !executionView.hasActor(selfId())) net.pose(pose());
+            if (net.state === 'online' && alive && !executionView.hasActor(selfId())) {
+                // A move the game made itself is flagged so the room resets (not rewinds across) this player's history.
+                net.pose(pose(), teleportPending, teleportPending);
+                teleportPending = false;
+            }
             const eye = camera.getPosition();
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
@@ -1799,7 +1831,7 @@ export const createMatch = ({
             discs.update(
                 deltaTime,
                 targets,
-                (throwId, target, contact: DiscContact) => {
+                (throwId, target, contact: DiscContact, _velocity, bounces) => {
                     const { at } = contact;
                     if (audioLab && target === labTargetId) {
                         const head = isHeadHit(at[1], labTargetPose.p[1]);
@@ -1814,7 +1846,12 @@ export const createMatch = ({
                     pendingHitClaims.set(throwId, now + 8_500);
                     hitsPredicted++;
                     ui.hitPrediction(throwId);
-                    net.hit(throwId, target, at.map(round) as V3);
+                    net.hit(
+                        throwId,
+                        target,
+                        at.map(round) as V3,
+                        bounces.map((point) => point.map(round) as V3)
+                    );
                 },
                 (at, speed) => sound.bounce(at, speed),
                 (at, hue, speed) => effects.tracer(at, hue, speed),

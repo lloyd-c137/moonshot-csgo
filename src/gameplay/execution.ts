@@ -1,6 +1,9 @@
 // Shared, pure execution rules and animation sampling; no engine or wall-clock state.
-import { EXECUTION_OCCLUSION as MAP } from '../config/executionOcclusion.ts';
+import { EXECUTION_OCCLUSION } from '../config/executionOcclusion.ts';
 import type { PlayerPose } from '../net/protocol.ts';
+
+import { lineClear, maskLookup } from './occlusionMask.ts';
+import { inTeacherView, teacherAt } from './teacher.ts';
 
 export const EXECUTION = {
     range: 1.45,
@@ -19,19 +22,15 @@ export type Execution = {
     startsAt: number;
     endsAt: number;
 };
-const blocked = Uint8Array.from(atob(MAP.bits), (c) => c.charCodeAt(0));
-const cellBlocked = (x: number, z: number) => {
-    const i = Math.floor((x - MAP.x0) / MAP.resolution),
-        j = Math.floor((z - MAP.z0) / MAP.resolution);
-    if (i < 0 || j < 0 || i >= MAP.width || j >= MAP.height) return true;
-    const index = j * MAP.width + i;
-    return !!(blocked[index >> 3] & (1 << (index & 7)));
-};
-export const executionLineClear = (a: readonly number[], b: readonly number[]) => {
-    const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.05));
-    for (let i = 0; i <= steps; i++)
-        if (cellBlocked(a[0] + ((b[0] - a[0]) * i) / steps, a[2] + ((b[2] - a[2]) * i) / steps)) return false;
-    return true;
+const blocked = maskLookup(EXECUTION_OCCLUSION);
+export const executionLineClear = (a: readonly number[], b: readonly number[]) => lineClear(blocked, a, b);
+/**
+ * Owner rule (2026-10-17): no executions inside 纪老师's watch circle. Checked at the start of a move against either
+ * participant; a move already under way is not interrupted when he walks closer.
+ */
+export const executionWatched = (now: number, attacker: PlayerPose, target: PlayerPose) => {
+    const teacher = teacherAt(now);
+    return inTeacherView(teacher, attacker.p[0], attacker.p[2]) || inTeacherView(teacher, target.p[0], target.p[2]);
 };
 export const canExecute = (attacker: PlayerPose, target: PlayerPose) => {
     const dx = attacker.p[0] - target.p[0],
@@ -50,28 +49,32 @@ export const canExecute = (attacker: PlayerPose, target: PlayerPose) => {
     );
 };
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
-// Piecewise action timing is authored gameplay animation, not UI entrance timing.
 const ease = (value: number) => {
     const t = clamp(value);
     return t * t * (3 - 2 * t);
 };
+/**
+ * Authored timeline of the 2.6 s disc finisher (fractions of the move). GAMEPLAY_AUTHORED; one source of truth for
+ * the paired animation, the impact feedback and the HUD. The attacker closes in, raises the disc, brings it down on
+ * the back of the target's neck at `impact`, the target falls, the attacker recovers.
+ */
+export const EXECUTION_TIMELINE = { close: 0.12, grab: 0.3, impact: 0.44, fallEnd: 0.85, recover: 0.75 } as const;
+export type ExecutionPhase = 'approach' | 'grab' | 'strike' | 'fall' | 'recover';
 export const executionFrame = (progress: number) => {
     const u = clamp(progress),
-        reach = ease(u / 0.24),
-        strike = ease((u - 0.28) / 0.16),
-        recover = ease((u - 0.7) / 0.3),
-        fall = ease((u - 0.48) / 0.38);
+        T = EXECUTION_TIMELINE;
+    const phase: ExecutionPhase =
+        u < T.close ? 'approach' : u < T.grab ? 'grab' : u < T.impact ? 'strike' : u < T.recover ? 'fall' : 'recover';
     return {
         progress: u,
-        reach,
-        attackerArm: -65 * reach + 185 * strike - 120 * recover,
-        attackerLean: 12 * reach - 8 * recover,
-        targetLean: 12 * reach + 70 * fall,
-        targetDrop: 0.35 * fall,
-        targetArm: 35 * reach + 35 * fall,
-        fall,
-        recover,
-        impact: u >= 0.44
+        phase,
+        /** 0→1 while the attacker steps in to striking distance. */
+        close: ease(u / T.close),
+        /** 0→1 while the target crumples after the blow. */
+        fall: ease((u - T.impact) / (T.fallEnd - T.impact)),
+        /** 0→1 while the attacker settles back. */
+        recover: ease((u - T.recover) / (1 - T.recover)),
+        impact: u >= T.impact
     };
 };
 export const executionProgress = (execution: Execution, now: number) =>

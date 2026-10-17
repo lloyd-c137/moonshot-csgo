@@ -155,10 +155,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 setEffectIntensity: (intensity) => effects.setLabIntensity(intensity),
                 setTrailDensity: (density) => discs.setLabTrailDensity(density),
                 setTrailLength: (seconds) => effects.setLabTrailLength(seconds),
+                setSimulatedRtt: (milliseconds) => net.setSimulatedRtt(milliseconds),
                 getCameraKick: () => cameraImpulses.scale,
                 getEffectIntensity: () => effects.intensity(),
                 getTrailDensity: () => discs.trailDensity,
                 getTrailLength: () => effects.trailLength(),
+                getSimulatedRtt: () => net.simulatedRtt,
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
                 position: () => {
                     const p = camera.getPosition();
@@ -1770,11 +1772,13 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             }
         },
         debug: {
+            setSimulatedRtt: (milliseconds: number) => net.setSimulatedRtt(milliseconds),
             markers: mapMarkers,
             monitorFocused: lookingAtMonitor,
             cameraPosition: () => camera.getPosition().toArray(),
             state: () => ({
                 net: net.state,
+                simulatedRtt: net.simulatedRtt,
                 id: net.id,
                 alive,
                 spectating,

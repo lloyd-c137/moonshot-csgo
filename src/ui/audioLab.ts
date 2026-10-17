@@ -15,10 +15,12 @@ type Options = {
     setEffectIntensity: (intensity: number | null) => void;
     setTrailDensity: (density: number | null) => void;
     setTrailLength: (seconds: number | null) => void;
+    setSimulatedRtt: (milliseconds: number) => void;
     getCameraKick: () => number;
     getEffectIntensity: () => number;
     getTrailDensity: () => number;
     getTrailLength: () => number;
+    getSimulatedRtt: () => number;
     simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden') => void;
 };
 
@@ -33,10 +35,12 @@ export const mountAudioLab = async ({
     setEffectIntensity,
     setTrailDensity,
     setTrailLength,
+    setSimulatedRtt,
     getCameraKick,
     getEffectIntensity,
     getTrailDensity,
     getTrailLength,
+    getSimulatedRtt,
     simulateDummyHit
 }: Options) => {
     const host = document.createElement('div');
@@ -51,6 +55,7 @@ export const mountAudioLab = async ({
           <label>命中粒子强度 <output data-effect-intensity-value></output><input data-effect-intensity type="range" min="0" max="1.5" step="0.05"></label>
           <label>飞盘轨迹密度 <output data-trail-density-value></output><input data-trail-density type="range" min="0" max="1.5" step="0.05"></label>
           <label>飞盘轨迹长度 <output data-trail-length-value></output><input data-trail-length type="range" min="0.08" max="0.8" step="0.04"></label>
+          <label>模拟网络 RTT <output data-rtt-value></output><input data-rtt type="range" min="0" max="400" step="20"><small>收发各延迟一半；0 / 80 / 200 / 400 ms。只影响当前开发测试会话。</small></label>
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><small>直接驱动固定人偶的本地命中、动作、特效和音效流程，不影响战绩；人偶死亡后原地复活。</small></div>
@@ -77,6 +82,8 @@ export const mountAudioLab = async ({
     const trailDensityValue = host.querySelector<HTMLOutputElement>('[data-trail-density-value]')!;
     const trailLengthRange = host.querySelector<HTMLInputElement>('[data-trail-length]')!;
     const trailLengthValue = host.querySelector<HTMLOutputElement>('[data-trail-length-value]')!;
+    const rttRange = host.querySelector<HTMLInputElement>('[data-rtt]')!;
+    const rttValue = host.querySelector<HTMLOutputElement>('[data-rtt-value]')!;
     cameraKickRange.value = String(getCameraKick());
     cameraKickValue.value = `${Number(cameraKickRange.value).toFixed(2)}×`;
     effectIntensityRange.value = String(getEffectIntensity());
@@ -85,11 +92,14 @@ export const mountAudioLab = async ({
     trailDensityValue.value = `${Math.round(Number(trailDensityRange.value) * 100)}%`;
     trailLengthRange.value = String(getTrailLength());
     trailLengthValue.value = `${Math.round(Number(trailLengthRange.value) * 1000)} ms`;
+    rttRange.value = String(getSimulatedRtt());
+    rttValue.value = `${rttRange.value} ms`;
     const originalTuning = {
         cameraKick: Number(cameraKickRange.value),
         effectIntensity: Number(effectIntensityRange.value),
         trailDensity: Number(trailDensityRange.value),
-        trailLength: Number(trailLengthRange.value)
+        trailLength: Number(trailLengthRange.value),
+        simulatedRtt: Number(rttRange.value)
     };
     cameraKickRange.addEventListener('input', () => {
         const value = Number(cameraKickRange.value);
@@ -110,6 +120,11 @@ export const mountAudioLab = async ({
         const value = Number(trailLengthRange.value);
         trailLengthValue.value = `${Math.round(value * 1000)} ms`;
         setTrailLength(value);
+    });
+    rttRange.addEventListener('input', () => {
+        const value = Number(rttRange.value);
+        rttValue.value = `${value} ms`;
+        setSimulatedRtt(value);
     });
     dummyScale.addEventListener('input', () => {
         const height = Number(dummyScale.value);
@@ -158,6 +173,8 @@ export const mountAudioLab = async ({
         trailDensityRange.dispatchEvent(new Event('input', { bubbles: true }));
         trailLengthRange.value = String(originalTuning.trailLength);
         trailLengthRange.dispatchEvent(new Event('input', { bubbles: true }));
+        rttRange.value = String(originalTuning.simulatedRtt);
+        rttRange.dispatchEvent(new Event('input', { bubbles: true }));
     });
     const resume = () => {
         const screen = document.querySelector<HTMLElement>('#app-ui')?.dataset.screen;

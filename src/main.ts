@@ -212,7 +212,7 @@ const boot = async () => {
     const { sun, setNight } = setupAtmosphere(app, camera);
     let night = false;
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
-    const serverUrl = audioLab
+    const serverUrl = audioLab && !new URLSearchParams(window.location.search).has('server')
         ? null
         : multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
     const auth = createAuth(apiBase(serverUrl));

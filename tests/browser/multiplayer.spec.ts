@@ -124,6 +124,9 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // Keep only the observing client rendered so the remote arm animation advances without doubling scene load.
     await b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true));
     await b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90));
+    // Local feedback stays immediate while the authoritative claim and reply see 100 ms one-way delay each.
+    await a.page.evaluate(() => window.__MOONSHOT__!.match.setSimulatedRtt(200));
+    await expect.poll(() => state(a.page).then((value) => value.simulatedRtt)).toBe(200);
 
     // First body hit: damaged, not out.
     const armBeforeThrow = await b.page.evaluate(
@@ -132,13 +135,14 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     );
     const damageFlash = b.page.locator('#damage.show').waitFor({ state: 'attached', timeout: 5_000 });
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 0.65, 39.6))).toBe(true);
+    await expect.poll(() => state(a.page).then((value) => value.hitsPredicted), { timeout: 5_000 }).toBe(1);
+    expect((await state(a.page)).hitsClaimed).toBe(0);
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idA), { timeout: 1_000 })
         .toBe('Frisbee_Throw');
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'), idA))
         .not.toEqual(armBeforeThrow);
-    await b.page.screenshot({ path: 'test-results/combat-throw-release.png' });
     await expect
         .poll(
             async () => [
@@ -149,6 +153,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
             { timeout: 5_000 }
         )
         .toEqual([1, 1, 'Hit_Chest']);
+    await b.page.screenshot({ path: 'test-results/combat-throw-release.png' });
     expect((await state(a.page)).hitsPredicted).toBe(1);
     expect((await state(b.page)).alive).toBe(true);
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'hit');
@@ -156,6 +161,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await damageFlash;
     await b.page.screenshot({ path: 'test-results/combat-victim-damage.png' });
     await a.page.screenshot({ path: 'test-results/combat-body-hit.png' });
+    await a.page.evaluate(() => window.__MOONSHOT__!.match.setSimulatedRtt(0));
 
     // Second hit (after the throw cooldown): eliminated and broadcast to everyone.
     await a.page.waitForTimeout(700);

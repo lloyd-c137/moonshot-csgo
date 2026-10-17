@@ -87,6 +87,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     const history = new Map<string, PoseBuffer>();
     const clock = new ServerClock();
     let latency: number | null = null;
+    let simulatedRtt = 0;
     // Latency probe every 2 s while connected.
     window.setInterval(() => {
         if (state === 'online') send({ type: 'ping', c: Math.round(performance.now() * 10) / 10 });
@@ -97,7 +98,17 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         handlers.state(next, detail);
     };
     const send = (message: object) => {
-        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+        const current = socket;
+        if (current?.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify(message);
+        const delay = state === 'online' ? simulatedRtt / 2 : 0;
+        if (!delay) {
+            current.send(payload);
+            return;
+        }
+        window.setTimeout(() => {
+            if (socket === current && current.readyState === WebSocket.OPEN) current.send(payload);
+        }, delay);
     };
 
     const onMessage = (message: ServerMessage) => {
@@ -246,7 +257,13 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         );
         current.addEventListener('message', (event) => {
             try {
-                onMessage(JSON.parse(String(event.data)) as ServerMessage);
+                const message = JSON.parse(String(event.data)) as ServerMessage;
+                const delay = state === 'online' ? simulatedRtt / 2 : 0;
+                if (!delay) onMessage(message);
+                else
+                    window.setTimeout(() => {
+                        if (socket === current && state === 'online') onMessage(message);
+                    }, delay);
             } catch {
                 /* ignore malformed */
             }
@@ -272,6 +289,14 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         get id() {
             return me;
+        },
+        /** Dev-only callers can use this to add an equal one-way delay to sends and receives. */
+        setSimulatedRtt(milliseconds: number) {
+            if (!import.meta.env.DEV) return;
+            simulatedRtt = Math.max(0, Math.min(400, Math.round(milliseconds / 20) * 20));
+        },
+        get simulatedRtt() {
+            return simulatedRtt;
         },
         connect(name: string, token: string | null = null) {
             wantName = name;

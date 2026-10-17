@@ -131,7 +131,6 @@ test('two authenticated clients rendered performance sample (opt-in)', async ({ 
         await enterOnline(page, `perfA${suffix}`);
         await enterOnline(other, `perfB${suffix}`);
         await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().players.length)).toBe(2);
-        await other.evaluate(() => window.__MOONSHOT__!.setRendering(false));
         await page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
         await other.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
         await page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90));
@@ -139,19 +138,23 @@ test('two authenticated clients rendered performance sample (opt-in)', async ({ 
         // Let the server's 1.5 s spawn protection expire before starting the hit-load sample.
         await page.waitForTimeout(1_800);
 
-        const renderedClientSample = sampleFrames(page, 2_500);
+        const attackerSample = sampleFrames(page, 2_500);
+        const victimSample = sampleFrames(other, 2_500);
         expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 0.65, 39.6))).toBe(true);
         await expect
             .poll(() => other.evaluate(() => window.__MOONSHOT__!.match.state().hp), { timeout: 5_000 })
             .toBe(1);
         await page.screenshot({ path: 'test-results/performance-two-client-hit.png' });
-        const renderedClient = await renderedClientSample;
-        expect(renderedClient.frames).toBeGreaterThan(30);
-        expect(renderedClient.maxDrawCalls).toBeGreaterThan(0);
+        await other.screenshot({ path: 'test-results/performance-two-client-victim.png' });
+        const [attacker, victim] = await Promise.all([attackerSample, victimSample]);
+        for (const sample of [attacker, victim]) {
+            expect(sample.frames).toBeGreaterThan(30);
+            expect(sample.maxDrawCalls).toBeGreaterThan(0);
+        }
         const report = {
-            scenario:
-                'one rendered viewer with one authenticated, nonrendering network peer and one confirmed body hit',
-            renderedClient
+            scenario: 'two authenticated, simultaneously rendered clients during one server-confirmed body hit',
+            attacker,
+            victim
         };
         await testInfo.attach('two-client-performance-sample.json', {
             body: Buffer.from(JSON.stringify(report, null, 2)),

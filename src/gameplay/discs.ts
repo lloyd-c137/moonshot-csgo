@@ -19,7 +19,14 @@ import { SNIPER } from '../net/protocol';
 import { cylinder, merge, place, torus } from '../render/shapes';
 
 import type { DiscContact, V3 } from './frisbee';
-import { DISC, DISC_LIVE_SECONDS, discAcceleration, earliestDiscContact, segmentDistance } from './frisbee';
+import {
+    DISC,
+    DISC_LIVE_SECONDS,
+    closestPointOnSegment,
+    discAcceleration,
+    earliestDiscContact,
+    segmentDistance
+} from './frisbee';
 
 type Disc = {
     entity: EntityType;
@@ -246,7 +253,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     const distance = segmentDistance(disc.last, position, listener, listener);
                     if (distance < 1.15) {
                         disc.flybyPlayed = true;
-                        onFlyby?.(position, speed);
+                        onFlyby?.(closestPointOnSegment(disc.last, position, listener), speed);
                     }
                 }
                 // Spin for show about the disc's own axis.

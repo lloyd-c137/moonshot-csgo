@@ -11,8 +11,24 @@ const API = 'http://127.0.0.1:8787';
 // The room only answers pages from allowed origins.
 const ORIGIN = { origin: 'http://127.0.0.1:5174' };
 
-const open = async (browser: Browser, audioLab = false) => {
-    const page = await (await browser.newContext()).newPage();
+const open = async (browser: Browser, audioLab = false, captureSpatialAudio = false) => {
+    const context = await browser.newContext();
+    if (captureSpatialAudio) {
+        await context.addInitScript(() => {
+            const panners: PannerNode[] = [];
+            const createPanner = AudioContext.prototype.createPanner;
+            AudioContext.prototype.createPanner = function () {
+                const panner = createPanner.call(this);
+                panners.push(panner);
+                Object.assign(window, {
+                    __spatialPannerPositions: () =>
+                        panners.map((item) => [item.positionX.value, item.positionY.value, item.positionZ.value])
+                });
+                return panner;
+            };
+        });
+    }
+    const page = await context.newPage();
     const errors = collectErrors(page);
     await page.goto(`/?server=${encodeURIComponent(SERVER)}${audioLab ? '&audioLab=1' : ''}`);
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
@@ -33,6 +49,65 @@ const enter = async (page: Page, name: string, password: string) => {
 };
 
 const state = (page: Page) => page.evaluate(() => window.__MOONSHOT__!.match.state());
+
+test('remote near-miss audio is placed at the swept closest point and plays once', async ({ browser }) => {
+    const a = await open(browser);
+    const b = await open(browser, false, true);
+    const stamp = Date.now().toString(36).slice(-6);
+    await enter(a.page, `掠过甲${stamp}`, 'secret-123');
+    await enter(b.page, `掠过乙${stamp}`, 'secret-456');
+    await expect.poll(() => state(a.page).then((value) => value.players.length)).toBe(2);
+    await Promise.all([
+        a.page.evaluate(() => {
+            window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6);
+            window.__MOONSHOT__!.setLook(0, 90);
+        }),
+        b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6))
+    ]);
+    await a.page.waitForTimeout(1_000);
+    const listener = await b.page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
+    const before = await b.page.evaluate(
+        () =>
+            (window as Window & { __spatialPannerPositions?: () => number[][] }).__spatialPannerPositions?.().length ??
+            0
+    );
+    expect(
+        await a.page.evaluate((height) => window.__MOONSHOT__!.match.throwAt(-40.3, height + 0.1, 39.6), listener[1])
+    ).toBe(true);
+    await expect
+        .poll(
+            () =>
+                b.page.evaluate(
+                    () =>
+                        (
+                            window as Window & { __spatialPannerPositions?: () => number[][] }
+                        ).__spatialPannerPositions?.().length ?? 0
+                ),
+            { timeout: 5_000 }
+        )
+        .toBeGreaterThanOrEqual(before + 2);
+    const positions = await b.page.evaluate(
+        (start) =>
+            (window as Window & { __spatialPannerPositions?: () => number[][] })
+                .__spatialPannerPositions?.()
+                .slice(start) ?? [],
+        before
+    );
+    expect(positions).toHaveLength(2); // remote release cue, then the one-shot fly-by cue
+    expect(Math.hypot(...positions[0].map((value, index) => value - listener[index]))).toBeGreaterThan(2);
+    expect(Math.hypot(...positions[1].map((value, index) => value - listener[index]))).toBeLessThanOrEqual(1.15);
+    await b.page.waitForTimeout(250);
+    expect(
+        await b.page.evaluate(
+            (start) =>
+                ((window as Window & { __spatialPannerPositions?: () => number[][] }).__spatialPannerPositions?.()
+                    .length ?? 0) - start,
+            before
+        )
+    ).toBe(2);
+    expect((await state(b.page)).hp).toBe(2);
+    await Promise.all([a.page.context().close(), b.page.context().close()]);
+});
 
 test('lifetime board shows eliminations and loss-only win-rate indices, including no recorded history', async ({
     page

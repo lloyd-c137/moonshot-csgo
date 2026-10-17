@@ -93,6 +93,14 @@ export const simulateFlight = (origin: V3, velocity: V3, normal: V3, dt = 1 / 12
     return points;
 };
 
+/** Closest point on segment a-b to point p, clamped to the segment endpoints. */
+export const closestPointOnSegment = (a: V3, b: V3, p: V3): V3 => {
+    const delta = sub(b, a);
+    const lengthSquared = dot(delta, delta);
+    const fraction = lengthSquared > 1e-12 ? Math.max(0, Math.min(1, dot(sub(p, a), delta) / lengthSquared)) : 0;
+    return add(a, scale(delta, fraction));
+};
+
 /** Squared distance between segments p0-p1 and q0-q1. */
 export const segmentDistance = (p0: V3, p1: V3, q0: V3, q1: V3) => {
     const d1 = sub(p1, p0);

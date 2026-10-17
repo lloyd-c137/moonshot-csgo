@@ -4,6 +4,7 @@ import test from 'node:test';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
     chargeSpeed,
+    closestPointOnSegment,
     discAcceleration,
     discContactWithPlayer,
     discHitsPlayer,
@@ -55,6 +56,13 @@ test('hit geometry: segment–capsule distance and player hits', () => {
     assert.ok(discHitsPlayer([5.4, 1.0, -1], [5.4, 1.0, 1], centre), 'grazing the side');
     assert.ok(!discHitsPlayer([4, 2.6, 0], [6, 2.6, 0], centre), 'over the head');
     assert.ok(!discHitsPlayer([5.6, 1.0, -1], [5.6, 1.0, 1], centre), 'clear miss');
+});
+
+test('closest point on a swept disc segment is clamped to the actual fly-by location', () => {
+    assert.deepEqual(closestPointOnSegment([0, 2, 0], [10, 2, 0], [4, 0, 1]), [4, 2, 0]);
+    assert.deepEqual(closestPointOnSegment([0, 2, 0], [10, 2, 0], [-3, 0, 1]), [0, 2, 0]);
+    assert.deepEqual(closestPointOnSegment([0, 2, 0], [10, 2, 0], [12, 0, 1]), [10, 2, 0]);
+    assert.deepEqual(closestPointOnSegment([3, 2, 1], [3, 2, 1], [9, 0, 1]), [3, 2, 1]);
 });
 
 test('contact result returns the earliest swept point and stable earliest target', () => {

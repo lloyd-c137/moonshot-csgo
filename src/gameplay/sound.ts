@@ -5,6 +5,8 @@
 
 import { COMBAT_AUDIO } from '../config/combatAudio';
 
+import { AudioVoicePool } from './feedback/AudioVoicePool';
+
 type V3 = [number, number, number];
 export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce' | 'goldKill' | 'throw';
 type SoundBus = 'combat' | 'confirmation' | 'environment' | 'ui';
@@ -22,34 +24,9 @@ export const createSound = () => {
     const testVersions = new Map<TestSoundCue, number>();
     const testVoices = new Map<TestSoundCue, { source: AudioBufferSourceNode; gain: GainNode }>();
     const testCache = new Map<string, AudioBuffer>();
-    const voices: Record<SoundBus, Set<AudioScheduledSourceNode>> = {
-        combat: new Set(),
-        confirmation: new Set(),
-        environment: new Set(),
-        ui: new Set()
-    };
-    const voiceCaps: Record<SoundBus, number> = { combat: 24, confirmation: 16, environment: 8, ui: 8 };
+    const voices = new AudioVoicePool<SoundBus>({ combat: 24, confirmation: 16, environment: 8, ui: 8 });
     const trackVoice = (source: AudioScheduledSourceNode, cleanup: () => void) => {
-        const group = activeBus;
-        const active = voices[group];
-        if (active.size >= voiceCaps[group]) {
-            const oldest = active.values().next().value;
-            if (oldest) active.delete(oldest);
-            try {
-                oldest?.stop();
-            } catch {
-                // It may have ended between the cap check and stop.
-            }
-        }
-        active.add(source);
-        source.addEventListener(
-            'ended',
-            () => {
-                active.delete(source);
-                cleanup();
-            },
-            { once: true }
-        );
+        voices.track(activeBus, source, cleanup);
     };
 
     const loadClip = async (audio: AudioContext, name: string, url: string) => {
@@ -269,7 +246,7 @@ export const createSound = () => {
             buses.combat.gain.setTargetAtTime(mix.combat, now, 0.04);
             buses.confirmation.gain.setTargetAtTime(mix.confirmation, now, 0.04);
         },
-        voiceCount: () => Object.values(voices).reduce((count, active) => count + active.size, 0),
+        voiceCount: () => voices.count(),
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;

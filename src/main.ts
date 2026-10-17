@@ -50,6 +50,8 @@ import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressin
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
+import { ROOM_NAMING } from './config/roomNaming';
+import { applyRoomNaming } from './world/roomNaming';
 import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
 import { buildSigns } from './world/signage';
 
@@ -149,6 +151,8 @@ const createFpsMeter = () => {
 const boot = async () => {
     // Room data first: the location plate and room tracker need it.
     const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
+    // Names and division from the 2026-08-06 model over FF-01 geometry (geometry and dressing keep the FF-01 list).
+    const namedRooms = applyRoomNaming(rooms.rooms, ROOM_NAMING);
     const derivedWorld = parseDerivedWorld(await fetchJson(DERIVED_WORLD_URL, '场景布置数据'));
     const arena = arenaLocation(derivedWorld);
     ui = createUi();
@@ -204,7 +208,7 @@ const boot = async () => {
     const dressing = buildDressing(app, campus.root, derivedWorld, rooms.rooms, ceilingMask, AUTHORED_ROOM_IDS);
     const authoredScenes = authoredRoomScenes();
     for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
-    buildSigns(app, campus.root, derivedWorld, rooms.rooms);
+    buildSigns(app, campus.root, derivedWorld, namedRooms);
     const { player, camera } = createPlayer(app);
     shell.stage('characters', 'active');
     const characters = await CharacterAssetLoader.load(app);
@@ -266,13 +270,14 @@ const boot = async () => {
 
     const rigidbodySystem = app.systems.rigidbody as RigidBodyComponentSystem;
     const anchorPositions = new Map<string, Point2>();
-    for (const room of rooms.rooms) {
+    for (const room of namedRooms) {
+        if (room.hasRegion) continue;
         const anchor = campus.root.findByName(`Label_${room.id}`);
         if (anchor) anchorPositions.set(room.id, [anchor.getPosition().x, anchor.getPosition().z]);
     }
-    const anchors = createAnchorTriggers(rooms.rooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
+    const anchors = createAnchorTriggers(namedRooms, anchorPositions, LABEL_ONLY_TRIGGER_RADIUS);
     const roomTracker = new RoomTracker(
-        rooms.rooms,
+        namedRooms.filter((room) => room.hasRegion),
         (location) => {
             shell.setLocation(location);
             match.enteredRoom(location?.id ?? null);

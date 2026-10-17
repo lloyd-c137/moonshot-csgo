@@ -9,6 +9,12 @@ export type CampusRoom = {
     hasRegion: boolean;
     geometryStatus: string;
     polygon?: RoomRegion;
+    /** FF-01 region this entry's polygon comes from, when the room naming layer renamed or merged it. */
+    sourceId?: string;
+    /** Number shown to players; '' for spaces without a drawing number. Undefined: derived from the id. */
+    code?: string;
+    /** The largest piece of a room made of several FF-01 regions (carries its door sign). */
+    primary?: boolean;
 };
 export type CampusRooms = {
     model: string;

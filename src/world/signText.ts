@@ -5,13 +5,15 @@ export type SignText = { code: string; chinese: string[]; english: string[] };
 
 /** Room code and names split into sign lines (Chinese up to 3 characters on one line, longer names split evenly, English upper case ≤ 14). */
 export const signText = (room: CampusRoom): SignText => {
-    const chineseName = /^房间\s/.test(room.name) ? '' : room.name.replace(/[（(].*[)）]/, '');
+    // Latin-only names (Moon Coffee) go on the English lines instead of being split as characters.
+    const latin = !/[\u3400-\u9fff]/.test(room.name);
+    const chineseName = latin || /^房间\s/.test(room.name) ? '' : room.name.replace(/[（(].*[)）]/, '');
     const chinese: string[] = [];
     const chars = [...chineseName];
     const perLine = chars.length <= 3 ? chars.length : Math.min(4, Math.ceil(chars.length / 2));
     for (let i = 0; i < chars.length; i += Math.max(1, perLine)) chinese.push(chars.slice(i, i + perLine).join(''));
     const english: string[] = [];
-    const englishName = (room.nameEnglish ?? '')
+    const englishName = (latin ? room.name : (room.nameEnglish ?? ''))
         .replace(new RegExp(`\\s*${room.id}$`), '')
         .trim()
         .toUpperCase();
@@ -20,5 +22,5 @@ export const signText = (room: CampusRoom): SignText => {
         if (last && (last + ' ' + word).length <= 14) english[english.length - 1] = `${last} ${word}`;
         else english.push(word);
     }
-    return { code: room.id, chinese: chinese.slice(0, 3), english: english.slice(0, 3) };
+    return { code: room.code ?? room.id, chinese: chinese.slice(0, 3), english: english.slice(0, 3) };
 };

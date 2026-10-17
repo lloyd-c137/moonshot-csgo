@@ -20,6 +20,7 @@ import { MeshBuilder } from '../render/meshBuilder';
 
 import type { DerivedWorld } from './dressing';
 import type { CampusRoom } from './roomIndex';
+import { chooseSigns } from './roomNaming';
 import type { SignText } from './signText';
 import { signText } from './signText';
 
@@ -201,8 +202,9 @@ const bladeOutline = () => {
 };
 
 export const buildSigns = (app: AppBase, parent: Entity, world: DerivedWorld, rooms: CampusRoom[]) => {
-    const byId = new Map(rooms.map((room) => [room.id, room]));
-    const signs = world.signs.filter((sign) => byId.has(sign.room));
+    const chosen = chooseSigns(world.signs, rooms);
+    const signs = chosen.map(({ sign }) => sign);
+    const byId = new Map(chosen.map(({ sign, room }) => [sign.room, room]));
     const blades = atlas(app, 'sign-blades', BLADE_CELL, signs.length);
     const plaques = atlas(app, 'sign-plaques', PLAQUE_CELL, signs.length);
     const texts = signs.map((sign) => signText(byId.get(sign.room)!));

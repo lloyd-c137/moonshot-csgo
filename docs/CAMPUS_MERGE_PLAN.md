@@ -46,6 +46,16 @@ Budget: seats are instanced/merged per material (target ≤ 40 extra draw calls 
 
 During the final minute everyone still alive is brought to the court. Eliminated players appear in the upper bowl as seated figures in their own colour, assigned to seats spread across all twelve sectors (never near a vomitory a living player could see into). They can cheer, wave a light stick and throw confetti; living players see and hear the crowd. Seat positions are fixed per seat index, carry no information about anyone's location, and are unreachable from the court.
 
+## Room naming layer (implemented 2026-10-17)
+
+Owner decision: names and room division follow the 2026-08-06 model; scale and geometry stay FF-01. `npm run derive:rooms` (`tools/roomNaming.ts`) writes `src/config/roomNaming.ts` from `public/assets/campus/source-20260806/rooms.json` (SHA-256 `d97fe542ad7527ce60ec1d5629e40fe24e9403c1f39111d945123a44f86bbe0d`) and FF-01; `src/world/roomNaming.ts` applies it at runtime to the HUD, label triggers and door signs. Geometry, dressing, colliders and every derived presentation file still use the FF-01 rooms unchanged.
+
+- Fit: affine (the drawing's X and Z pixel scales differ: 0.0936 vs 0.1003 m/px), refitted on 97 shared rooms without four that moved between drawings (M119, A114, A106, A207); median centroid error 1.21 m.
+- Each FF-01 region joins the 2026-08-06 room covering ≥ 40 % of it (≥ 25 % when the numbers match); courtyards and stairwells keep their identity. Result: 小剧场 = THEATER-01; the restrooms merge FF-01's split cubicles and closets (e.g. M-WC1 = WC-11 + WC-10 + SVC-22); A207/A208/A209 move one region along as in the newer drawing; S404 takes SVC-24; 大自习室 covers S100, S406 and S-WC3.
+- S407 图书馆, A-I 创新区, M-COFFEE and A-TEA have no FF-01 region; they use their fitted outlines (all on floor, overlapping no FF-01 region) and replace FF-01's label-only S407, TEA-ROOM-01 and INNOVATION-01 triggers.
+- 36 FF-01 regions the newer model omits (machine rooms, power rooms incl. the SVC-10 breaker room, stairs, courtyards, lighting/PA rooms) keep their FF-01 names. FF-01's A207 region, whose number the newer drawing gives to the next room, is shown as 未编号房间.
+- Players see drawing numbers only; app-internal ids (M-WC1, A-TEA…) show as "—". A room made of several regions keeps one door sign.
+
 ## Implementation phases and acceptance
 
 1. Stadium geometry module + collision barrier; browser checks: court reachable, upper bowl unreachable, ceiling/sky over the opening, draw-call delta.

@@ -13,7 +13,7 @@ import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -130,6 +130,8 @@ export type PlayerSummary = {
     avatarId?: string | null;
     avatarVersion?: string | null;
     hasReviveArmor?: boolean;
+    /** Already collected this round's armor, even if it was dropped or consumed. */
+    reviveTaken?: boolean;
     hasFrc?: boolean;
     hasEye?: boolean;
     hasStealth?: boolean;

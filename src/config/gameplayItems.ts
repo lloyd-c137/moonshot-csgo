@@ -10,6 +10,9 @@ export const ITEM_RULES = {
     respawnProtectionMs: 1_500
 } as const;
 
+/** GAMEPLAY_AUTHORED: each player has one active skill slot; Michael's capacity talent is independent. */
+export const NPC_COLOURS = { michael: 210, mark: 145 } as const;
+
 export type ItemKind = 'revive' | 'frc' | 'eye' | 'stealth' | 'creation';
 export type ItemSpawn = { id: string; kind: ItemKind; room: string; name: string; at: [number, number, number] };
 
@@ -23,6 +26,6 @@ export const ITEM_SPAWNS: readonly ItemSpawn[] = [
 ];
 
 export const NPC_SPAWNS = [
-    { id: 'coach-michael', room: 'S308', name: 'Michael 教练', at: [18.03, 0.92, -12.29] as [number, number, number] },
-    { id: 'mark', room: 'M100', name: 'Mark', at: [-35.59, 0.92, 51.76] as [number, number, number] }
+    { id: 'coach-michael', room: 'S308', name: 'Michael 教练', hue: NPC_COLOURS.michael, at: [18.03, 0.92, -12.29] as [number, number, number] },
+    { id: 'mark', room: 'M100', name: 'Mark', hue: NPC_COLOURS.mark, at: [-35.59, 0.92, 51.76] as [number, number, number] }
 ] as const;

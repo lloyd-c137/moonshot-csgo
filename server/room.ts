@@ -95,6 +95,7 @@ type Player = Omit<PlayerSummary, 'account'> & {
     lastBoundaryCorrectionAt: number;
     hasReviveArmor: boolean;
     reviveUsed: boolean;
+    reviveTaken: boolean;
     hasFrc: boolean;
     hasEye: boolean;
     hasStealth: boolean;
@@ -491,6 +492,7 @@ export class Room {
             lastBoundaryCorrectionAt: -Infinity,
             hasReviveArmor: false,
             reviveUsed: false,
+            reviveTaken: false,
             hasFrc: false,
             hasEye: false,
             hasStealth: false,
@@ -1091,6 +1093,7 @@ export class Room {
         if (!player.hasReviveArmor || player.reviveUsed) return false;
         player.hasReviveArmor = false;
         player.reviveUsed = true;
+        player.reviveTaken = true;
         player.hp = MAX_HP;
         player.alive = true;
         player.spectating = false;
@@ -1141,6 +1144,7 @@ export class Room {
             player.deaths = 0;
             player.hasReviveArmor = false;
             player.reviveUsed = false;
+            player.reviveTaken = false;
             player.hasFrc = false;
             player.hasEye = false;
             player.hasStealth = false;
@@ -1325,6 +1329,7 @@ export class Room {
             }
             const item = this.items.get('item-creation');
             if (!item) return;
+            this.dropHeldItems(player, now);
             this.markGiven = true;
             item.available = false;
             item.holder = player.id;
@@ -1349,14 +1354,18 @@ export class Room {
         }
         const item = this.items.get(targetId);
         if (!item || !item.available || Math.hypot(x - item.at[0], z - item.at[2]) > ITEM_RULES.pickupRadius || Math.abs(y - item.at[1]) > 1.8) return;
-        if (item.kind === 'revive' && (player.hasReviveArmor || player.reviveUsed)) return;
+        if (item.kind === 'revive' && (player.hasReviveArmor || player.reviveTaken)) return;
         if ((item.kind === 'frc' && player.hasFrc) || (item.kind === 'eye' && player.hasEye) ||
             (item.kind === 'stealth' && player.hasStealth) || (item.kind === 'creation' && player.hasCreation)) return;
+        this.dropHeldItems(player, now);
         item.holder = player.id;
         item.available = false;
         item.returnAt = null;
         item.at = [x, Math.max(0.02, y - 0.9), z];
-        if (item.kind === 'revive') player.hasReviveArmor = true;
+        if (item.kind === 'revive') {
+            player.hasReviveArmor = true;
+            player.reviveTaken = true;
+        }
         if (item.kind === 'frc') {
             player.hasFrc = true;
             player.frcCooldownUntil = Math.max(player.frcCooldownUntil, item.cooldownUntil);
@@ -1392,16 +1401,22 @@ export class Room {
     private dropHeldItems(player: Player, now: number) {
         for (const item of this.items.values()) {
             if (item.holder !== player.id) continue;
-            if (item.kind === 'revive') continue;
             item.holder = null;
             item.available = true;
             item.at = player.pose ? [player.pose.p[0], 0.02, player.pose.p[2]] : item.at;
             item.returnAt = now + ITEM_RULES.droppedReturnMs;
-            if (item.kind === 'frc') player.hasFrc = false;
+            if (item.kind === 'revive') player.hasReviveArmor = false;
+            if (item.kind === 'frc') {
+                item.cooldownUntil = Math.max(item.cooldownUntil, player.frcCooldownUntil);
+                player.hasFrc = false;
+            }
             if (item.kind === 'eye') player.hasEye = false;
             if (item.kind === 'stealth') player.hasStealth = false;
             if (item.kind === 'creation') player.hasCreation = false;
         }
+        player.frcSelected = false;
+        player.frcCooldownUntil = 0;
+        player.stealthUntil = 0;
         this.broadcastItems();
         this.broadcastAbility(player);
     }
@@ -1572,6 +1587,7 @@ const summary = ({
     avatarId,
     avatarVersion,
     hasReviveArmor,
+    reviveTaken,
     hasFrc,
     hasEye,
     hasStealth,
@@ -1597,6 +1613,7 @@ const summary = ({
     avatarId,
     avatarVersion,
     hasReviveArmor,
+    reviveTaken,
     hasFrc,
     hasEye,
     hasStealth,

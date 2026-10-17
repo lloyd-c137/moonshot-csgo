@@ -8,6 +8,7 @@ import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../config/gameplayItems';
+import type { ItemKind } from '../config/gameplayItems';
 import { SPAWN_POINTS } from '../config/spawns';
 import { SPECIAL_LOCATIONS } from '../config/specialLocations';
 import { apiBase } from '../net/auth';
@@ -70,6 +71,7 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
+import { createPickupVisual } from './pickupVisuals';
 import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
 import { createRestroomMirrors } from './restroomMirrors';
@@ -126,7 +128,7 @@ export const createMatch = ({
     const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
         auth.avatarUrl(id, version)
     );
-    for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, colourFor(npc.id));
+    for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, npc.hue);
     const roster = new Map<string, PlayerSummary>();
     const stands = createStands(app, characters, stadiumSeats);
     const restroomMirrors = createRestroomMirrors(
@@ -171,7 +173,7 @@ export const createMatch = ({
         returnAt: null,
         cooldownUntil: 0
     }));
-    const localAbilities = { revive: false, reviveUsed: false, frc: false, eye: false, stealth: false, creation: false, coach: false };
+    const localAbilities = { revive: false, reviveUsed: false, reviveTaken: false, frc: false, eye: false, stealth: false, creation: false, coach: false };
     let localMarkGiven = false;
     let localFrcSelected = false;
     let localFrcCooldownUntil = 0;
@@ -181,17 +183,8 @@ export const createMatch = ({
     let creationNextAt = 0;
     const pickupMeshes = new Map<string, Entity>();
     for (const spawn of ITEM_SPAWNS) {
-        const entity = new Entity(`Pickup_${spawn.kind}`);
-        const rgb: [number, number, number] = spawn.kind === 'revive' ? [0.95, 0.28, 0.32] : spawn.kind === 'frc' ? [0.95, 0.12, 0.08] : spawn.kind === 'eye' ? [0.25, 0.8, 0.95] : spawn.kind === 'stealth' ? [0.55, 0.42, 0.95] : [0.25, 0.86, 0.55];
-        const material = new StandardMaterial();
-        material.diffuse = new Color(...rgb);
-        material.emissive = new Color(...rgb);
-        material.emissiveIntensity = 0.6;
-        material.update();
-        entity.addComponent('render', { type: 'sphere', material, castShadows: false });
-        entity.setLocalScale(0.34, 0.34, 0.34);
+        const entity = createPickupVisual(app, spawn.kind);
         entity.setPosition(...spawn.at);
-        app.root.addChild(entity);
         pickupMeshes.set(spawn.id, entity);
     }
     const applyWorldItems = (next: WorldItem[]) => {
@@ -758,6 +751,7 @@ export const createMatch = ({
                 power = { pulledAt: null };
                 roster.clear();
                 avatars.clear();
+                for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, npc.hue);
                 // Back to offline practice: no round, and a local golden disc will be laid out again.
                 roundState = null;
                 goldView.set(null);
@@ -787,6 +781,7 @@ export const createMatch = ({
             applyWorldItems(extra.items);
             Object.assign(localAbilities, {
                 revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
+                reviveTaken: me.reviveTaken === true, reviveUsed: me.reviveTaken === true,
                 stealth: me.hasStealth === true, creation: me.hasCreation === true, coach: me.coachGift === true
             });
             localAmmoCapacity = me.ammoCapacity ?? AMMO.max;
@@ -864,6 +859,8 @@ export const createMatch = ({
             avatars.setReviveArmor(id, next.hasReviveArmor === true);
             if (id === selfId()) {
                 localAbilities.revive = next.hasReviveArmor === true;
+                localAbilities.reviveTaken = next.reviveTaken === true;
+                localAbilities.reviveUsed = next.reviveTaken === true;
                 localAbilities.frc = next.hasFrc === true;
                 localAbilities.eye = next.hasEye === true;
                 localAbilities.stealth = next.hasStealth === true;
@@ -889,6 +886,7 @@ export const createMatch = ({
                 effects.ring(at, [0.3, 0.95, 0.85], 0.3, 1.5, 1.3);
                 localAbilities.revive = false;
                 localAbilities.reviveUsed = true;
+                localAbilities.reviveTaken = true;
             }
             const entry = roster.get(id);
             if (entry) Object.assign(entry, { hp: MAX_HP, alive: true, spectating: false, hasReviveArmor: false });
@@ -1298,6 +1296,8 @@ export const createMatch = ({
         } else if (usingFrc && net.state !== 'online') {
             localFrcSelected = false;
             localFrcCooldownUntil = roomNow() + ITEM_RULES.frcCooldownMs;
+            const item = worldItems.find((candidate) => candidate.kind === 'frc' && candidate.holder === selfId());
+            if (item) item.cooldownUntil = localFrcCooldownUntil;
         }
         lastThrowAt = now;
         const eye = camera.getPosition();
@@ -1383,6 +1383,31 @@ export const createMatch = ({
         aimReadyPlayed = false;
         ui.charge(null);
     };
+    const activeLocalSkill = (): ItemKind | null => {
+        for (const kind of ['revive', 'frc', 'eye', 'stealth', 'creation'] as const)
+            if (localAbilities[kind]) return kind;
+        return null;
+    };
+    const dropLocalSkill = () => {
+        const kind = activeLocalSkill();
+        if (!kind) return;
+        localAbilities[kind] = false;
+        const item = worldItems.find((entry) => entry.kind === kind && entry.holder === selfId());
+        if (item) {
+            const p = player.getPosition();
+            item.available = true;
+            item.holder = null;
+            item.at = [p.x, 0.02, p.z];
+            item.returnAt = roomNow() + ITEM_RULES.droppedReturnMs;
+            if (kind === 'frc') {
+                item.cooldownUntil = Math.max(item.cooldownUntil, localFrcCooldownUntil);
+                localFrcCooldownUntil = 0;
+            }
+        }
+        if (kind === 'frc') localFrcSelected = false;
+        if (kind === 'stealth') localStealthUntil = 0;
+        applyWorldItems(worldItems);
+    };
     const nearestInteraction = () => {
         const p = player.getPosition();
         const candidates = [
@@ -1416,6 +1441,7 @@ export const createMatch = ({
         }
         if (target.id === 'mark') {
             if (localMarkGiven || localAbilities.creation) return ui.notify('Mark：创造之力已经交给别人了');
+            dropLocalSkill();
             localMarkGiven = true;
             localAbilities.creation = true;
             creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
@@ -1432,13 +1458,20 @@ export const createMatch = ({
         }
         const item = worldItems.find((entry) => entry.id === target.id);
         if (!item) return;
-        if (item.kind === 'revive' && (localAbilities.revive || localAbilities.reviveUsed)) return;
+        if (item.kind === 'revive' && (localAbilities.revive || localAbilities.reviveTaken)) return;
         if (item.kind === 'frc' && localAbilities.frc) return;
         if (item.kind === 'eye' && localAbilities.eye) return;
         if (item.kind === 'stealth' && localAbilities.stealth) return;
         if (item.kind === 'creation' && localAbilities.creation) return;
+        dropLocalSkill();
         localAbilities[item.kind] = true;
+        if (item.kind === 'revive') localAbilities.reviveTaken = true;
         item.available = false;
+        item.holder = selfId();
+        item.returnAt = null;
+        const local = pose().p;
+        item.at = [local[0], Math.max(0.02, local[1] - 0.9), local[2]];
+        if (item.kind === 'frc') localFrcCooldownUntil = Math.max(localFrcCooldownUntil, item.cooldownUntil);
         applyWorldItems(worldItems);
         ui.popup(`拾取${item.name}`, 'gold');
         sound.pickup();
@@ -1869,12 +1902,28 @@ export const createMatch = ({
     /** Per frame: 纪老师, the golden disc, detention, the round clock and the on-screen gold marker. */
     const updateRound = (now: number) => {
         if (warming) return;
+        if (net.state !== 'online') {
+            let returned = false;
+            for (const item of worldItems) {
+                if (item.returnAt === null || roomNow() < item.returnAt) continue;
+                const spawn = ITEM_SPAWNS.find((candidate) => candidate.id === item.id);
+                if (!spawn) continue;
+                item.at = [...spawn.at];
+                item.available = true;
+                item.holder = null;
+                item.returnAt = null;
+                returned = true;
+            }
+            if (returned) applyWorldItems(worldItems);
+        }
         for (const item of worldItems) {
             const mesh = pickupMeshes.get(item.id);
             if (!mesh || !item.available) continue;
             const phase = ITEM_SPAWNS.findIndex((spawn) => spawn.id === item.id) * 1.7;
             mesh.setPosition(item.at[0], item.at[1] + 0.34 + Math.sin(now * 0.002 + phase) * 0.07, item.at[2]);
             mesh.setEulerAngles(0, (now * 0.045 + phase * 57.3) % 360, 0);
+            const pulse = 1 + Math.sin(now * 0.003 + phase) * 0.045;
+            mesh.setLocalScale(pulse, pulse, pulse);
         }
         teacher.update(roomNow(), now, 0);
         // Offline practice: a golden disc of your own to find.

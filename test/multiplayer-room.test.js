@@ -196,6 +196,51 @@ test('item pickups are server-authoritative, bounded to the room point, and the 
     assert.ok(inbox.get('b').some((message) => message.type === 'revived'));
 });
 
+test('picking a new active skill drops the previous one at the player and Michael talent remains separate', () => {
+    const { room, join, pose } = harness();
+    join('a', 'A');
+    const eye = ITEM_SPAWNS.find((item) => item.kind === 'eye');
+    const frc = ITEM_SPAWNS.find((item) => item.kind === 'frc');
+    const coach = NPC_SPAWNS.find((npc) => npc.id === 'coach-michael');
+
+    pose('a', eye.at, 1000);
+    room.message('a', { type: 'interact', target: eye.id }, 1300);
+    assert.equal(room.players.get('a').hasEye, true);
+
+    pose('a', [frc.at[0] + 0.25, 0.92, frc.at[2]], 1600);
+    room.message('a', { type: 'interact', target: frc.id }, 1900);
+    assert.equal(room.players.get('a').hasEye, false);
+    assert.equal(room.players.get('a').hasFrc, true);
+    assert.deepEqual(
+        [room.items.get(eye.id).available, room.items.get(eye.id).holder, room.items.get(eye.id).at],
+        [true, null, [frc.at[0] + 0.25, 0.02, frc.at[2]]]
+    );
+
+    pose('a', coach.at, 2200);
+    room.message('a', { type: 'interact', target: coach.id }, 2500);
+    assert.equal(room.players.get('a').hasFrc, true);
+    assert.equal(room.players.get('a').coachGift, true);
+    assert.equal(room.players.get('a').ammoCapacity, 5);
+});
+
+test('dropped revive armor cannot be reclaimed by its former holder during the same round', () => {
+    const { room, join, pose } = harness();
+    join('a', 'A');
+    const revive = ITEM_SPAWNS.find((item) => item.kind === 'revive');
+    const eye = ITEM_SPAWNS.find((item) => item.kind === 'eye');
+    pose('a', revive.at, 1000);
+    room.message('a', { type: 'interact', target: revive.id }, 1300);
+    pose('a', eye.at, 1600);
+    room.message('a', { type: 'interact', target: eye.id }, 1900);
+    assert.equal(room.players.get('a').hasReviveArmor, false);
+    assert.equal(room.players.get('a').reviveTaken, true);
+    assert.equal(room.items.get(revive.id).available, true);
+    pose('a', room.items.get(revive.id).at, 2200);
+    room.message('a', { type: 'interact', target: revive.id }, 2500);
+    assert.equal(room.players.get('a').hasReviveArmor, false);
+    assert.equal(room.players.get('a').hasEye, true);
+});
+
 test('FRC is unlimited, lethal, cooldown follows its dropped pickup, and stealth omits player snapshots', () => {
     const { room, join, pose, inbox } = harness();
     join('a', 'A');
@@ -211,7 +256,14 @@ test('FRC is unlimited, lethal, cooldown follows its dropped pickup, and stealth
     assert.equal(player.ammo, ammoBefore);
     assert.equal(player.frcCooldownUntil, 2000 + ITEM_RULES.frcCooldownMs);
     assert.equal(room.items.get(frc.id).cooldownUntil, player.frcCooldownUntil);
-    room.disconnect('a', 2500);
+    const eye = ITEM_SPAWNS.find((item) => item.kind === 'eye');
+    pose('a', [eye.at[0], 0.92, eye.at[2]], 2300);
+    room.message('a', { type: 'interact', target: eye.id }, 2600);
+    assert.equal(player.hasFrc, false);
+    assert.equal(player.hasEye, true);
+    assert.equal(player.frcCooldownUntil, 0);
+    assert.equal(room.items.get(frc.id).cooldownUntil, 2000 + ITEM_RULES.frcCooldownMs);
+    room.disconnect('a', 2700);
     assert.equal(room.items.get(frc.id).available, true);
     pose('b', [...room.items.get(frc.id).at.slice(0, 1), 0.92, room.items.get(frc.id).at[2]], 2800);
     room.message('b', { type: 'interact', target: frc.id }, 3100);

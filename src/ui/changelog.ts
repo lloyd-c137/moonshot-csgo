@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.18.0',
+        date: '2026.10.18',
+        title: '技能与角色可视化',
+        notes: [
+            '一名玩家只能持有一种场景技能；拾取或从 Mark 领取新技能时，旧技能会掉落在脚边。Michael 教练的飞盘容量天赋可与技能同时保留。',
+            '技能拾取物改为不同形状的发光道具：复活甲、FRC 飞盘、监控之眼、隐身晶体和创造齿轮，并带有轻微悬浮与脉动效果。',
+            'Mark 与 Michael 教练现在使用不同颜色的骨骼角色，名字与待机人物在场景中可见。'
+        ]
+    },
+    {
         version: 'v0.17.0',
         date: '2026.10.18',
         title: '玩法调整',

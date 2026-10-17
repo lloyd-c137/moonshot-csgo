@@ -7,7 +7,6 @@ import {
     canStartGlobalFinisher,
     executionFrame,
     executionLineClear,
-    EXECUTION,
     EXECUTION_TIMELINE
 } from '../src/gameplay/execution.ts';
 import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';

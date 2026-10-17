@@ -207,7 +207,7 @@ export class Room {
         const now = this.matchNow(realNow);
         switch (message.type) {
             case 'pose':
-            case 'respawned':
+            case 'respawned': {
                 if (player.spectating || this.executionFor(id)) return;
                 if (!inBounds(message.pose)) return;
                 if (message.type === 'respawned' && !player.alive && now >= player.respawnAt) {
@@ -231,6 +231,7 @@ export class Room {
                 this.tryPickup(player, now);
                 this.pickupDiscs(player);
                 return;
+            }
             case 'throw':
                 return this.throw(player, message.throw, now);
             case 'hit':

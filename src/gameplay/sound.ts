@@ -3,6 +3,7 @@
 // in 3D relative to the camera (equal-power panning: cheap, no HRTF start-up hitch); the local player's own sounds
 // play centred. The context starts on the first user gesture.
 
+import { BLACKOUT_THEME_AUDIO } from '../config/blackoutThemeAudio';
 import { COMBAT_AUDIO } from '../config/combatAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
@@ -23,6 +24,9 @@ export const createSound = () => {
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+    let blackoutMusicWanted = false;
+    let blackoutMusicLoad: Promise<AudioBuffer | null> | null = null;
+    let blackoutMusicVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
     const testClips = new Map<TestSoundCue, { buffer: AudioBuffer; gain: number; start: number; end: number }>();
     const testVersions = new Map<TestSoundCue, number>();
     const testVoices = new Map<TestSoundCue, { source: AudioBufferSourceNode; gain: GainNode }>();
@@ -36,10 +40,61 @@ export const createSound = () => {
         try {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Audio ${name}: HTTP ${response.status}`);
-            clips.set(name, await audio.decodeAudioData(await response.arrayBuffer()));
+            const buffer = await audio.decodeAudioData(await response.arrayBuffer());
+            clips.set(name, buffer);
+            return buffer;
         } catch {
             /* clip unavailable: the synthesised fallback plays instead */
+            return null;
         }
+    };
+    const setBlackoutMusic = (active: boolean) => {
+        if (active === blackoutMusicWanted) return;
+        blackoutMusicWanted = active;
+        const audio = ensure();
+        if (!audio || !buses) return;
+        const now = audio.currentTime;
+        const fadeSeconds = BLACKOUT_THEME_AUDIO.fadeSeconds;
+        if (!active) {
+            const voice = blackoutMusicVoice;
+            if (!voice) return;
+            voice.gain.gain.cancelScheduledValues(now);
+            voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+            voice.gain.gain.linearRampToValueAtTime(0, now + fadeSeconds);
+            voice.source.stop(now + fadeSeconds + 0.05);
+            blackoutMusicVoice = null;
+            return;
+        }
+        if (blackoutMusicVoice) {
+            const voice = blackoutMusicVoice;
+            voice.gain.gain.cancelScheduledValues(now);
+            voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+            voice.gain.gain.linearRampToValueAtTime(BLACKOUT_THEME_AUDIO.gain, now + fadeSeconds);
+            return;
+        }
+        const buffer = clips.get('blackout-theme');
+        blackoutMusicLoad ??= buffer
+            ? Promise.resolve(buffer)
+            : loadClip(audio, 'blackout-theme', BLACKOUT_THEME_AUDIO.url);
+        void blackoutMusicLoad.then((decoded) => {
+            blackoutMusicLoad = null;
+            if (!decoded || !blackoutMusicWanted || ctx !== audio || !buses || blackoutMusicVoice) return;
+            const source = audio.createBufferSource();
+            const gain = audio.createGain();
+            source.buffer = decoded;
+            source.loop = true;
+            gain.gain.setValueAtTime(0, audio.currentTime);
+            source.connect(gain).connect(buses.environment);
+            const voice = { source, gain };
+            blackoutMusicVoice = voice;
+            source.onended = () => {
+                source.disconnect();
+                gain.disconnect();
+                if (blackoutMusicVoice === voice) blackoutMusicVoice = null;
+            };
+            source.start();
+            gain.gain.linearRampToValueAtTime(BLACKOUT_THEME_AUDIO.gain, audio.currentTime + fadeSeconds);
+        });
     };
     const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity, at?: V3) => {
         const buffer = clips.get(name);
@@ -259,6 +314,8 @@ export const createSound = () => {
             buses.confirmation.gain.setTargetAtTime(mix.confirmation, now, 0.04);
         },
         voiceCount: () => voices.count(),
+        /** Loop the owner-selected theme only while campus lighting is in its blackout state. */
+        blackoutMusic: setBlackoutMusic,
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;
@@ -429,7 +486,7 @@ export const createSound = () => {
                 );
                 tone(audio, out, 'sine', 140, 60, now + catchAt * seconds, 0.3, 0.4);
             }),
-        /** Shared cue for the three-minute blackout and a player-triggered breaker outage. */
+        /** Shared one-shot cue for the four-minute blackout and a player-triggered breaker outage. */
         blackout: () =>
             play(
                 (audio, now) => {

@@ -11,18 +11,36 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     page
 }) => {
     await page.addInitScript(() => {
-        const target = window as Window & { __powerDownCueStarts?: number };
+        const target = window as Window & {
+            __powerDownCueStarts?: number;
+            __blackoutThemeStarts?: number;
+            __blackoutThemeLoops?: boolean;
+            __blackoutThemeFades?: number[];
+        };
         const originalStart = AudioBufferSourceNode.prototype.start;
         AudioBufferSourceNode.prototype.start = function (when?: number, offset?: number, duration?: number) {
             if (this.buffer && Math.abs(this.buffer.duration - 1.1755) < 0.0001)
                 target.__powerDownCueStarts = (target.__powerDownCueStarts ?? 0) + 1;
+            if (this.buffer && this.buffer.duration > 180) {
+                target.__blackoutThemeStarts = (target.__blackoutThemeStarts ?? 0) + 1;
+                target.__blackoutThemeLoops = this.loop;
+            }
             return originalStart.call(this, when, offset, duration);
+        };
+        const originalRamp = AudioParam.prototype.linearRampToValueAtTime;
+        AudioParam.prototype.linearRampToValueAtTime = function (value: number, endTime: number) {
+            if (value === 0 || Math.abs(value - 0.22) < 0.0001)
+                (target.__blackoutThemeFades ??= []).push(value);
+            return originalRamp.call(this, value, endTime);
         };
     });
     const errors = collectErrors(page);
     let buzzerLoaded = false;
+    let themeLoaded = false;
     page.on('response', (response) => {
-        if (new URL(response.url()).pathname === '/assets/audio/buzzer.mp3') buzzerLoaded = response.ok();
+        const path = new URL(response.url()).pathname;
+        if (path === '/assets/audio/buzzer.mp3') buzzerLoaded = response.ok();
+        if (path === '/assets/audio/blackout-theme.mp3') themeLoaded = response.ok();
     });
     await loadSimulated(page);
     await enterAtSpawn(page);
@@ -70,6 +88,12 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     expect(power.dark).toBe(true);
     expect(power.phase).toBe('outbound');
     await expect.poll(() => page.evaluate(() => (window as Window & { __powerDownCueStarts?: number }).__powerDownCueStarts)).toBe(1);
+    await expect.poll(() => themeLoaded).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __blackoutThemeStarts?: number }).__blackoutThemeStarts)).toBe(1);
+    expect(await page.evaluate(() => (window as Window & { __blackoutThemeLoops?: boolean }).__blackoutThemeLoops)).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __blackoutThemeFades?: number[] }).__blackoutThemeFades))
+        .toContain(0.22);
     const lighting = () => page.evaluate(() => window.__MOONSHOT__!.lighting());
     const transition = await lighting();
     expect(transition.skyNight).toBeGreaterThan(0);
@@ -98,6 +122,9 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     state = await page.evaluate(() => window.__MOONSHOT__!.match.state().power);
     expect(state.phase).toBe('returning');
     expect(state.dark).toBe(false);
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __blackoutThemeFades?: number[] }).__blackoutThemeFades))
+        .toContain(0);
     const on = await lighting();
     expect(on.pooled.some((v) => v > 0)).toBe(true);
     expect(on.panels.every((v) => v > 0)).toBe(true);

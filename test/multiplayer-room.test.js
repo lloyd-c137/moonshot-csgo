@@ -461,8 +461,8 @@ test('blackout: eliminations are final, the guard can spot players, the last one
         room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
     }
     const blackout = room.blackoutAt();
-    assert.equal(ROUND.blackoutSecondsLeft, 180);
-    assert.equal(blackout, 420_000);
+    assert.equal(ROUND.blackoutSecondsLeft, 240);
+    assert.equal(blackout, 360_000);
     // Golden throws leave a disc only sometimes (here: the roll misses).
     room.gold = { holder: 'a', at: [0, 0.92, 0] };
     room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, 100);

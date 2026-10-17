@@ -57,7 +57,7 @@ export const ROUND = {
      * With this long left the lights go out and the night guard starts his rounds: from then on an elimination (by
      * disc or by his flashlight) is final for the round, and if only one player is left standing they win at once.
      */
-    blackoutSecondsLeft: 180,
+    blackoutSecondsLeft: 240,
     /** Chance that a golden-disc throw leaves an ordinary disc where it comes down. */
     goldDropChance: 0.35,
     /** The golden disc's holder moves this much slower… */

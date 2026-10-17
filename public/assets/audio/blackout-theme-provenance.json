@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-16",
+    "basis": "Owner confirmed public game-release authorization on 2026-10-16. Original creator/license was not independently identified."
+  },
+  "sourceFile": "Mark Snow - X-Files Theme.mp3",
+  "runtimeFile": "blackout-theme.mp3",
+  "durationSeconds": 204.930612,
+  "sizeBytes": 8199513,
+  "sha256": "f0230dbde39facab509a954f3e5bf4c2d87095bca054a974dd7923f8cbb87884",
+  "event": "campus blackout; loop fades in on power loss and fades out when lights return"
+}

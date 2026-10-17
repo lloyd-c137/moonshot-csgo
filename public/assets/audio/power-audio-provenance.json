@@ -5,7 +5,7 @@
     "date": "2026-10-16",
     "basis": "Owner confirmed public game-release authorization on 2026-10-16. Original creator/license was not independently identified."
   },
-  "events": ["three-minute blackout", "manual breaker outage"],
+  "events": ["four-minute blackout", "manual breaker outage"],
   "clips": [
     {
       "cue": "power-down",

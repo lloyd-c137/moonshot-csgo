@@ -8,6 +8,8 @@ test('every authored doorway is walkable in both directions', async ({ page }) =
     const errors = collectErrors(page);
     await loadSimulated(page);
     await enterAtSpawn(page);
+    // This route checks authored apertures; don't let the unrelated teacher AI detain the walker mid-route.
+    await page.evaluate(() => window.__MOONSHOT__!.match.setTeacherGrace(120_000));
     const doorways = await page.evaluate(
         async () => (await (await fetch('/assets/campus/derived/world.json')).json()).doorways as Doorway[]
     );

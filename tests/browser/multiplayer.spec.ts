@@ -62,9 +62,7 @@ test('lifetime board shows eliminations and loss-only win-rate indices, includin
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 
-test('one shared round clock moves both surviving clients through blackout and final showdown', async ({
-    browser
-}) => {
+test('one shared round clock moves both surviving clients through blackout and final showdown', async ({ browser }) => {
     const a = await open(browser, true);
     const b = await open(browser);
     const name = Date.now().toString(36).slice(-6);
@@ -94,6 +92,8 @@ test('one shared round clock moves both surviving clients through blackout and f
     await page.locator('[data-phase="blackout"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的终局夜晚');
     await page.locator('.audio-lab [data-action="close"]').click();
+    await page.getByRole('button', { name: '继续游戏' }).click();
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     await expect.poll(() => state(page).then((value) => value.round?.endsAt)).not.toBe(originalEnd);
     await expect.poll(() => state(b.page).then((value) => value.round?.endsAt)).toBe((await state(page)).round?.endsAt);
     await expect.poll(() => state(page).then((value) => value.power.dark)).toBe(true);
@@ -108,6 +108,8 @@ test('one shared round clock moves both surviving clients through blackout and f
     await page.locator('[data-phase="final"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的最终对决');
     await page.locator('.audio-lab [data-action="close"]').click();
+    await page.getByRole('button', { name: '继续游戏' }).click();
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     await expect.poll(() => state(page).then((value) => value.finalShown)).toBe(true);
     await expect.poll(() => state(b.page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
@@ -119,8 +121,12 @@ test('one shared round clock moves both surviving clients through blackout and f
         .poll(() => b.page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
         .toBe('cover');
     await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown-curtain.png' });
-    await expect.poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 }).toBe('relocated');
-    await expect.poll(() => state(b.page).then((value) => value.finalRelocationResult), { timeout: 3_000 }).toBe('relocated');
+    await expect
+        .poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 })
+        .toBe('relocated');
+    await expect
+        .poll(() => state(b.page).then((value) => value.finalRelocationResult), { timeout: 3_000 })
+        .toBe('relocated');
     const [afterA, afterB] = await Promise.all([
         page.evaluate(() => window.__MOONSHOT__!.position()),
         b.page.evaluate(() => window.__MOONSHOT__!.position())

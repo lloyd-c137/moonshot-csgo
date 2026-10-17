@@ -17,7 +17,9 @@ test('reduced-flash damage cues fade away instead of leaving a persistent screen
         const direction = document.querySelector<HTMLElement>('#damage-dir')!;
         return {
             durations: [damage, direction].map((element) => element.getAnimations()[0]?.effect?.getTiming().duration),
-            peaks: [damage, direction].map((element) => getComputedStyle(element).getPropertyValue('--damage-peak').trim())
+            peaks: [damage, direction].map((element) =>
+                getComputedStyle(element).getPropertyValue('--damage-peak').trim()
+            )
         };
     });
     expect(feedback.durations).toEqual([280, 280]);
@@ -132,7 +134,10 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await page.evaluate(() => window.__MOONSHOT__!.match.setTeacherGrace(60_000));
     await hold(page, ['KeyW'], 600);
     expect(horizontal(await position(page), caughtAt)).toBeGreaterThan(0.5);
-    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.7, 0.92, 46.3));
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.teleport(-8.7, 0.92, 46.3);
+        window.__MOONSHOT__!.setLook(0, 0);
+    });
     await advance(page, 300);
 
     await page.keyboard.press('m');

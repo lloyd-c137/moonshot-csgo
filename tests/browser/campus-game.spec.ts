@@ -12,12 +12,16 @@ test('reduced-flash damage cues fade away instead of leaving a persistent screen
         document.querySelector('#damage')!.classList.add('show');
         document.querySelector('#damage-dir')!.classList.add('show');
     });
-    const durations = await page.evaluate(() =>
-        ['#damage', '#damage-dir'].map((selector) =>
-            document.querySelector(selector)!.getAnimations()[0]?.effect?.getTiming().duration
-        )
-    );
-    expect(durations).toEqual([280, 280]);
+    const feedback = await page.evaluate(() => {
+        const damage = document.querySelector<HTMLElement>('#damage')!;
+        const direction = document.querySelector<HTMLElement>('#damage-dir')!;
+        return {
+            durations: [damage, direction].map((element) => element.getAnimations()[0]?.effect?.getTiming().duration),
+            peaks: [damage, direction].map((element) => getComputedStyle(element).getPropertyValue('--damage-peak').trim())
+        };
+    });
+    expect(feedback.durations).toEqual([280, 280]);
+    expect(feedback.peaks).toEqual(['0.26', '0.34']);
     await page.evaluate(() => {
         document.querySelector('#damage')!.getAnimations()[0].finish();
         document.querySelector('#damage-dir')!.getAnimations()[0].finish();

@@ -1414,9 +1414,9 @@ legend {
 }
 
 .damage {
-    --edge-alpha: 0.46;
-    --wash-alpha: 0.055;
-    --damage-peak: 0.68;
+    --edge-alpha: 0.32;
+    --wash-alpha: 0.025;
+    --damage-peak: 0.48;
     position: absolute;
     inset: 0;
     opacity: 0;
@@ -1431,19 +1431,22 @@ legend {
 }
 
 #app-ui[data-reduced-flashes='true'] .damage {
-    --edge-alpha: 0.3;
-    --wash-alpha: 0.025;
-    --damage-peak: 0.38;
+    --edge-alpha: 0.21;
+    --wash-alpha: 0.012;
+    --damage-peak: 0.26;
 }
 
 #app-ui[data-reduced-flashes='true'] .damage-dir {
-    --direction-alpha: 0.38;
-    --damage-peak: 0.42;
+    --direction-alpha: 0.3;
+    --damage-peak: 0.34;
 }
 
 @keyframes damage {
     0% {
-        opacity: var(--damage-peak, 0.68);
+        opacity: 0;
+    }
+    12% {
+        opacity: var(--damage-peak, 0.48);
     }
     100% {
         opacity: 0;
@@ -1452,14 +1455,14 @@ legend {
 
 @media (prefers-reduced-motion: reduce) {
     .damage {
-        --edge-alpha: 0.3;
-        --wash-alpha: 0.025;
-        --damage-peak: 0.38;
+        --edge-alpha: 0.21;
+        --wash-alpha: 0.012;
+        --damage-peak: 0.26;
     }
 
     .damage-dir {
-        --direction-alpha: 0.38;
-        --damage-peak: 0.42;
+        --direction-alpha: 0.3;
+        --damage-peak: 0.34;
     }
 }
 
@@ -1651,8 +1654,8 @@ legend {
 }
 
 .damage-dir {
-    --direction-alpha: 0.68;
-    --damage-peak: 0.62;
+    --direction-alpha: 0.48;
+    --damage-peak: 0.5;
     position: absolute;
     top: 50%;
     left: 50%;

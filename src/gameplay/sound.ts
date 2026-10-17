@@ -4,6 +4,7 @@
 // play centred. The context starts on the first user gesture.
 
 import { COMBAT_AUDIO } from '../config/combatAudio';
+import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
 import { AudioVoicePool } from './feedback/AudioVoicePool';
 
@@ -85,6 +86,7 @@ export const createSound = () => {
             const data = noise.getChannelData(0);
             for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
             void loadClip(ctx, 'defeat', '/assets/audio/defeat.mp3');
+            void loadClip(ctx, 'power-down', POWER_DOWN_AUDIO.url);
             for (const [cue, clip] of Object.entries(COMBAT_AUDIO)) void loadClip(ctx, cue, clip.url);
             void loadClip(ctx, 'legacy-kill', '/assets/audio/kill.mp3');
         }
@@ -401,9 +403,10 @@ export const createSound = () => {
                 );
                 tone(audio, out, 'sine', 140, 60, now + catchAt * seconds, 0.3, 0.4);
             }),
-        /** Lights out: a heavy power-down thud and a falling hum. */
+        /** Shared cue for the three-minute blackout and a player-triggered breaker outage. */
         blackout: () =>
             play((audio, now) => {
+                if (playClip(audio, 'power-down', POWER_DOWN_AUDIO.gain)) return;
                 tone(audio, bus(), 'sine', 90, 30, now, 1.4, 0.8);
                 tone(audio, bus(), 'sawtooth', 120, 40, now, 1.6, 0.12);
                 hiss(audio, bus(), now, 0.3, 0.2, 2000, 300, 1);

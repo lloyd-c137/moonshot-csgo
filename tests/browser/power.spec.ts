@@ -10,9 +10,23 @@ import { advance, collectErrors, enterAtSpawn, hold, loadSimulated, position } f
 test('walk through the source power-room entrance, pull once, see blackout and guard repair/return', async ({
     page
 }) => {
+    await page.addInitScript(() => {
+        const target = window as Window & { __powerDownCueStarts?: number };
+        const originalStart = AudioBufferSourceNode.prototype.start;
+        AudioBufferSourceNode.prototype.start = function (when?: number, offset?: number, duration?: number) {
+            if (this.buffer && Math.abs(this.buffer.duration - 1.2016) < 0.03)
+                target.__powerDownCueStarts = (target.__powerDownCueStarts ?? 0) + 1;
+            return originalStart.call(this, when, offset, duration);
+        };
+    });
     const errors = collectErrors(page);
+    let buzzerLoaded = false;
+    page.on('response', (response) => {
+        if (new URL(response.url()).pathname === '/assets/audio/buzzer.mp3') buzzerLoaded = response.ok();
+    });
     await loadSimulated(page);
     await enterAtSpawn(page);
+    await expect.poll(() => buzzerLoaded).toBe(true);
     // Probe the actual Ammo colliders along the full path, not only the offline raster.
     const obstructions = await page.evaluate((route) => {
         const bad: string[] = [];
@@ -55,6 +69,7 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     const power = await page.evaluate(() => window.__MOONSHOT__!.match.state().power);
     expect(power.dark).toBe(true);
     expect(power.phase).toBe('outbound');
+    await expect.poll(() => page.evaluate(() => (window as Window & { __powerDownCueStarts?: number }).__powerDownCueStarts)).toBe(1);
     const lighting = () => page.evaluate(() => window.__MOONSHOT__!.lighting());
     const transition = await lighting();
     expect(transition.skyNight).toBeGreaterThan(0);

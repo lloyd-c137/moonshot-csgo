@@ -1,6 +1,7 @@
 import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 
+import { changelogHtml } from './changelog';
 import { formatWinRate } from './formatStats';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
@@ -89,20 +90,7 @@ const MARKUP = `
           <h2 class="panel-title">更新日志</h2>
           <p class="release-intro">按发布日期记录已上线的玩法与改进。</p>
           <ol class="release-list">
-            <li class="release-entry" data-current="true">
-              <header><b>v0.0.0 · 2026.10.16</b><span>当前版本</span></header>
-              <h3>FF-01 自由漫游与多人飞盘玩法</h3>
-              <ul>
-                <li>接入 FF-01 校园模型、房间识别、第一人称移动和碰撞。</li>
-                <li>加入金飞盘回合、淘汰排行榜、聊天、夜间保安与配电室断电机制。</li>
-                <li>加入背后处决、同步动作、爆头淘汰，以及金飞盘击杀和飞盘破空音效。</li>
-                <li>开发测试模式提供固定自动复活人偶和 P 音效测试面板。</li>
-                <li>地图新增配电室、监控室、体育办公室标记。</li>
-                <li>监控室内新增电脑，瞄准后点击可查看其他玩家位置 30 秒。</li>
-                <li>胜率指数从 100% 起步；输局每次乘以 0.95，胜局和平局不改变该值。</li>
-                <li>更新日志加入首页菜单，罚站期间不会显示脱困提示。</li>
-              </ul>
-            </li>
+            ${changelogHtml()}
           </ol>
         </section>
         <section class="tab-panel" data-panel="help" hidden>

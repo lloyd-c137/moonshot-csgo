@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.13.0',
+        date: '2026.10.17',
+        title: '莲花球场重建与看台观战',
+        notes: [
+            '按实景照片重建莲花球场：蓝色球场与绿色场边、蓝白广告围挡、连续的浅灰看台与蓝色座位区、阶梯过道与中层环形走道、顶部白色玻璃幕带和十二瓣屋顶环。',
+            '最后一分钟，本局出局的玩家坐在看台上观战：按 1 欢呼、2 挥应援棒、3 撒彩带，全场都能看到、听到。',
+            '击杀反馈改为四角锁定收拢的动画；淘汰位置改为浮动的三角标记。'
+        ]
+    },
+    {
         version: 'v0.12.0',
         date: '2026.10.17',
         title: '打击感升级与反弹飞盘',

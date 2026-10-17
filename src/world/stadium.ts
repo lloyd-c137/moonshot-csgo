@@ -14,6 +14,8 @@ import {
     aisleDistance,
     angleOf,
     COURT_SURROUND,
+    courtSurroundPath,
+    inSurroundGap,
     petalJoinDistance,
     petalShape,
     ringRadii,
@@ -22,7 +24,6 @@ import {
     tierHeight,
     tierRadius
 } from './stadiumLayout';
-import { courtSurroundPath, inSurroundGap } from './stadiumLayout';
 
 type V3 = [number, number, number];
 

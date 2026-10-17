@@ -59,6 +59,7 @@ export const hueColour = (hue: number): [number, number, number] => {
 
 export const createDiscs = (app: AppBase, worldGravity: number) => {
     const discs: Disc[] = [];
+    let trailDensity = 1;
     const shape = merge([
         place(cylinder(DISC.radius - 0.01, 0.012, 32), { y: 0.004 }),
         place(cylinder(DISC.radius - 0.035, 0.004, 24), { y: 0.0115 }),
@@ -103,6 +104,13 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
     return {
         get count() {
             return discs.length;
+        },
+        /** Temporary developer-only override for trail sample density; null restores the 60 ms default. */
+        setLabTrailDensity(value: number | null) {
+            trailDensity = value === null ? 1 : Math.max(0, Math.min(1.5, value));
+        },
+        get trailDensity() {
+            return trailDensity;
         },
         /** Launches a disc; `normal` is the disc-plane normal (see launchNormal). */
         launch(options: {
@@ -226,10 +234,11 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     body.applyForce(force);
                 }
                 // A sparse, speed-gated trail makes ordinary flights readable while bounding pooled samples.
-                if (disc.live && speed > 5) {
+                if (disc.live && speed > 5 && trailDensity > 0) {
                     disc.trailElapsed += deltaTime;
-                    if (disc.trailElapsed >= 0.06) {
-                        disc.trailElapsed %= 0.06;
+                    const trailInterval = 0.06 / trailDensity;
+                    if (disc.trailElapsed >= trailInterval) {
+                        disc.trailElapsed %= trailInterval;
                         onTracer?.(position, disc.gold ? -1 : disc.hue, speed);
                     }
                 }

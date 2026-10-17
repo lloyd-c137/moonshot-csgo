@@ -43,6 +43,9 @@ export const createEffects = (app: AppBase) => {
     let density = 0.65;
     let qualityDensity = 0.65;
     let labIntensity: number | null = null;
+    let trailLife = 0.24;
+    let labTrailLife: number | null = null;
+    let tracerSamples = 0;
     let reducedFlashes = false;
     let tracerTick = 0;
     const make = (ring: boolean) => {
@@ -186,10 +189,11 @@ export const createEffects = (app: AppBase) => {
         tracer(at: V3, hue: number, speed = 16) {
             tracerTick++;
             if (density < 0.5 && tracerTick % 2 !== 0) return;
+            tracerSamples++;
             // hue < 0: the golden disc's trail.
             const [r, g, b] = hue < 0 ? [1, 0.75, 0.2] : hueColour(hue);
             const size = Math.max(0.045, Math.min(0.1, 0.045 + speed * 0.002));
-            emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], size, 0.24);
+            emit(at, [0.6 + r * 0.4, 0.6 + g * 0.4, 0.6 + b * 0.4], [0, 0, 0], size, trailLife);
         },
         /** A sniper headshot: a tall gold flash and a wide ring on top of the elimination burst. */
         snipe(at: V3) {
@@ -210,6 +214,13 @@ export const createEffects = (app: AppBase) => {
             density = labIntensity ?? qualityDensity;
         },
         intensity: () => density,
+        /** Temporary developer-only trail lifetime override; null restores the 240 ms default. */
+        setLabTrailLength(value: number | null) {
+            labTrailLife = value === null ? null : Math.max(0.08, Math.min(0.8, value));
+            trailLife = labTrailLife ?? 0.24;
+        },
+        trailLength: () => trailLife,
+        tracerSamples: () => tracerSamples,
         setReducedFlashes(value: boolean) {
             reducedFlashes = value;
         },

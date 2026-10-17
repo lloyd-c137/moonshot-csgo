@@ -36,16 +36,50 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         element.value = '1.2';
         element.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    await page.locator('[data-trail-density]').evaluate((element: HTMLInputElement) => {
+        element.value = '1.4';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.locator('[data-trail-length]').evaluate((element: HTMLInputElement) => {
+        element.value = '0.6';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale)).toBe(1.25);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().effectIntensity)).toBe(1.2);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailDensity)).toBe(1.4);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength)).toBe(0.6);
     await page.screenshot({ path: 'test-results/combat-feel-lab-tuning.png' });
     await page.locator('.audio-lab [data-action="close"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale)).toBe(1.25);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailDensity)).toBe(1.4);
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab')).toBeVisible();
+    await page.locator('.audio-lab [data-action="range"]').click();
+    await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
+    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.7, 0.92, 48));
+    const tracerSamples = await page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples);
+    // A low practice speed stays above the trail speed threshold but remains in flight for several frames.
+    expect(await page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-8.7, 0.9, 42.3, 6))).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples))
+        .toBeGreaterThan(tracerSamples + 3);
+    await page.screenshot({ path: 'test-results/combat-feel-lab-trail-live.png' });
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab')).toBeVisible();
+    await page.locator('.audio-lab [data-action="reset-tuning"]').click();
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale))
         .toBe(originalTuning.cameraMotionScale);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().effectIntensity))
         .toBe(originalTuning.effectIntensity);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailDensity))
+        .toBe(originalTuning.trailDensity);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength))
+        .toBe(originalTuning.trailLength);
 });
 
 test('offline target stays visible after entry, uses selected defaults and respawns in place', async ({ page }) => {

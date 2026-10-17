@@ -13,8 +13,12 @@ type Options = {
     setDummyScale: (scale: number) => void;
     setCameraKick: (scale: number | null) => void;
     setEffectIntensity: (intensity: number | null) => void;
+    setTrailDensity: (density: number | null) => void;
+    setTrailLength: (seconds: number | null) => void;
     getCameraKick: () => number;
     getEffectIntensity: () => number;
+    getTrailDensity: () => number;
+    getTrailLength: () => number;
     simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden') => void;
 };
 
@@ -27,8 +31,12 @@ export const mountAudioLab = async ({
     setDummyScale,
     setCameraKick,
     setEffectIntensity,
+    setTrailDensity,
+    setTrailLength,
     getCameraKick,
     getEffectIntensity,
+    getTrailDensity,
+    getTrailLength,
     simulateDummyHit
 }: Options) => {
     const host = document.createElement('div');
@@ -39,16 +47,18 @@ export const mountAudioLab = async ({
         <p>金飞盘击杀候选来自第一段视频的片段 06；破空候选来自新视频，作用于普通与狙击投掷释放声。选“原有音效”使用生产默认配置。按 P 暂停并切换。</p>
         <label class="audio-lab-scale">测试人偶高度 <output data-dummy-height>2.10 m</output><input data-dummy-scale type="range" min="0.60" max="2.10" step="0.05" value="2.10"><small>仅调整本地测试人偶；拖动比较不同高度，其他角色与碰撞判定不变。</small></label>
         <div class="audio-lab-tuning" aria-label="战斗反馈参数">
-          <label>相机冲击强度 <output data-camera-kick-value></output><input data-camera-kick type="range" min="0" max="1.5" step="0.05"></label>
+          <label>相机冲击强度 <output data-camera-kick-value></output><input data-camera-kick type="range" min="0" max="1.5" step="0.01"></label>
           <label>命中粒子强度 <output data-effect-intensity-value></output><input data-effect-intensity type="range" min="0" max="1.5" step="0.05"></label>
-          <small>仅本地开发面板生效；关闭面板后恢复游戏设置。调整相机冲击和命中粒子密度后，用人偶场景进行比较。</small>
+          <label>飞盘轨迹密度 <output data-trail-density-value></output><input data-trail-density type="range" min="0" max="1.5" step="0.05"></label>
+          <label>飞盘轨迹长度 <output data-trail-length-value></output><input data-trail-length type="range" min="0.08" max="0.8" step="0.04"></label>
+          <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><small>直接驱动固定人偶的本地命中、动作、特效和音效流程，不影响战绩；人偶死亡后原地复活。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
         <label class="audio-lab-loop"><input data-golden type="checkbox">金飞盘试音：人偶淘汰时使用“金飞盘击杀”候选</label>
-        <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
+        <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="reset-tuning" type="button">恢复调节默认</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
         <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰；从背后靠近后按 V 或点处决按钮，双方播放处决动作，完成后 2.5 秒原地复活，不记录战绩。新候选保留视频中的背景混音，未做声源分离，可调起止点；仅供本地评估。生产默认的 10／12／16 不受候选库精简影响。</p>
       </dialog>
       <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 2/2 · 死亡后原地复活</span></div>`;
@@ -63,10 +73,24 @@ export const mountAudioLab = async ({
     const cameraKickValue = host.querySelector<HTMLOutputElement>('[data-camera-kick-value]')!;
     const effectIntensityRange = host.querySelector<HTMLInputElement>('[data-effect-intensity]')!;
     const effectIntensityValue = host.querySelector<HTMLOutputElement>('[data-effect-intensity-value]')!;
+    const trailDensityRange = host.querySelector<HTMLInputElement>('[data-trail-density]')!;
+    const trailDensityValue = host.querySelector<HTMLOutputElement>('[data-trail-density-value]')!;
+    const trailLengthRange = host.querySelector<HTMLInputElement>('[data-trail-length]')!;
+    const trailLengthValue = host.querySelector<HTMLOutputElement>('[data-trail-length-value]')!;
     cameraKickRange.value = String(getCameraKick());
     cameraKickValue.value = `${Number(cameraKickRange.value).toFixed(2)}×`;
     effectIntensityRange.value = String(getEffectIntensity());
     effectIntensityValue.value = `${Math.round(Number(effectIntensityRange.value) * 100)}%`;
+    trailDensityRange.value = String(getTrailDensity());
+    trailDensityValue.value = `${Math.round(Number(trailDensityRange.value) * 100)}%`;
+    trailLengthRange.value = String(getTrailLength());
+    trailLengthValue.value = `${Math.round(Number(trailLengthRange.value) * 1000)} ms`;
+    const originalTuning = {
+        cameraKick: Number(cameraKickRange.value),
+        effectIntensity: Number(effectIntensityRange.value),
+        trailDensity: Number(trailDensityRange.value),
+        trailLength: Number(trailLengthRange.value)
+    };
     cameraKickRange.addEventListener('input', () => {
         const value = Number(cameraKickRange.value);
         cameraKickValue.value = `${value.toFixed(2)}×`;
@@ -76,6 +100,16 @@ export const mountAudioLab = async ({
         const value = Number(effectIntensityRange.value);
         effectIntensityValue.value = `${Math.round(value * 100)}%`;
         setEffectIntensity(value);
+    });
+    trailDensityRange.addEventListener('input', () => {
+        const value = Number(trailDensityRange.value);
+        trailDensityValue.value = `${Math.round(value * 100)}%`;
+        setTrailDensity(value);
+    });
+    trailLengthRange.addEventListener('input', () => {
+        const value = Number(trailLengthRange.value);
+        trailLengthValue.value = `${Math.round(value * 1000)} ms`;
+        setTrailLength(value);
     });
     dummyScale.addEventListener('input', () => {
         const height = Number(dummyScale.value);
@@ -114,10 +148,16 @@ export const mountAudioLab = async ({
         },
         true
     );
-    dialog.addEventListener('close', () => {
-        stop();
-        setCameraKick(null);
-        setEffectIntensity(null);
+    dialog.addEventListener('close', stop);
+    host.querySelector('[data-action="reset-tuning"]')!.addEventListener('click', () => {
+        cameraKickRange.value = String(originalTuning.cameraKick);
+        cameraKickRange.dispatchEvent(new Event('input', { bubbles: true }));
+        effectIntensityRange.value = String(originalTuning.effectIntensity);
+        effectIntensityRange.dispatchEvent(new Event('input', { bubbles: true }));
+        trailDensityRange.value = String(originalTuning.trailDensity);
+        trailDensityRange.dispatchEvent(new Event('input', { bubbles: true }));
+        trailLengthRange.value = String(originalTuning.trailLength);
+        trailLengthRange.dispatchEvent(new Event('input', { bubbles: true }));
     });
     const resume = () => {
         const screen = document.querySelector<HTMLElement>('#app-ui')?.dataset.screen;

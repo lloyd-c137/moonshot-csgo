@@ -153,8 +153,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 },
                 setCameraKick: (scale) => cameraImpulses.setLabScale(scale),
                 setEffectIntensity: (intensity) => effects.setLabIntensity(intensity),
+                setTrailDensity: (density) => discs.setLabTrailDensity(density),
+                setTrailLength: (seconds) => effects.setLabTrailLength(seconds),
                 getCameraKick: () => cameraImpulses.scale,
                 getEffectIntensity: () => effects.intensity(),
+                getTrailDensity: () => discs.trailDensity,
+                getTrailLength: () => effects.trailLength(),
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
                 position: () => {
                     const p = camera.getPosition();
@@ -1784,6 +1788,9 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 activeAudioVoices: sound.voiceCount(),
                 cameraMotionScale: cameraImpulses.scale,
                 effectIntensity: effects.intensity(),
+                trailDensity: discs.trailDensity,
+                trailLength: effects.trailLength(),
+                tracerSamples: effects.tracerSamples(),
                 practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
                 practiceExecution: labExecution ? { id: labExecution.id, endsAt: labExecution.endsAt } : null,
                 inspecting: inspectSince !== null,

@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.14.0',
+        date: '2026.10.17',
+        title: '房间室内陈设与区域名修正',
+        notes: [
+            '按学校实拍的空间类型重新布置室内：教室四人小组桌与白板、化学/生物/地理/物理实验室的实验台和通风橱、创客空间工作台与工具墙、乐队和录音室的鼓组音箱与吸音板、图书馆书架与阅读桌、餐厅圆桌、教师办公室工位、创新区乒乓球台、大自习室的蓝色隔板长桌、Moon Coffee 与茶馆。',
+            '修正顶部区域名：小剧场、创新区、卫生间、Moon Coffee、茶馆等没有图纸编号的房间现在显示房间名，不再只显示"—"；机房、楼梯间等不再显示内部编号。',
+            '网球网加高到约 1.3–1.45 米，可作半身掩体。'
+        ]
+    },
+    {
         version: 'v0.13.1',
         date: '2026.10.17',
         title: '球场中央改为网球场',

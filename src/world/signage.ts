@@ -202,7 +202,11 @@ const bladeOutline = () => {
 };
 
 export const buildSigns = (app: AppBase, parent: Entity, world: DerivedWorld, rooms: CampusRoom[]) => {
-    const chosen = chooseSigns(world.signs, rooms);
+    // A room with neither a drawing number nor a real name gets no sign (a blank plate reads as a bug).
+    const chosen = chooseSigns(world.signs, rooms).filter(({ room }) => {
+        const text = signText(room);
+        return text.code || text.chinese.length || text.english.length;
+    });
     const signs = chosen.map(({ sign }) => sign);
     const byId = new Map(chosen.map(({ sign, room }) => [sign.room, room]));
     const blades = atlas(app, 'sign-blades', BLADE_CELL, signs.length);

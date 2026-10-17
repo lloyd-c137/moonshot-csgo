@@ -12,6 +12,7 @@ import {
     MINIMAP_RESOLUTION,
     WALL_HEIGHT
 } from '../src/config/presentation.ts';
+import { ROOM_NAMING } from '../src/config/roomNaming.ts';
 import type { Doorway } from '../src/world/doorways.ts';
 import type { Vec2 } from '../src/world/geometry2d.ts';
 import { signedArea, simplifyRing } from '../src/world/geometry2d.ts';
@@ -22,6 +23,8 @@ import { M104_BOUNDS, M104_DOORS } from '../src/world/rooms/m104.ts';
 
 import { auditFloor, CELL, Grid, loadCampusGeometry } from './navAudit.ts';
 import type { Image } from './png.ts';
+import type { Archetype, ArchetypeType } from './roomArchetypes.ts';
+import { ARCHETYPE_COLLIDING, ARCHETYPE_HEIGHTS, archetypeFor, archetypeLayout } from './roomArchetypes.ts';
 import type { SignRecord } from './signage.ts';
 import { deriveSigns } from './signage.ts';
 
@@ -46,7 +49,17 @@ export type DoorRecord = {
     authored?: true;
 };
 export type FurnitureType =
-    'seat' | 'table' | 'counter' | 'desk' | 'teacher-desk' | 'chair' | 'stool' | 'bench' | 'lab-bench' | 'shelf';
+    | 'seat'
+    | 'table'
+    | 'counter'
+    | 'desk'
+    | 'teacher-desk'
+    | 'chair'
+    | 'stool'
+    | 'bench'
+    | 'lab-bench'
+    | 'shelf'
+    | ArchetypeType;
 /**
  * `source: 'linework'` items are interpreted from enclosed source furniture outlines; `'layout'` items are authored
  * per room kind where the source draws none. Chairs face local +X (backrest at −X).
@@ -644,8 +657,17 @@ const deriveLights = (
     return lights;
 };
 
-const COLLIDING_TYPES = new Set<FurnitureType>(['desk', 'teacher-desk', 'table', 'lab-bench', 'shelf', 'counter']);
+const COLLIDING_TYPES = new Set<FurnitureType>([
+    'desk',
+    'teacher-desk',
+    'table',
+    'lab-bench',
+    'shelf',
+    'counter',
+    ...ARCHETYPE_COLLIDING
+]);
 const HEIGHTS: Record<FurnitureType, number> = {
+    ...ARCHETYPE_HEIGHTS,
     seat: 0.45,
     table: 0.75,
     counter: 0.9,
@@ -658,7 +680,7 @@ const HEIGHTS: Record<FurnitureType, number> = {
     shelf: 1.9
 };
 
-type LocalItem = { type: FurnitureType; u: number; v: number; w: number; d: number; turn?: number };
+type LocalItem = { type: FurnitureType; u: number; v: number; w: number; d: number; turn?: number; wall?: boolean };
 
 /** Per-kind layouts in the room's oriented frame: u along the long side (front of a classroom at −u), v across. */
 const layoutFor = (kind: string, length: number, breadth: number): LocalItem[] => {
@@ -759,7 +781,11 @@ const deriveRoomFurnishing = (
     solid: Uint8Array,
     doors: DoorRecord[],
     existing: FurnitureRecord[],
-    blocked: Uint8Array
+    blocked: Uint8Array,
+    /** Photographed archetype per room id (FF-01 regions and fitted owner-model rooms alike). */
+    archetypes: Map<string, Archetype> = new Map(),
+    /** Owner-model rooms that have no FF-01 region, with their fitted outline. */
+    extraRooms: CampusRoom[] = []
 ) => {
     const wallClearance = fine.inflate(solid, 0.35);
     const occupied = new Uint8Array(fine.width * fine.height);
@@ -783,10 +809,12 @@ const deriveRoomFurnishing = (
     const nearDoor = (point: Vec2) =>
         doors.some((door) => distanceToSegment(point, door.hinge, door.closed) < 1.1 + 0.4);
     const furnished: FurnitureRecord[] = [];
-    for (const room of geometry.rooms) {
+    for (const room of [...geometry.rooms, ...extraRooms]) {
         if (!room.polygon) continue;
+        const archetype = archetypes.get(room.id) ?? null;
         const inside = existing.filter((item) => pointInRoom(item.center, room)).length;
-        if (inside >= 3) continue;
+        // Rooms the drawing already furnishes keep it, except where a photographed archetype replaces it.
+        if (inside >= 3 && (!archetype || archetype === 'classroom')) continue;
         const box = orientedBox(room.polygon.outer);
         // u along the long side.
         const longIsFirst = box.size[0] >= box.size[1];
@@ -795,27 +823,58 @@ const deriveRoomFurnishing = (
         const breadth = Math.min(...box.size);
         const c = Math.cos(yaw);
         const s = Math.sin(yaw);
-        for (const local of layoutFor(room.kind, length, breadth)) {
-            const center: Vec2 = [box.center[0] + local.u * c - local.v * s, box.center[1] + local.u * s + local.v * c];
-            const item: FurnitureRecord = {
-                type: local.type,
-                source: 'layout',
-                room: room.id,
-                center: roundPoint(center),
-                size: [round(local.w), round(local.d)],
-                yaw: round(yaw + (local.turn ?? 0)),
-                height: HEIGHTS[local.type],
-                collide: COLLIDING_TYPES.has(local.type)
-            };
-            // Footprint checks: whole footprint in the room, clear of walls, blocked floor and other furniture.
-            const cells = mark(item, new Uint8Array(0), 0);
-            const ok = cells.every((k) => {
-                const point = fine.centre(k);
-                return pointInRoom(point, room) && !wallClearance[k] && !occupied[k] && !blocked[k];
-            });
-            if (!ok || nearDoor(item.center)) continue;
-            mark(item, occupied, 0.01);
-            furnished.push(item);
+        const layout: LocalItem[] = archetype
+            ? archetypeLayout(archetype, length, breadth)
+            : layoutFor(room.kind, length, breadth);
+        // Wall-mounted items first, so desks never take the wall they need.
+        const ordered = [...layout.filter((local) => local.wall), ...layout.filter((local) => !local.wall)];
+        for (const local of ordered) {
+            // Room outlines run along wall centre lines: a wall item that lands in the wall slides inward until clear.
+            const towardV =
+                Math.abs(local.v) / Math.max(breadth / 2, 0.01) >= Math.abs(local.u) / Math.max(length / 2, 0.01);
+            const slides = local.wall ? [0, 0.08, 0.16, 0.24, 0.34, 0.45] : [0];
+            for (const slide of slides) {
+                const u = towardV ? local.u : local.u - Math.sign(local.u) * slide;
+                const v = towardV ? local.v - Math.sign(local.v) * slide : local.v;
+                const center: Vec2 = [box.center[0] + u * c - v * s, box.center[1] + u * s + v * c];
+                const item: FurnitureRecord = {
+                    type: local.type,
+                    source: 'layout',
+                    room: room.id,
+                    center: roundPoint(center),
+                    size: [round(local.w), round(local.d)],
+                    yaw: round(yaw + (local.turn ?? 0)),
+                    height: HEIGHTS[local.type],
+                    collide: COLLIDING_TYPES.has(local.type)
+                };
+                // Footprint checks: whole footprint in the room, clear of walls, blocked floor and other furniture.
+                // Wall-mounted items (boards, mirrors, lockers, hoods) may touch the wall but never stand in it.
+                const cells = mark(item, new Uint8Array(0), 0);
+                const ok = cells.every((k) => {
+                    const point = fine.centre(k);
+                    return (
+                        pointInRoom(point, room) &&
+                        !(local.wall ? solid[k] : wallClearance[k]) &&
+                        !occupied[k] &&
+                        !blocked[k]
+                    );
+                });
+                // The whole footprint keeps clear of doors (a long locker centred away from a door can still block it).
+                const corners = [-1, 1].flatMap((a) =>
+                    [-1, 1].map((b): Vec2 => [
+                        item.center[0] +
+                            ((a * item.size[0]) / 2) * Math.cos(item.yaw) -
+                            ((b * item.size[1]) / 2) * Math.sin(item.yaw),
+                        item.center[1] +
+                            ((a * item.size[0]) / 2) * Math.sin(item.yaw) +
+                            ((b * item.size[1]) / 2) * Math.cos(item.yaw)
+                    ])
+                );
+                if (!ok || nearDoor(item.center) || (local.wall && corners.some(nearDoor))) continue;
+                mark(item, occupied, 0.01);
+                furnished.push(item);
+                break;
+            }
         }
     }
     return furnished;
@@ -939,9 +998,36 @@ export const deriveWorld = () => {
     // Authored interiors (src/world/rooms) replace the generic furniture and lights of their rooms.
     const authored = geometry.rooms.filter((room) => (AUTHORED_ROOM_IDS as readonly string[]).includes(room.id));
     const outsideAuthored = (point: Vec2) => !authored.some((room) => pointInRoom(point, room));
+    // Photographed archetypes per room (owner's 2026-08-06 naming over FF-01 regions, plus the owner-model rooms that
+    // only have a fitted outline). Archetype rooms drop the drawing's generic furniture, except plain classrooms.
+    const archetypes = new Map<string, Archetype>();
+    const extraRooms: CampusRoom[] = [];
+    for (const room of ROOM_NAMING.rooms) {
+        const archetype = archetypeFor(room.id, room.name, room.kind);
+        if (!archetype) continue;
+        for (const piece of room.pieces) archetypes.set(piece, archetype);
+        if ('polygon' in room && room.polygon) {
+            archetypes.set(room.id, archetype);
+            extraRooms.push({
+                id: room.id,
+                name: room.name,
+                nameEnglish: null,
+                kind: room.kind,
+                kindLabel: room.kindLabel,
+                hasRegion: true,
+                geometryStatus: 'FITTED_FROM_20260806_PLAN',
+                polygon: { outer: room.polygon.map(([x, z]) => [x, z] as Vec2), holes: [] }
+            });
+        }
+    }
+    const replacedRooms = [...geometry.rooms, ...extraRooms].filter((room) => {
+        const archetype = archetypes.get(room.id);
+        return room.polygon && archetype && archetype !== 'classroom';
+    });
+    const keptLinework = linework.filter((item) => !replacedRooms.some((room) => pointInRoom(item.center, room)));
     const furniture = [
-        ...linework,
-        ...deriveRoomFurnishing(geometry, fine, fineSolid, doors, linework, fineArena)
+        ...keptLinework,
+        ...deriveRoomFurnishing(geometry, fine, fineSolid, doors, keptLinework, fineArena, archetypes, extraRooms)
     ].filter((item) => outsideAuthored(item.center));
     const lights = deriveLights(geometry, grid, solid, roomCells, arena, courtyard, floor).filter(([x, z]) =>
         outsideAuthored([x, z])

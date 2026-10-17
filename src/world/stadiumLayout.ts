@@ -209,10 +209,13 @@ export const TENNIS = {
     serviceFromNet: 6.4,
     line: 0.05,
     baseline: 0.1,
-    /** Net: 1.07 m at the posts (0.914 m outside the doubles lines), sagging to 0.914 m at the centre strap. */
+    /**
+     * Net, 0.914 m outside the doubles lines. Owner request 2026-10-17: raised above the ITF 1.07/0.914 m so it reads
+     * from across the arena and gives chest-high cover: 1.45 m at the posts, sagging to 1.3 m at the centre strap.
+     */
     postOffset: 0.914,
-    postHeight: 1.07,
-    centreHeight: 0.914
+    postHeight: 1.45,
+    centreHeight: 1.3
 } as const;
 
 /** Net top height at x (sags from the posts to the centre strap). */

@@ -1,5 +1,6 @@
 import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
+import { roomLabel } from '../world/roomNaming';
 
 import { changelogHtml } from './changelog';
 import type { KillIcon } from './killFeed';
@@ -288,23 +289,14 @@ const MARKUP = `
 const describe = (location: CampusRoom | undefined) => {
     if (!location)
         return { code: '—', name: '走廊与公共区', kind: '这里没有标注房间', colour: undefined, unmapped: true };
-    // Rooms renamed from the 2026-08-06 model carry an explicit display number ('' when the drawing gives none).
-    if (location.code !== undefined) {
-        return {
-            code: location.code || '—',
-            name: location.name,
-            kind: location.kindLabel || KIND_FALLBACK_LABEL[location.kind] || '',
-            colour: KIND_STRIPE[location.kind],
-            unmapped: !location.code
-        };
-    }
-    const shortCode = location.id.length <= 7 && /\d/.test(location.id);
+    // Drawing number and name when the room has a number; otherwise the name alone in the code slot.
+    const { code, name } = roomLabel(location);
     return {
-        code: shortCode ? location.id : location.name,
-        name: shortCode ? location.name : location.id,
+        code: code || name,
+        name: code ? name : '',
         kind: location.kindLabel || KIND_FALLBACK_LABEL[location.kind] || '',
         colour: KIND_STRIPE[location.kind],
-        unmapped: !shortCode
+        unmapped: !code
     };
 };
 

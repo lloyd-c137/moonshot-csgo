@@ -10,6 +10,8 @@ import { worldTriangles } from '../physics/collisionWorld';
 import { MeshBuilder } from '../render/meshBuilder';
 import { createTexture } from '../render/textures';
 
+import { ARCHETYPE_FINISHES, createArchetypeDrawer } from './archetypeFurniture';
+import type { ArchetypeFinish } from './archetypeFurniture';
 import type { Doorway } from './doorways';
 import type { RestroomMirrorLayout } from './restroomMirrors';
 import { restroomMirrorLayouts } from './restroomMirrors';
@@ -367,6 +369,7 @@ export const buildDressing = (
     const seats = new MeshBuilder();
     const shelves = new MeshBuilder();
     const colliders = new MeshBuilder();
+    const archetypes = createArchetypeDrawer();
     const along = (x: number, z: number, yaw: number, u: number, v: number): [number, number] => [
         x + u * Math.cos(yaw) - v * Math.sin(yaw),
         z + u * Math.sin(yaw) + v * Math.cos(yaw)
@@ -423,7 +426,8 @@ export const buildDressing = (
                 }
                 break;
             default:
-                seats.box(x, 0, z, width, depth, item.height, item.yaw);
+                if (!archetypes.draw(type, x, z, width, depth, item.height, item.yaw))
+                    seats.box(x, 0, z, width, depth, item.height, item.yaw);
         }
         if (item.collide) colliders.box(x, 0, z, width, depth, item.height, item.yaw);
     }
@@ -463,6 +467,15 @@ export const buildDressing = (
         seats,
         makeMaterial('fabric', { texture: textures.carpet, colour: [1.2, 1.35, 1.6] })
     );
+    // Photographed room archetypes (classroom pods, labs, band room, study hall…), one mesh per finish.
+    for (const [finish, builder] of Object.entries(archetypes.builders) as [ArchetypeFinish, MeshBuilder][])
+        addMesh(
+            app,
+            root,
+            `Furniture_Archetype_${finish}`,
+            builder,
+            makeMaterial(`archetype-${finish}`, ARCHETYPE_FINISHES[finish])
+        );
     addMesh(
         app,
         root,

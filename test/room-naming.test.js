@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { ROOM_NAMING } from '../src/config/roomNaming.ts';
 import { findLocationAt, parseCampusRooms, pointInRoom } from '../src/world/roomIndex.ts';
-import { applyRoomNaming, chooseSigns, drawingCode } from '../src/world/roomNaming.ts';
+import { applyRoomNaming, chooseSigns, drawingCode, roomLabel } from '../src/world/roomNaming.ts';
 import { signText } from '../src/world/signText.ts';
 import { deriveRoomNaming } from '../tools/roomNaming.ts';
 
@@ -94,4 +94,17 @@ test('a room made of several FF-01 regions keeps one door sign, with the new nam
     if (theatre) assert.equal(signText(theatre.room).chinese.join(''), '小剧场');
     const psych = chosen.find(({ sign }) => sign.room === 'A208');
     assert.equal(psych.room.name, '心理办公室');
+});
+
+test('every place shows a readable label: a drawing number or a name, never an internal id or a placeholder', () => {
+    for (const room of named) {
+        const label = roomLabel(room);
+        assert.ok(label.code || label.name, `${room.id} shows nothing`);
+        assert.ok(!/^[A-Z]+-[A-Z0-9]/.test(label.code) && !label.code.includes(':'), `${room.id} shows ${label.code}`);
+        assert.ok(!/待核实|未编号/.test(label.name), `${room.id} shows a placeholder`);
+    }
+    assert.deepEqual(roomLabel(named.find((room) => room.id === 'M-T')), { code: '', name: '小剧场' });
+    assert.deepEqual(roomLabel(named.find((room) => room.id === 'A-I')), { code: '', name: '创新区' });
+    assert.deepEqual(roomLabel(named.find((room) => room.id === 'SVC-01')), { code: '', name: '机房' });
+    assert.equal(signText(named.find((room) => room.id === 'STAIR-01')).code, '');
 });

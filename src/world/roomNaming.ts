@@ -39,6 +39,18 @@ export const chooseSigns = <S extends { room: string }>(signs: readonly S[], roo
 /** Drawing numbers (M123, S308-1, A209…) are shown; app-internal ids (M-WC1, A-TEA…) are not. */
 export const drawingCode = (id: string) => (/^[MSA]\d/.test(id) ? id : '');
 
+/** Placeholder names from the drawings ("用途待核实", "未编号房间") are not shown to players. */
+const PLACEHOLDER_NAME = /待核实|未编号/;
+
+/**
+ * What the HUD and door signs show for a room: its drawing number (never an app-internal id such as SVC-01,
+ * STAIR-03 or M-WC1) and its name ("房间" when the drawing only has a placeholder).
+ */
+export const roomLabel = (room: { id: string; name: string; code?: string }) => ({
+    code: room.code ?? drawingCode(room.id),
+    name: PLACEHOLDER_NAME.test(room.name) ? '房间' : room.name
+});
+
 /**
  * The effective room list. A room made of several FF-01 regions appears once per region (same id, name and kind;
  * `primary` on the largest). Rooms with no FF-01 region carry their fitted outline. FF-01 regions the newer model

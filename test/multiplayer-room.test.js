@@ -294,6 +294,27 @@ test('eye, stealth, and Mark abilities drop at the holder position and can be pi
     assert.equal(room.players.get('e').hasCreation, true);
     assert.equal(room.items.get('item-creation').holder, 'e');
     assert.ok(inbox.get('e').some((message) => message.type === 'ability' && message.player.hasCreation));
+
+    join('b', 'B', 8200);
+    pose('b', [mark.at[0] + 6, 0.92, mark.at[2]], 8200);
+    for (const [id, at] of [[1, 9000], [2, 10000], [3, 11000]]) {
+        room.message('b', {
+            type: 'throw',
+            throw: { id, o: [mark.at[0] + 5.7, 1.5, mark.at[2]], v: [-18, 0, 0], tilt: 0 }
+        }, at);
+        room.message('b', { type: 'hit', throwId: id, target: 'e', at: [mark.at[0], 1.2, mark.at[2]] }, at + 500);
+    }
+    assert.equal(room.players.get('e').alive, false, 'a lethal hit should eliminate the creation-power holder');
+    assert.equal(room.players.get('e').hasCreation, false);
+    assert.equal(room.items.get('item-creation').holder, null);
+    assert.equal(room.items.get('item-creation').available, true);
+    assert.deepEqual(room.items.get('item-creation').at, [mark.at[0], 0.02, mark.at[2]]);
+
+    join('f', 'F', 12000);
+    pose('f', [mark.at[0], 0.92, mark.at[2]], 12300);
+    room.message('f', { type: 'interact', target: 'item-creation' }, 12600);
+    assert.equal(room.players.get('f').hasCreation, true, 'another player can pick up Mark power after a kill-drop');
+    assert.equal(room.items.get('item-creation').holder, 'f');
 });
 
 test('implausible claims are ignored: out of reach, unknown throw, self-hit, cooldown, launch far away', () => {

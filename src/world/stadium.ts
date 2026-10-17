@@ -3,7 +3,7 @@
 // floodlight bars and an out-leaning facade. Decoration only: every collider (floor, stands, the 10 m arena wall)
 // is unchanged, so routes, the nav audit and the upper bowl's unreachability stay as they were.
 import type { AppBase, Entity as EntityType, StandardMaterial as StandardMaterialType } from 'playcanvas';
-import { Color, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial } from 'playcanvas';
+import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial } from 'playcanvas';
 
 import { MeshBuilder } from '../render/meshBuilder';
 
@@ -21,13 +21,13 @@ import {
 
 type V3 = [number, number, number];
 
-const material = (name: string, colour: V3, options: { gloss?: number; emissive?: V3 } = {}) => {
+const material = (name: string, colour: V3, options: { gloss?: number; emissive?: V3; oneSided?: boolean } = {}) => {
     const m = new StandardMaterial();
     m.name = name;
     m.useMetalness = true;
     m.metalness = 0;
     m.gloss = options.gloss ?? 0.25;
-    m.cull = CULLFACE_NONE;
+    m.cull = options.oneSided ? CULLFACE_BACK : CULLFACE_NONE;
     m.diffuse = new Color(...colour);
     if (options.emissive) {
         m.emissive = new Color(...options.emissive);
@@ -171,19 +171,20 @@ export const buildStadium = (
                 footJ = backJ - 1.5;
             quad(
                 facade,
+                // Wound so the visible (front) side faces outward, away from the court.
                 at(i, footI, STADIUM.facadeBottom),
-                at(j, footJ, STADIUM.facadeBottom),
+                at(i, outerI - 0.4, STADIUM.roofOuterHeight - 0.6),
                 at(j, outerJ - 0.4, STADIUM.roofOuterHeight - 0.6),
-                at(i, outerI - 0.4, STADIUM.roofOuterHeight - 0.6)
+                at(j, footJ, STADIUM.facadeBottom)
             );
         }
         // Ribs: radial at every fourth sample, heavier at petal joins; floodlight bars along the inner edge.
-        if (i % 4 === 0 || join) {
+        if (i % 2 === 0 || join) {
             const [x0, , z0] = at(i, innerI, 0),
                 [x1, , z1] = at(i, outerI, 0);
             const length = Math.hypot(x1 - x0, z1 - z0);
             const steps = 6;
-            const w = join ? 0.32 : 0.16;
+            const w = join ? 0.45 : 0.24;
             for (let s = 0; s < steps; s++) {
                 const t = (s + 0.5) / steps;
                 const r = innerI + (outerI - innerI) * t;
@@ -215,10 +216,11 @@ export const buildStadium = (
         ['Stadium_Concrete', concrete, material('stadium-concrete', [0.62, 0.63, 0.64], { gloss: 0.15 })],
         ['Stadium_Aisles', aisle, material('stadium-aisle', [0.48, 0.5, 0.52], { gloss: 0.15 })],
         ['Stadium_UpperSeats', seatsTeal, material('stadium-seat-teal', [0.13, 0.55, 0.55], { gloss: 0.45 })],
-        ['Stadium_RoofLight', roofLight, material('stadium-roof-light', [0.72, 0.74, 0.74], { gloss: 0.35 })],
-        ['Stadium_RoofDark', roofDark, material('stadium-roof-dark', [0.64, 0.67, 0.68], { gloss: 0.35 })],
-        ['Stadium_RoofRibs', ribs, material('stadium-ribs', [0.85, 0.86, 0.83], { gloss: 0.3 })],
-        ['Stadium_Facade', facade, material('stadium-facade', [0.66, 0.66, 0.62], { gloss: 0.2 })],
+        ['Stadium_RoofLight', roofLight, material('stadium-roof-light', [0.6, 0.63, 0.64], { gloss: 0.35 })],
+        ['Stadium_RoofDark', roofDark, material('stadium-roof-dark', [0.52, 0.56, 0.57], { gloss: 0.35 })],
+        ['Stadium_RoofRibs', ribs, material('stadium-ribs', [0.93, 0.94, 0.91], { gloss: 0.3 })],
+        // The facade faces outward only: from inside the bowl you see the roof's underside, not a wall.
+        ['Stadium_Facade', facade, material('stadium-facade', [0.66, 0.66, 0.62], { gloss: 0.2, oneSided: true })],
         ['Stadium_Mullions', mullions, material('stadium-mullion', [0.58, 0.6, 0.59], { gloss: 0.2 })],
         ['Stadium_Rail', rail, material('stadium-rail', [0.55, 0.72, 0.78], { gloss: 0.8 })],
         [

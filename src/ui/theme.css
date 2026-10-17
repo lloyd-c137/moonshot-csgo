@@ -1310,7 +1310,7 @@ legend {
     position: absolute;
     bottom: 28%;
     left: 50%;
-    display: flex;
+    display: none;
     align-items: center;
     gap: 12px;
     translate: -50% 0;

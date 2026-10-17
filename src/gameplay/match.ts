@@ -35,8 +35,6 @@ import type { RestroomMirrorMount } from '../world/dressing';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
-import { createDiscs } from './discs';
-import { createEffects } from './effects';
 import {
     aimTarget,
     endsRound,
@@ -46,6 +44,8 @@ import {
     SNEAK_SPEED_FACTOR,
     surfaceFor
 } from './combatFeel';
+import { createDiscs } from './discs';
+import { createEffects } from './effects';
 import { canStartGlobalFinisher, executionProgress, executionWatched } from './execution';
 import type { Execution } from './execution';
 import { createExecutionView } from './executionView';

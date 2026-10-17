@@ -2,9 +2,9 @@ import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 
 import { changelogHtml } from './changelog';
+import { formatWinRate } from './formatStats';
 import type { KillIcon } from './killFeed';
 import { KILL_ICON_LABEL, KILL_ICON_SVG, streakName } from './killFeed';
-import { formatWinRate } from './formatStats';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
 import type { MapMarkers } from './minimap';

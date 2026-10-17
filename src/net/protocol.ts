@@ -37,8 +37,13 @@ export const MAX_THROW_SPEED = 26;
 export const NAME_MAX = 16;
 /** World chat: longest message, and at most `burst` messages per `windowSeconds`. */
 export const CHAT = { max: 120, burst: 4, windowSeconds: 6, history: 40 } as const;
-/** A hit this far above the capsule centre (m) is a head hit. */
-export const HEAD_ABOVE = 0.45;
+/**
+ * The swept disc centre must reach the visual head region to count as a head hit. The 2.1 m runtime mannequin's
+ * head starts about 0.86 m above the 0.92 m capsule centre; subtracting the 0.135 m disc radius gives a 0.725 m
+ * contact-centre threshold, rounded to 0.72 m. This keeps shoulder/neck contacts in the body region.
+ */
+export const HEAD_ABOVE = 0.72;
+export const isHeadHit = (contactY: number, capsuleCentreY: number) => contactY - capsuleCentreY > HEAD_ABOVE;
 /**
  * Sniper throws (a fully aimed charge): launched at `speed`, they fly dead straight (no drop, no lift) for
  * `straightSeconds`. Every disc headshot is lethal; the sniper flag adds flight/feedback only, at ≥ `minSpeed`.

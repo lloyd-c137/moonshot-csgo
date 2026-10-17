@@ -71,8 +71,13 @@ test('contact result returns the earliest swept point and stable earliest target
     assert.ok(contact);
     assert.ok(Math.abs(contact.fraction - 0.4505) < 1e-5);
     assert.ok(Math.abs(contact.at[0] - 4.505) < 1e-4);
-    assert.equal(contact.region, 'head');
+    assert.equal(contact.region, 'body', 'upper torso contact stays a body hit');
     assert.deepEqual(contact.impactDirection, [1, 0, 0]);
+
+    const shoulder = discContactWithPlayer([0, 1.5, 0], [10, 1.5, 0], centre);
+    const head = discContactWithPlayer([0, 1.75, 0], [10, 1.75, 0], centre);
+    assert.equal(shoulder?.region, 'body', 'shoulder-height contact is not a headshot');
+    assert.equal(head?.region, 'head', 'contact in the mannequin head band is a headshot');
 
     const targets = new Map([
         ['farther', [7, 0.92, 0]],

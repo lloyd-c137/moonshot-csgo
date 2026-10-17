@@ -236,7 +236,7 @@ test('a sniper disc to the head eliminates outright; a slow throw cannot claim t
     room.players.get('b').hp = MAX_HP;
     // A real sniper throw to the head: out in one from full health.
     room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [34, 0, 0], tilt: 0, sniper: true } }, 5000);
-    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [20, 1.5, 0] }, 5600);
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [20, 1.7, 0] }, 5600);
     assert.deepEqual(struck()[1], { ...struck()[1], hp: 0, out: true, head: true, sniper: true });
     // The aim level travels with the pose so others can see the scope glint.
     const snapshot = room.players.get('a').pose;
@@ -252,7 +252,7 @@ test('ordinary and golden head hits eliminate full health; spawn protection and 
         pose('b', [6, 0.9, 0], 100);
         if (golden) room.gold.holder = 'a';
         room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [20, 0, 0], tilt: 0 } }, 1000);
-        const hit = { type: 'hit', throwId: 1, target: 'b', at: [6, 1.5, 0] };
+        const hit = { type: 'hit', throwId: 1, target: 'b', at: [6, 1.7, 0] };
         room.message('a', hit, 1300);
         assert.equal(room.players.get('b').hp, MAX_HP, 'protected');
         room.message('a', hit, 1600);
@@ -262,6 +262,24 @@ test('ordinary and golden head hits eliminate full health; spawn protection and 
         assert.deepEqual([struck[0].hp, struck[0].out, struck[0].head, struck[0].gold], [0, true, true, golden]);
         assert.equal(room.players.get('a').kills, 1);
     }
+});
+
+test('shoulder-height contact damages the body while a head-band contact eliminates', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    pose('a', [0, 0.9, 0], 100);
+    pose('b', [6, 0.9, 0], 100);
+
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [20, 0, 0], tilt: 0 } }, 1000);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [6, 1.5, 0] }, 1600);
+    const shoulder = inbox.get('b').find((message) => message.type === 'struck');
+    assert.deepEqual([shoulder.hp, shoulder.out, shoulder.head], [MAX_HP - 1, false, false]);
+
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0, 1.5, 0], v: [20, 0, 0], tilt: 0 } }, 2000);
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [6, 1.7, 0] }, 2600);
+    const strikes = inbox.get('b').filter((message) => message.type === 'struck');
+    assert.deepEqual([strikes[1].hp, strikes[1].out, strikes[1].head], [0, true, true]);
 });
 
 test('rounds: the golden disc spawns, is picked up, drops on elimination, and its holder wins at time', () => {

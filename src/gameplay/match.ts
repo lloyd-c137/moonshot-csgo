@@ -18,7 +18,7 @@ import {
     colourFor,
     AMMO,
     DETENTION_SECONDS,
-    HEAD_ABOVE,
+    isHeadHit,
     MAX_HP,
     RESPAWN_SECONDS,
     ROUND,
@@ -1804,7 +1804,7 @@ export const createMatch = ({
                 (throwId, target, contact: DiscContact) => {
                     const { at } = contact;
                     if (audioLab && target === labTargetId) {
-                        const head = at[1] - labTargetPose.p[1] > HEAD_ABOVE;
+                        const head = isHeadHit(at[1], labTargetPose.p[1]);
                         simulateDummyHit(head ? 'head' : 'body');
                         return;
                     }

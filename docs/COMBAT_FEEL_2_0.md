@@ -123,7 +123,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 
 ## Parameters and provenance
 
-The contact scan uses the existing hit volume (`PLAYER_HIT.radius = 0.36 m`, `halfCore = 0.64 m`) plus the existing disc radius (`0.135 m`). It does not change disc speed, damage, server headshot threshold (`HEAD_ABOVE = 0.45 m`), or target capsule balance. The server still uses its existing reach and latency slack checks.
+The contact scan uses the existing hit volume (`PLAYER_HIT.radius = 0.36 m`, `halfCore = 0.64 m`) plus the existing disc radius (`0.135 m`). Headshots now require the swept disc centre to reach at least 0.72 m above the player capsule centre, matching the 2.1 m runtime mannequin's head lower bound after accounting for disc radius. Client region feedback and server damage share `isHeadHit`; shoulder/neck contacts remain body hits. This changes only the headshot region boundary, not disc speed, damage, or the target capsule.
 
 Rigged mannequin provenance, clips, skeleton, derived runtime GLB, and license are documented in `docs/CHARACTER_ASSET_AUDIT.md`. Current work does not replace the source character or animation assets.
 

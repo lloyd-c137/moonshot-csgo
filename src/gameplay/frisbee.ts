@@ -4,6 +4,8 @@
 // drag from the angle of attack between the velocity and the disc plane. The game world runs player gravity at
 // 18 m/s², so discs get an upward compensation to fly under real gravity (9.81 m/s²).
 
+import { isHeadHit } from '../net/protocol.ts';
+
 export type V3 = [number, number, number];
 
 export const DISC = {
@@ -169,7 +171,7 @@ export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | n
             at,
             fraction: 0,
             impactDirection: normalise(delta),
-            region: at[1] - centre[1] > 0.45 ? 'head' : 'body'
+            region: isHeadHit(at[1], centre[1]) ? 'head' : 'body'
         };
     }
 
@@ -202,7 +204,7 @@ export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | n
         at,
         fraction,
         impactDirection: normalise(delta),
-        region: at[1] - centre[1] > 0.45 ? 'head' : 'body'
+        region: isHeadHit(at[1], centre[1]) ? 'head' : 'body'
     };
 };
 

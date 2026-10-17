@@ -29,7 +29,7 @@ import {
     cleanChat,
     cleanName,
     colourFor,
-    HEAD_ABOVE,
+    isHeadHit,
     HEAL_SECONDS,
     MAX_HP,
     MAX_PLAYERS,
@@ -489,7 +489,7 @@ export class Room {
         }
         entry.scored = true;
         this.cancelExecutionFor(target.id, '被飞盘命中');
-        const head = at[1] - target.pose.p[1] > HEAD_ABOVE;
+        const head = isHeadHit(at[1], target.pose.p[1]);
         const sniper = entry.record.sniper === true;
         // Every disc to the head is lethal outright; body hits take one point of health.
         target.hp = head ? 0 : Math.max(0, target.hp - 1);

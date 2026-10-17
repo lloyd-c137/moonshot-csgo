@@ -379,7 +379,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     expect((await state(b.page)).hp).toBe(2);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.6, 39.6))).toBe(true);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.75, 39.6))).toBe(true);
     await expect
         .poll(
             async () => ({
@@ -400,7 +400,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.6, 39.6, undefined, true))).toBe(
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.75, 39.6, undefined, true))).toBe(
         true
     );
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
@@ -422,7 +422,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
     await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.6, 39.6, undefined, true))).toBe(
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.75, 39.6, undefined, true))).toBe(
         true
     );
     await expect(b.page.locator('#gold-kill')).toBeVisible({ timeout: 5_000 });

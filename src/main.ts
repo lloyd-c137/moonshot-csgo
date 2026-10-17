@@ -342,9 +342,9 @@ const boot = async () => {
         lightPool.setDark(match.dark);
         if (match.dark !== night) {
             night = match.dark;
-            sun.light!.intensity = night ? 0.04 : 0.55;
             setNight(night);
         }
+        sun.light!.intensity += ((night ? 0.04 : 0.55) - sun.light!.intensity) * Math.min(1, deltaTime * 6);
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
         const forward = camera.forward;

@@ -56,8 +56,12 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     expect(power.dark).toBe(true);
     expect(power.phase).toBe('outbound');
     const lighting = () => page.evaluate(() => window.__MOONSHOT__!.lighting());
+    const transition = await lighting();
+    expect(transition.pooled.some((v) => v > 0)).toBe(true);
+    expect(transition.panels.some((v) => v > 0)).toBe(true);
+    await advance(page, 900);
     const off = await lighting();
-    expect(off.pooled.every((v) => v === 0)).toBe(true);
+    expect(off.pooled.every((v) => v === 0), JSON.stringify(off.pooled)).toBe(true);
     expect(off.panels.length).toBeGreaterThan(0);
     expect(off.panels.every((v) => v === 0)).toBe(true);
     await page.keyboard.press('e');

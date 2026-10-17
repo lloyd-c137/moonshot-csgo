@@ -219,6 +219,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     app.root.addChild(goldLight);
     let finalDone = false;
     let finalShown = false;
+    let floodlightTransitionAt = performance.now();
+    let floodlightFrom = 0;
     let groundCap = 0;
     let goldThrowCount = 0;
     let goldCooldownUntil = 0;
@@ -1314,11 +1316,17 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         const finalNow = net.state === 'online' && finalAt !== null && roomNow() >= finalAt;
         if (finalNow !== finalShown) {
             finalShown = finalNow;
-            for (const light of floodlights) light.light!.intensity = finalNow ? 2.4 : 0;
+            floodlightFrom = floodlights[0].light!.intensity;
+            floodlightTransitionAt = now;
             if (finalNow) {
                 ui.broadcastText('最终对决！所有存活玩家传送到莲花球场');
                 sound.roundStart();
             }
+        }
+        const floodlightTarget = finalNow ? 2.4 : 0;
+        const floodlightProgress = Math.min(1, Math.max(0, (now - floodlightTransitionAt) / 420));
+        for (const light of floodlights) {
+            light.light!.intensity = floodlightFrom + (floodlightTarget - floodlightFrom) * floodlightProgress;
         }
         if (!finalNow) finalDone = false;
         if (finalNow && !finalDone && alive && !spectating && started) {

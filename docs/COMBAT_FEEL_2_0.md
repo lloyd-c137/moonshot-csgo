@@ -53,6 +53,8 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | `npm run build` after round outcome changes | Production bundle completed; 1,886.64 kB main JS (484.01 kB gzip), existing >500 kB chunk warning | PASS with size warning |
 | Multiplayer browser regression after round outcome changes | Two-client leaderboard and combat/account flow | PASS, 2/2 |
 | Production smoke after round outcome changes | First run collided with a second simultaneous build/preview run and could not connect to port 4174; rerun against a single preview server passed the FF-01/physics/pointer-lock entry flow | PASS, 1/1 on clean rerun; initial failure was test-process contention |
+| Blackout/floodlight fade browser regression | Local blackout visibly passes through nonzero pooled-light and fixture intensity before reaching zero; repair restores lighting; two clients receive the same authoritative outage/repair route | PASS, `tests/browser/power.spec.ts` 2/2 |
+| Typecheck/lint/build after lighting transition | TS client and Worker checks, ESLint, production bundle | PASS; bundle 1,887.05 kB raw / 484.27 kB gzip with existing chunk warning |
 | E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
 | Live rendered training-dummy capture | Separate Chromium window against local Vite; idle, confirmed body reaction, death reaction, fixed-position respawn; zero page errors | PASS for the observed sequence |
 | Baseline `typecheck` and `lint` | Ran after smoke correction | PASS |
@@ -75,7 +77,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | Audio buses, attenuation, voice caps | IN PROGRESS | Combat/confirmation/environment/UI buses, master/combat/confirmation volumes, confirmation ducking, per-bus source caps, and ended-source cleanup implemented. Owner-selected clips remain intact; browser/performance evidence pending. |
 | HUD hierarchy and duplicate suppression | IN PROGRESS | Hit/kill/golden/personal-damage/round-result priority windows and server-event dedupe are integrated. More combat and simultaneous-event browser coverage remains. |
 | Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct kicker/title and audio cue. Unit and room tests pass; rendered visual review of each result card remains. |
-| Blackout/final-showdown/victory presentation | PARTIAL | Round-end results now distinguish win causes and draw. Blackout transition and final-arena choreography remain unchanged and unverified. |
+| Blackout/final-showdown/victory presentation | PARTIAL | Blackout ambience, pooled lights, fixture panels and sun fade over 0.65 s; arena floodlights fade over 420 ms. Browser test checks the blackout light transition and multiplayer repair route. Sky color still changes immediately; final arena relocation is still abrupt; round-result presentation has not had visual review. |
 | Combat Feel Lab | NOT RUN | Existing audio lab not yet extended. |
 | Performance / 2–32 player profiling | NOT RUN | No frame-time, draw-call, memory, or 2–32-player measurements recorded. Trail frequency is capped in code, but that is not a performance result. |
 | Subjective human playtest | NOT RUN | No human acceptance claim. |

@@ -69,7 +69,12 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
     });
     let elapsed = POOL_REFRESH_SECONDS;
     let dark = false;
+    let darkness = 0;
+    let darknessFrom = 0;
+    let darknessElapsed = 0;
     const fixtureMaterials = new Map<StandardMaterial, number>();
+    const lightTargets = new Array<number>(pool.length).fill(0);
+    const mixedAmbient = new Color(0.55, 0.54, 0.52);
     for (const render of app.root.findComponents('render')) {
         for (const instance of render.meshInstances) {
             const m = instance.material as StandardMaterial;
@@ -79,6 +84,30 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
     }
     const position = new Vec3();
     const update = (deltaTime: number, player: Vec3) => {
+        const previousDarkness = darkness;
+        if (darkness < 1 && dark || darkness > 0 && !dark) {
+            darknessElapsed = Math.min(0.65, darknessElapsed + deltaTime);
+            darkness = darknessFrom + ((dark ? 1 : 0) - darknessFrom) * (darknessElapsed / 0.65);
+        }
+        if (Math.abs(previousDarkness - darkness) > 0.001) {
+            mixedAmbient.set(
+                0.55 + (0.07 - 0.55) * darkness,
+                0.54 + (0.08 - 0.54) * darkness,
+                0.52 + (0.12 - 0.52) * darkness
+            );
+            app.scene.ambientLight = mixedAmbient;
+            app.scene.exposure = 1.1 + (0.9 - 1.1) * darkness;
+            for (const [material, intensity] of fixtureMaterials) {
+                material.emissiveIntensity = intensity * (1 - darkness);
+                material.update();
+            }
+        }
+        pool.forEach((light, index) => {
+            const current = light.light!.intensity;
+            const target = lightTargets[index] * (1 - darkness);
+            const next = current + (target - current) * Math.min(1, deltaTime * 10);
+            light.light!.intensity = Math.abs(target - next) < 0.01 ? target : next;
+        });
         elapsed += deltaTime;
         if (elapsed < POOL_REFRESH_SECONDS) return;
         elapsed = 0;
@@ -90,27 +119,23 @@ export const createLightPool = (app: AppBase, fixtures: [number, number, number,
         pool.forEach((light, index) => {
             const entry = nearest[index];
             if (!entry) {
-                light.light!.intensity = 0;
+                lightTargets[index] = 0;
                 return;
             }
             const [x, z, height, kind] = entry.fixture;
             position.set(x, height - 0.35, z);
             light.setPosition(position);
             light.light!.range = kind === 1 ? 8 : 7;
-            light.light!.intensity = dark ? 0 : 1.4;
+            lightTargets[index] = 1.4;
         });
     };
     /** Lights out (the blackout before the round's end) or back on. */
     const setDark = (value: boolean) => {
         if (value === dark) return;
         dark = value;
+        darknessFrom = darkness;
+        darknessElapsed = 0;
         elapsed = POOL_REFRESH_SECONDS; // re-apply on the next update
-        app.scene.ambientLight = value ? new Color(0.07, 0.08, 0.12) : new Color(0.55, 0.54, 0.52);
-        app.scene.exposure = value ? 0.9 : 1.1;
-        for (const [material, intensity] of fixtureMaterials) {
-            material.emissiveIntensity = value ? 0 : intensity;
-            material.update();
-        }
     };
     return { update, pool, setDark };
 };

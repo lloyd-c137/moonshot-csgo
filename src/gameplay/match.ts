@@ -1873,8 +1873,10 @@ export const createMatch = ({
                 const id = selfId();
                 let hash = 0;
                 for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-                const a = ((hash % 360) * Math.PI) / 180;
                 const r = 5 + (hash % 5);
+                let a = ((hash % 360) * Math.PI) / 180;
+                // Never on the tennis net, which crosses the court's middle (east–west through the arena centre).
+                if (Math.abs(Math.sin(a) * r) < 1.2) a += 0.4;
                 player.rigidbody!.teleport(
                     arenaCenter[0] + Math.cos(a) * r,
                     0.92,

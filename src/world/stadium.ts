@@ -16,12 +16,15 @@ import {
     COURT_SURROUND,
     courtSurroundPath,
     inSurroundGap,
+    netHeightAt,
     petalJoinDistance,
     petalShape,
     ringRadii,
     spectatorSeats,
     STADIUM,
     tierHeight,
+    TENNIS,
+    tennisLines,
     tierRadius
 } from './stadiumLayout';
 
@@ -277,7 +280,43 @@ export const buildStadium = (
         }
     }
 
+    // The tennis court: ITF lines over the blue surface (the FF-01 court linework is hidden), the net and its posts.
+    const lines = new MeshBuilder();
+    for (const [x0, z0, x1, z1] of tennisLines())
+        quad(lines, [x0, 0.026, z0], [x1, 0.026, z0], [x1, 0.026, z1], [x0, 0.026, z1]);
+    const net = new MeshBuilder();
+    const netTape = new MeshBuilder();
+    const posts = new MeshBuilder();
+    const netCollider = new MeshBuilder();
+    {
+        const half = TENNIS.doublesHalfWidth + TENNIS.postOffset;
+        const steps = 16;
+        for (let s = 0; s < steps; s++) {
+            const xa = TENNIS.centerX - half + (2 * half * s) / steps,
+                xb = TENNIS.centerX - half + (2 * half * (s + 1)) / steps;
+            const ha = netHeightAt(xa) - 0.06,
+                hb = netHeightAt(xb) - 0.06;
+            quad(net, [xa, 0, TENNIS.netZ], [xb, 0, TENNIS.netZ], [xb, hb, TENNIS.netZ], [xa, ha, TENNIS.netZ]);
+            // White headband along the top.
+            netTape.box((xa + xb) / 2, (ha + hb) / 2, TENNIS.netZ, xb - xa + 0.01, 0.03, 0.06, 0);
+        }
+        netTape.box(TENNIS.centerX, 0, TENNIS.netZ, 0.05, 0.035, TENNIS.centreHeight, 0);
+        for (const side of [-1, 1])
+            posts.box(TENNIS.centerX + side * half, 0, TENNIS.netZ, 0.09, 0.09, TENNIS.postHeight + 0.03, 0);
+        netCollider.box(TENNIS.centerX, 0, TENNIS.netZ, 2 * half, 0.06, TENNIS.postHeight, 0);
+    }
+    campusRoot.findByName('Court_Lines')?.destroy();
+    const netBody = new Entity('GameplayAuthored_TennisNetCollider');
+    netBody.addComponent('collision', { type: 'mesh', render: { meshes: [netCollider.build(app.graphicsDevice)] } });
+    // Discs (and players) are stopped by the net; it gives little bounce.
+    netBody.addComponent('rigidbody', { type: 'static', friction: 0.6, restitution: 0.15 });
+    root.addChild(netBody);
+
     const meshes: [string, MeshBuilder, StandardMaterialType][] = [
+        ['Tennis_Lines', lines, material('tennis-lines', [0.97, 0.97, 0.95], { gloss: 0.6 })],
+        ['Tennis_Net', net, material('tennis-net', [0.08, 0.1, 0.12], { gloss: 0.2 })],
+        ['Tennis_NetTape', netTape, material('tennis-net-tape', [0.96, 0.96, 0.94], { gloss: 0.5 })],
+        ['Tennis_Posts', posts, material('tennis-posts', [0.15, 0.32, 0.22], { gloss: 0.5 })],
         ['Stadium_Concrete', concrete, material('stadium-concrete', [0.7, 0.71, 0.72], { gloss: 0.15 })],
         ['Stadium_Aisles', aisle, material('stadium-aisle', [0.82, 0.83, 0.84], { gloss: 0.15 })],
         ['Stadium_SeatsGrey', seatsGrey, material('stadium-seat-grey', [0.8, 0.82, 0.84], { gloss: 0.4 })],

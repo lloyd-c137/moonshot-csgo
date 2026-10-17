@@ -195,3 +195,54 @@ export const inSurroundGap = (x: number, z: number) => {
     const onSide = Math.abs(x - x0) < 0.5 || Math.abs(x - x1) < 0.5;
     return (onEnd && Math.abs(x - mx) < gap / 2) || (onSide && Math.abs(z - mz) < gap / 2);
 };
+
+/**
+ * Tennis court on the FF-01 court surface (x −13.9…−2.9, z −14.7…9.0: a 10.97 × 23.77 m doubles court, long axis
+ * along z). Standard ITF markings; the net crosses the court's middle at z = netZ.
+ */
+export const TENNIS = {
+    centerX: -8.4,
+    netZ: -2.85,
+    doublesHalfWidth: 10.97 / 2,
+    singlesHalfWidth: 8.23 / 2,
+    halfLength: 23.77 / 2,
+    serviceFromNet: 6.4,
+    line: 0.05,
+    baseline: 0.1,
+    /** Net: 1.07 m at the posts (0.914 m outside the doubles lines), sagging to 0.914 m at the centre strap. */
+    postOffset: 0.914,
+    postHeight: 1.07,
+    centreHeight: 0.914
+} as const;
+
+/** Net top height at x (sags from the posts to the centre strap). */
+export const netHeightAt = (x: number) => {
+    const half = TENNIS.doublesHalfWidth + TENNIS.postOffset;
+    const t = Math.min(1, Math.abs(x - TENNIS.centerX) / half);
+    return TENNIS.centreHeight + (TENNIS.postHeight - TENNIS.centreHeight) * t * t;
+};
+
+/** White court lines as axis-aligned rectangles [x0, z0, x1, z1]. */
+export const tennisLines = (): [number, number, number, number][] => {
+    const { centerX: cx, netZ: nz, doublesHalfWidth: dw, singlesHalfWidth: sw, halfLength: hl } = TENNIS;
+    const { serviceFromNet: sf, line, baseline } = TENNIS;
+    const h = line / 2;
+    const rects: [number, number, number, number][] = [];
+    for (const side of [-1, 1]) {
+        const base = nz + side * hl;
+        // Baseline (wider), service line, centre mark.
+        rects.push([
+            cx - dw,
+            base - (side * baseline) / 2 - baseline / 2,
+            cx + dw,
+            base - (side * baseline) / 2 + baseline / 2
+        ]);
+        rects.push([cx - sw, nz + side * sf - h, cx + sw, nz + side * sf + h]);
+        rects.push([cx - h, Math.min(base, base - side * 0.1), cx + h, Math.max(base, base - side * 0.1)]);
+        // Centre service line (net to service line).
+        rects.push([cx - h, Math.min(nz, nz + side * sf), cx + h, Math.max(nz, nz + side * sf)]);
+    }
+    // Doubles and singles sidelines, full length.
+    for (const x of [cx - dw + h, cx + dw - h, cx - sw + h, cx + sw - h]) rects.push([x - h, nz - hl, x + h, nz + hl]);
+    return rects;
+};

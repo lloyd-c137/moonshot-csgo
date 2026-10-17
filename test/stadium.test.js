@@ -7,12 +7,15 @@ import {
     COURT_SURROUND,
     courtSurroundPath,
     inSurroundGap,
+    netHeightAt,
     petalJoinDistance,
     petalShape,
     ringRadii,
     seatAssignment,
     spectatorSeats,
     STADIUM,
+    TENNIS,
+    tennisLines,
     tierHeight,
     tierRadius
 } from '../src/world/stadiumLayout.ts';
@@ -81,4 +84,15 @@ test('spectator seats spread over every petal and face the court; assignment is 
         b = seatAssignment(['b', 'c', 'a'], 48);
     assert.deepEqual([...a], [...b]);
     assert.equal(seatAssignment(['a', 'b'], 1).size, 1, 'never more spectators than seats');
+});
+
+test('tennis court: ITF dimensions on the FF-01 court, a net that sags to 0.914 m', () => {
+    // Doubles court fits the FF-01 Arena_Court surface (x −13.9…−2.9, z −14.7…9.0).
+    assert.ok(TENNIS.centerX - TENNIS.doublesHalfWidth >= -13.95 && TENNIS.centerX + TENNIS.doublesHalfWidth <= -2.85);
+    assert.ok(TENNIS.netZ - TENNIS.halfLength >= -14.75 && TENNIS.netZ + TENNIS.halfLength <= 9.05);
+    assert.ok(Math.abs(netHeightAt(TENNIS.centerX) - 0.914) < 1e-9);
+    assert.ok(Math.abs(netHeightAt(TENNIS.centerX + TENNIS.doublesHalfWidth + TENNIS.postOffset) - 1.07) < 1e-9);
+    const lines = tennisLines();
+    assert.equal(lines.length, 12);
+    for (const [x0, z0, x1, z1] of lines) assert.ok(x1 > x0 && z1 > z0);
 });

@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.13.1',
+        date: '2026.10.17',
+        title: '球场中央改为网球场',
+        notes: [
+            '莲花球场中央改为标准网球场：双打与单打边线、发球线、中线和中点标记。',
+            '球场中间拉起网球网（两侧网柱、白色网带、中央拉带），飞盘会被球网挡住。',
+            '最终决战的出生点会避开球网。'
+        ]
+    },
+    {
         version: 'v0.13.0',
         date: '2026.10.17',
         title: '莲花球场重建与看台观战',

@@ -74,6 +74,12 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.screenshot({ path: 'test-results/combat-feel-lab-trail-live.png' });
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab')).toBeVisible();
+    await page.locator('[data-phase="blackout"]').click();
+    await expect(page.locator('.audio-lab-status')).toContainText('需要登录并连接本地开发测试服');
+    await page.locator('[data-result="last-survivor"]').click();
+    await expect(page.locator('#round-end')).toBeVisible();
+    await expect(page.locator('#round-end')).toHaveAttribute('data-outcome', 'last-survivor');
+    await expect(page.locator('#round-end-title')).toHaveText('测试对手 赢得本局');
     await page.locator('.audio-lab [data-action="reset-tuning"]').click();
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale))

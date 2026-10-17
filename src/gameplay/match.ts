@@ -162,6 +162,53 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 getTrailLength: () => effects.trailLength(),
                 getSimulatedRtt: () => net.simulatedRtt,
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
+                simulateBlackout: () => {
+                    const serverNow = net.serverNow();
+                    if (
+                        !import.meta.env.DEV ||
+                        net.state !== 'online' ||
+                        !roundState ||
+                        roundState.phase !== 'playing' ||
+                        serverNow === null
+                    )
+                        return false;
+                    roundState = { ...roundState, endsAt: serverNow + ROUND.blackoutSecondsLeft * 1000 };
+                    finalShown = false;
+                    finalDone = false;
+                    finalRelocationResult = 'idle';
+                    return true;
+                },
+                simulateFinalMinute: () => {
+                    const serverNow = net.serverNow();
+                    if (
+                        !import.meta.env.DEV ||
+                        net.state !== 'online' ||
+                        !roundState ||
+                        roundState.phase !== 'playing' ||
+                        serverNow === null
+                    )
+                        return false;
+                    roundState = { ...roundState, endsAt: serverNow + ROUND.finalSecondsLeft * 1000 };
+                    finalShown = false;
+                    finalDone = false;
+                    finalRelocationResult = 'idle';
+                    return true;
+                },
+                simulateRoundResult: (outcome, mine) => {
+                    const now = performance.now();
+                    const presentation = feedback.submit(
+                        { id: `lab-round:${outcome}:${now}`, kind: 'round-result' },
+                        now
+                    );
+                    if (!presentation.accepted) return;
+                    sound.roundEnd(mine, outcome);
+                    ui.roundEnd({
+                        winner: outcome === 'draw' ? null : mine ? nickname || '你' : '测试对手',
+                        mine,
+                        outcome,
+                        nextIn: 8
+                    });
+                },
                 position: () => {
                     const p = camera.getPosition();
                     return [p.x, p.y, p.z];
@@ -1829,18 +1876,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             /** Browser tests isolate traversal from patrol timing while teacher behavior is tested separately. */
             setTeacherGrace: (milliseconds: number) => {
                 teacherGraceUntil = performance.now() + Math.max(0, milliseconds);
-            },
-            /** Moves the local round clock to its final minute to exercise the complete transition in browser QA. */
-            simulateFinalMinute: () => {
-                if (!import.meta.env.DEV) return false;
-                const serverNow = net.serverNow();
-                if (net.state !== 'online' || !roundState || roundState.phase !== 'playing' || serverNow === null)
-                    return false;
-                roundState = { ...roundState, endsAt: serverNow + ROUND.finalSecondsLeft * 1000 };
-                finalShown = false;
-                finalDone = false;
-                finalRelocationResult = 'idle';
-                return true;
             },
             inspect: startInspect,
             holdInspect: (u: number | null) => (inspectHold = u),

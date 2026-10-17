@@ -11,10 +11,10 @@ const API = 'http://127.0.0.1:8787';
 // The room only answers pages from allowed origins.
 const ORIGIN = { origin: 'http://127.0.0.1:5174' };
 
-const open = async (browser: Browser) => {
+const open = async (browser: Browser, audioLab = false) => {
     const page = await (await browser.newContext()).newPage();
     const errors = collectErrors(page);
-    await page.goto(`/?server=${encodeURIComponent(SERVER)}`);
+    await page.goto(`/?server=${encodeURIComponent(SERVER)}${audioLab ? '&audioLab=1' : ''}`);
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     return { page, errors };
@@ -65,11 +65,21 @@ test('lifetime board shows eliminations and loss-only win-rate indices, includin
 test('the live final-minute trigger announces the showdown and relocates the survivor to the arena', async ({
     browser
 }) => {
-    const { page, errors } = await open(browser);
+    const { page, errors } = await open(browser, true);
     await enter(page, `终局${Date.now().toString(36).slice(-6)}`, 'secret-789');
     await expect.poll(() => state(page).then((value) => value.round?.phase)).toBe('playing');
     const before = await page.evaluate(() => window.__MOONSHOT__!.position());
-    expect(await page.evaluate(() => window.__MOONSHOT__!.match.simulateFinalMinute())).toBe(true);
+    await page.keyboard.press('p');
+    await page.locator('[data-phase="blackout"]').click();
+    await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的终局夜晚');
+    await page.locator('.audio-lab [data-action="close"]').click();
+    await expect.poll(() => state(page).then((value) => value.power.dark)).toBe(true);
+    await expect(page.locator('#broadcast')).toContainText('终局夜晚开始');
+
+    await page.keyboard.press('p');
+    await page.locator('[data-phase="final"]').click();
+    await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的最终对决');
+    await page.locator('.audio-lab [data-action="close"]').click();
     await expect.poll(() => state(page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
     await expect

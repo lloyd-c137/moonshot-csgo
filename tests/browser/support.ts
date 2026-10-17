@@ -18,6 +18,7 @@ declare global {
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
             sceneTransition: (relocate: () => void) => void;
+            showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
             raycast: (from: number[], to: number[]) => string | null;
             setLook: (pitch: number, yaw: number) => void;
             dressing: { doors: number; furniture: number; lights: number };

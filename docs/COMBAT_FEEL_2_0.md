@@ -49,6 +49,7 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | Targeted multiplayer combat browser test after throw animation | Two authenticated local clients; `thrown` event enters `Frisbee_Throw`, remote `upperarm_r` quaternion changes from its pre-throw value, then one confirmed body-hit reaction follows | PASS, 1/1; [rendered throw capture](evidence/combat-feel-2.0/remote-throw-release.png) shows the remote rig and disc in the actual campus |
 | Full development browser suite, one worker | 15/15 passed in 2.5 min, including all 14 bidirectional doorway crossings, S308/S309 route, control flow, multiplayer hit/elimination, paired execution, and power-switch scenarios | PASS |
 | Round outcome tests | Golden-disc win, last-survivor win, draw, and the corresponding result copy; targeted room/UI tests | PASS, 17/17 |
+| Round-result rendered visual review | Browser-rendered golden win, last-survivor win, golden loss and draw cards; title, kicker and accent color are checked for each outcome | PASS, targeted browser visual test 1/1 |
 | `npm test` after round outcome changes | Full unit suite including new no-holder draw and result-copy coverage | PASS, 86/86 |
 | `npm run build` after round outcome changes | Production bundle completed; 1,886.64 kB main JS (484.01 kB gzip), existing >500 kB chunk warning | PASS with size warning |
 | Multiplayer browser regression after round outcome changes | Two-client leaderboard and combat/account flow | PASS, 2/2 |
@@ -85,7 +86,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | Camera impulses / reduced motion | IN PROGRESS | Random per-frame camera jitter and random yaw kick removed; bounded damped position/FOV response leaves mouse aim unchanged. Off/Low/Normal mode and settings persistence are implemented. Existing unit coverage checks bounds, deterministic damping and disabled mode; an added expiry-frame assertion prevents a final residual offset. Browser QA remains pending. |
 | Audio buses, attenuation, voice caps | IN PROGRESS | Combat/confirmation/environment/UI buses, master/combat/confirmation volumes, confirmation ducking, per-bus source caps, and ended-source cleanup implemented. Owner-selected clips remain intact; browser/performance evidence pending. |
 | HUD hierarchy and duplicate suppression | IN PROGRESS | Hit/kill/golden/personal-damage/round-result priority windows and server-event dedupe are integrated. More combat and simultaneous-event browser coverage remains. |
-| Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct copy, outcome colors, and audio cue. Unit and room tests pass; rendered visual review of each result card remains. |
+| Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct copy, outcome colors, and audio cue. Unit and room tests pass, and the development browser rendered and checked all three outcomes plus a loss state. Actual round-event timing and audio remain part of live play review. |
 | Blackout/final-showdown/victory presentation | PARTIAL | Blackout ambience, pooled lights, fixture panels and sun fade over 0.65 s; arena floodlights fade over 420 ms. Final relocation now runs behind a short non-interactive curtain with stale-round/alive-state checks before teleporting. The curtain sequence and blackout route are browser-tested; the live last-minute trigger and round-result presentation still need visual review. Sky color still changes immediately. |
 | Combat Feel Lab | PARTIAL | Development-only P panel now has repeatable body-hit, headshot, normal-elimination and golden-elimination presets that invoke the same local dummy response path as practice hits/execution. The broader latency, trail, particle, HUD-duration, blackout, final-showdown, victory and two-player execution preset set remains pending. |
 | Performance / 2–32 player profiling | NOT RUN | No frame-time, draw-call, memory, or 2–32-player measurements recorded. Trail frequency is capped in code, but that is not a performance result. |
@@ -108,7 +109,11 @@ Captured in an independent Chromium window with real rendering enabled at 1440×
 - Respawn: [dummy-respawn.png](evidence/combat-feel-2.0/dummy-respawn.png)
 - Networked frisbee release: [remote-throw-release.png](evidence/combat-feel-2.0/remote-throw-release.png)
 - Victim-side body damage: [victim-damage.png](evidence/combat-feel-2.0/victim-damage.png)
+- Golden-disc win result: [round-result-golden-win.png](evidence/combat-feel-2.0/round-result-golden-win.png)
+- Last-survivor win result: [round-result-survivor-win.png](evidence/combat-feel-2.0/round-result-survivor-win.png)
+- Loss result: [round-result-loss.png](evidence/combat-feel-2.0/round-result-loss.png)
+- Draw result: [round-result-draw.png](evidence/combat-feel-2.0/round-result-draw.png)
 
 ## Outstanding acceptance
 
-The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, final-arena relocation and result-card presentation, the remaining Combat Feel Lab scenarios, audio/FX performance measurements, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.
+The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, the live final-minute relocation, audio timing during real round outcomes, the remaining Combat Feel Lab scenarios, audio/FX performance measurements, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.

@@ -536,6 +536,13 @@ const boot = async () => {
             roomId: () => roomTracker.current?.id ?? null,
             match: match.debug,
             sceneTransition: (relocate) => shell.arenaTransition(relocate),
+            showRoundResult: (outcome, mine) =>
+                shell.roundEnd({
+                    outcome,
+                    mine,
+                    winner: mine ? '视觉验证玩家' : outcome === 'draw' ? null : '视觉验证玩家',
+                    nextIn: 12
+                }),
             lighting: () => ({
                 pooled: lightPool.pool.map((light) => light.light!.intensity),
                 panels: app.root

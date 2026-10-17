@@ -137,7 +137,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let labExecution: Execution | null = null;
     let labGolden = false;
     let labUi: AudioLabUi | undefined;
-    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void = () => undefined;
+    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void = () =>
+        undefined;
     if (audioLab) {
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
@@ -150,6 +151,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     labDummyHeight = CHARACTER_SOURCE_HEIGHT * scale;
                     avatars.setScale(labTargetId, scale);
                 },
+                setCameraKick: (scale) => cameraImpulses.setLabScale(scale),
+                setEffectIntensity: (intensity) => effects.setLabIntensity(intensity),
+                getCameraKick: () => cameraImpulses.scale,
+                getEffectIntensity: () => effects.intensity(),
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
                 position: () => {
                     const p = camera.getPosition();
@@ -327,11 +332,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
         const out = head || execution || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
         labHp = out ? 0 : labHp - 1;
         const now = performance.now();
-        const at: V3 = [
-            labTargetPose.p[0],
-            labTargetPose.p[1] + (head ? 1.55 : 0.9),
-            labTargetPose.p[2]
-        ];
+        const at: V3 = [labTargetPose.p[0], labTargetPose.p[1] + (head ? 1.55 : 0.9), labTargetPose.p[2]];
         if (out) {
             labRespawnAt = now + RESPAWN_SECONDS * 1000;
             poses.delete(labTargetId);
@@ -1782,6 +1783,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 hitsPredicted,
                 activeAudioVoices: sound.voiceCount(),
                 cameraMotionScale: cameraImpulses.scale,
+                effectIntensity: effects.intensity(),
                 practiceDummy: audioLab ? { hp: labHp, position: [...labTargetPose.p], respawnAt: labRespawnAt } : null,
                 practiceExecution: labExecution ? { id: labExecution.id, endsAt: labExecution.endsAt } : null,
                 inspecting: inspectSince !== null,

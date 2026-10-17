@@ -41,6 +41,8 @@ export const createEffects = (app: AppBase) => {
     const particles: Particle[] = [];
     const free: Particle[] = [];
     let density = 0.65;
+    let qualityDensity = 0.65;
+    let labIntensity: number | null = null;
     let reducedFlashes = false;
     let tracerTick = 0;
     const make = (ring: boolean) => {
@@ -199,8 +201,15 @@ export const createEffects = (app: AppBase) => {
             }
         },
         setQuality(quality: 'low' | 'medium' | 'high') {
-            density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : 1;
+            qualityDensity = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : 1;
+            density = labIntensity ?? qualityDensity;
         },
+        /** Temporary developer-only override for repeatable visual comparisons. */
+        setLabIntensity(value: number | null) {
+            labIntensity = value === null ? null : Math.max(0, Math.min(1.5, value));
+            density = labIntensity ?? qualityDensity;
+        },
+        intensity: () => density,
         setReducedFlashes(value: boolean) {
             reducedFlashes = value;
         },

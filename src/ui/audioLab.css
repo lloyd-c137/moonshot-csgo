@@ -109,6 +109,31 @@
     grid-column: 1 / -1;
     color: #b8c6b6;
 }
+.audio-lab-tuning {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 18px;
+    margin: 14px 0;
+    padding: 12px 16px;
+    background: #202b24;
+    border: 1px solid #425647;
+    border-radius: 9px;
+}
+.audio-lab-tuning label {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 6px 12px;
+}
+.audio-lab-tuning input {
+    grid-column: 1 / -1;
+    width: 100%;
+    accent-color: #c8f2bc;
+}
+.audio-lab-tuning small {
+    grid-column: 1 / -1;
+    color: #b8c6b6;
+}
 .audio-lab-scenarios {
     display: flex;
     flex-wrap: wrap;
@@ -170,6 +195,9 @@
 }
 @media (max-width: 700px) {
     .audio-lab-rows {
+        grid-template-columns: 1fr;
+    }
+    .audio-lab-tuning {
         grid-template-columns: 1fr;
     }
 }

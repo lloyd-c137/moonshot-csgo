@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 import './support';
 
-test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({ page }) => {
+test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({
+    page
+}) => {
     await page.goto('/?audioLab=1&offline=1');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.keyboard.press('p');
@@ -15,13 +17,35 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.locator('[data-scenario="head"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 爆头淘汰');
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2, {
-        timeout: 6000
-    });
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp))
+        .toBe(2, {
+            timeout: 6000
+        });
 
     await page.locator('[data-scenario="golden"]').click();
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
+
+    const originalTuning = await page.evaluate(() => window.__MOONSHOT__!.match.state());
+    await page.locator('[data-camera-kick]').evaluate((element: HTMLInputElement) => {
+        element.value = '1.25';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.locator('[data-effect-intensity]').evaluate((element: HTMLInputElement) => {
+        element.value = '1.2';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale)).toBe(1.25);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().effectIntensity)).toBe(1.2);
+    await page.screenshot({ path: 'test-results/combat-feel-lab-tuning.png' });
+    await page.locator('.audio-lab [data-action="close"]').click();
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale))
+        .toBe(originalTuning.cameraMotionScale);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().effectIntensity))
+        .toBe(originalTuning.effectIntensity);
 });
 
 test('offline target stays visible after entry, uses selected defaults and respawns in place', async ({ page }) => {

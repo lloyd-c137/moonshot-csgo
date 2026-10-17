@@ -6,6 +6,7 @@ type Impulse = { age: number; strength: number; phase: number };
 export class CameraImpulseController {
     private readonly impulses: Impulse[] = [];
     private mode: CameraMotion = 'low';
+    private labScale: number | null = null;
     private sequence = 0;
 
     setMode(mode: CameraMotion) {
@@ -13,16 +14,23 @@ export class CameraImpulseController {
         if (mode === 'off') this.impulses.length = 0;
     }
 
+    /** Temporary developer-only override; null restores the user's selected motion mode. */
+    setLabScale(value: number | null) {
+        this.labScale = value === null ? null : Math.max(0, Math.min(1.5, value));
+        if (this.scale === 0) this.impulses.length = 0;
+    }
+
     get scale() {
-        return this.mode === 'off' ? 0 : this.mode === 'low' ? 0.38 : 1;
+        return this.labScale ?? (this.mode === 'off' ? 0 : this.mode === 'low' ? 0.38 : 1);
     }
 
     trigger(strength: number) {
-        if (this.mode === 'off') return;
+        if (this.scale === 0) return;
         if (this.impulses.length >= 8) {
-            const weakest = this.impulses.reduce((lowest, item, index, all) =>
-                item.strength < all[lowest].strength ? index : lowest
-            , 0);
+            const weakest = this.impulses.reduce(
+                (lowest, item, index, all) => (item.strength < all[lowest].strength ? index : lowest),
+                0
+            );
             this.impulses.splice(weakest, 1);
         }
         this.sequence++;
@@ -34,7 +42,7 @@ export class CameraImpulseController {
     }
 
     update(deltaTime: number): [number, number] {
-        if (this.mode === 'off') return [0, 0];
+        if (this.scale === 0) return [0, 0];
         let x = 0;
         let y = 0;
         const scale = this.scale;

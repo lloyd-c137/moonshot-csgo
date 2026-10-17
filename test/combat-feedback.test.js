@@ -47,3 +47,20 @@ test('camera impulses are bounded, deterministic, damped and do not alter look s
     assert.equal(camera.scale, 0);
     assert.deepEqual(camera.update(1 / 60), [0, 0]);
 });
+
+test('developer camera-kick override is clamped and restores the selected motion mode', () => {
+    const camera = new CameraImpulseController();
+    camera.setMode('off');
+    assert.equal(camera.scale, 0);
+    camera.trigger(1);
+    assert.deepEqual(camera.update(1 / 60), [0, 0]);
+
+    camera.setLabScale(9);
+    assert.equal(camera.scale, 1.5);
+    camera.trigger(1);
+    assert.notDeepEqual(camera.update(1 / 60), [0, 0]);
+
+    camera.setLabScale(null);
+    assert.equal(camera.scale, 0);
+    assert.deepEqual(camera.update(1 / 60), [0, 0]);
+});

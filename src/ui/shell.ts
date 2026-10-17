@@ -5,6 +5,7 @@ import { formatWinRate } from './formatStats';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
 import type { MapMarkers } from './minimap';
+import { roundResultCopy } from './roundResult';
 import type { Settings } from './settings';
 import { SETTING_RANGES } from './settings';
 import './theme.css';
@@ -162,7 +163,7 @@ const MARKUP = `
       <span id="detention-detail">罚站 4.0 秒</span>
       <i class="detention-bar"><i id="detention-fill"></i></i>
     </div>
-    <div class="round-end" id="round-end" hidden>
+    <div class="round-end" id="round-end" data-outcome="draw" hidden>
       <small id="round-end-kicker">本局结束</small>
       <strong id="round-end-title"></strong>
       <span id="round-end-detail"></span>
@@ -477,18 +478,36 @@ export const createUi = () => {
                     actions.settingsChanged({ ...current });
                 }
             );
-            bindSlider('master-volume', { min: 0, max: 1, step: 0.01 }, settings.masterVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
-                current.masterVolume = v;
-                actions.settingsChanged({ ...current });
-            });
-            bindSlider('combat-volume', { min: 0, max: 1, step: 0.01 }, settings.combatVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
-                current.combatVolume = v;
-                actions.settingsChanged({ ...current });
-            });
-            bindSlider('confirmation-volume', { min: 0, max: 1, step: 0.01 }, settings.confirmationVolume, (v) => `${Math.round(v * 100)}%`, (v) => {
-                current.confirmationVolume = v;
-                actions.settingsChanged({ ...current });
-            });
+            bindSlider(
+                'master-volume',
+                { min: 0, max: 1, step: 0.01 },
+                settings.masterVolume,
+                (v) => `${Math.round(v * 100)}%`,
+                (v) => {
+                    current.masterVolume = v;
+                    actions.settingsChanged({ ...current });
+                }
+            );
+            bindSlider(
+                'combat-volume',
+                { min: 0, max: 1, step: 0.01 },
+                settings.combatVolume,
+                (v) => `${Math.round(v * 100)}%`,
+                (v) => {
+                    current.combatVolume = v;
+                    actions.settingsChanged({ ...current });
+                }
+            );
+            bindSlider(
+                'confirmation-volume',
+                { min: 0, max: 1, step: 0.01 },
+                settings.confirmationVolume,
+                (v) => `${Math.round(v * 100)}%`,
+                (v) => {
+                    current.confirmationVolume = v;
+                    actions.settingsChanged({ ...current });
+                }
+            );
             const cameraMotion = $<HTMLSelectElement>('#camera-motion');
             cameraMotion.value = settings.cameraMotion;
             cameraMotion.addEventListener('change', () => {
@@ -588,16 +607,22 @@ export const createUi = () => {
             $('#detention-fill').style.width = `${(seconds / total) * 100}%`;
         },
         /** End-of-round banner (null hides it). */
-        roundEnd: (result: { winner: string | null; mine: boolean; nextIn: number } | null) => {
+        roundEnd: (
+            result: {
+                winner: string | null;
+                mine: boolean;
+                outcome: 'golden-disc' | 'last-survivor' | 'draw';
+                nextIn: number;
+            } | null
+        ) => {
             const element = $('#round-end');
             element.hidden = result === null;
             if (!result) return;
             element.dataset.mine = String(result.mine);
-            $('#round-end-title').textContent = result.mine
-                ? '你赢得了本局！'
-                : result.winner
-                  ? `${result.winner} 赢得本局`
-                  : '本局无人守住金飞盘';
+            element.dataset.outcome = result.outcome;
+            const copy = roundResultCopy(result);
+            $('#round-end-kicker').textContent = copy.kicker;
+            $('#round-end-title').textContent = copy.title;
             $('#round-end-detail').textContent = `${Math.ceil(result.nextIn)} 秒后开始新一局 · 金飞盘将重新刷新`;
         },
         /** Watching mode (out for the round): who is being watched, or why; null hides it. */

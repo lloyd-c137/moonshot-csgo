@@ -14,7 +14,7 @@ Current signal path:
 4. `server/room.ts` accepts or rejects the claim. An accepted `struck` carries its originating `throwId`; a rejected claim returns `hitRejected` to its claimant.
 5. Only an accepted `struck` triggers the existing confirmed hit, kill, audio, score and round feedback.
 
-The protocol is version 9 for the acknowledgement/rejection contract. Older clients are rejected by the existing version gate; no compatibility shim is claimed.
+The protocol is version 10: version 9 added authoritative hit acknowledgement/rejection, and version 10 adds the server-authored round outcome (`golden-disc`, `last-survivor`, or `draw`). Older clients and workers are rejected by the existing version gate; no compatibility shim is claimed.
 
 ## Owner-selected combat audio
 
@@ -48,6 +48,11 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` after throw animation | Throw track and remote-avatar test changes included; 84/84 unit tests | PASS; existing bundle-size warning remains |
 | Targeted multiplayer combat browser test after throw animation | Two authenticated local clients; `thrown` event enters `Frisbee_Throw`, remote `upperarm_r` quaternion changes from its pre-throw value, then one confirmed body-hit reaction follows | PASS, 1/1 |
 | Full development browser suite, one worker | 15/15 passed in 2.5 min, including all 14 bidirectional doorway crossings, S308/S309 route, control flow, multiplayer hit/elimination, paired execution, and power-switch scenarios | PASS |
+| Round outcome tests | Golden-disc win, last-survivor win, draw, and the corresponding result copy; targeted room/UI tests | PASS, 17/17 |
+| `npm test` after round outcome changes | Full unit suite including new no-holder draw and result-copy coverage | PASS, 86/86 |
+| `npm run build` after round outcome changes | Production bundle completed; 1,886.64 kB main JS (484.01 kB gzip), existing >500 kB chunk warning | PASS with size warning |
+| Multiplayer browser regression after round outcome changes | Two-client leaderboard and combat/account flow | PASS, 2/2 |
+| Production smoke after round outcome changes | First run collided with a second simultaneous build/preview run and could not connect to port 4174; rerun against a single preview server passed the FF-01/physics/pointer-lock entry flow | PASS, 1/1 on clean rerun; initial failure was test-process contention |
 | E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
 | Live rendered training-dummy capture | Separate Chromium window against local Vite; idle, confirmed body reaction, death reaction, fixed-position respawn; zero page errors | PASS for the observed sequence |
 | Baseline `typecheck` and `lint` | Ran after smoke correction | PASS |
@@ -69,7 +74,8 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | Camera impulses / reduced motion | IN PROGRESS | Random per-frame camera jitter and random yaw kick removed; bounded damped position/FOV response leaves mouse aim unchanged. Off/Low/Normal mode and settings persistence are implemented. Unit test passes; browser QA pending. |
 | Audio buses, attenuation, voice caps | IN PROGRESS | Combat/confirmation/environment/UI buses, master/combat/confirmation volumes, confirmation ducking, per-bus source caps, and ended-source cleanup implemented. Owner-selected clips remain intact; browser/performance evidence pending. |
 | HUD hierarchy and duplicate suppression | IN PROGRESS | Hit/kill/golden/personal-damage/round-result priority windows and server-event dedupe are integrated. More combat and simultaneous-event browser coverage remains. |
-| Blackout/final-showdown/victory presentation | NOT RUN | Pending. |
+| Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct kicker/title and audio cue. Unit and room tests pass; rendered visual review of each result card remains. |
+| Blackout/final-showdown/victory presentation | PARTIAL | Round-end results now distinguish win causes and draw. Blackout transition and final-arena choreography remain unchanged and unverified. |
 | Combat Feel Lab | NOT RUN | Existing audio lab not yet extended. |
 | Performance / 2–32 player profiling | NOT RUN | No frame-time, draw-call, memory, or 2–32-player measurements recorded. Trail frequency is capped in code, but that is not a performance result. |
 | Subjective human playtest | NOT RUN | No human acceptance claim. |

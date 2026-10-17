@@ -441,9 +441,18 @@ export const createSound = () => {
                 }
             }, 'environment'),
         /** Round over: a triumphant chord if you won, a falling one otherwise. */
-        roundEnd: (won: boolean) =>
+        roundEnd: (won: boolean, outcome: 'golden-disc' | 'last-survivor' | 'draw') =>
             play((audio, now) => {
-                const notes = won ? [523, 659, 784, 1046, 1318] : [392, 349, 311, 262];
+                const notes =
+                    outcome === 'draw'
+                        ? [392, 370, 349]
+                        : won
+                          ? outcome === 'golden-disc'
+                              ? [523, 659, 784, 1046, 1318]
+                              : [440, 554, 659, 880, 1175]
+                          : outcome === 'golden-disc'
+                            ? [392, 349, 311, 262]
+                            : [349, 330, 294, 220];
                 notes.forEach((f, i) => tone(audio, bus(), 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
             }, 'confirmation'),
         /** A new round starts. */

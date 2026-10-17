@@ -12,7 +12,7 @@ import type { Execution } from '../gameplay/execution.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -81,10 +81,17 @@ export const DETENTION_SECONDS = 4;
 
 /** Where the golden disc is: lying somewhere (`at`), or carried by `holder`. */
 export type GoldState = { holder: string | null; at: Vec3Tuple };
+export type RoundOutcome = 'golden-disc' | 'last-survivor' | 'draw';
 /** The current round: playing until `endsAt` (room clock), or ended with a winner (name, or null) until `nextAt`. */
 export type RoundState =
     | { phase: 'playing'; endsAt: number }
-    | { phase: 'ended'; winner: string | null; winnerId: string | null; nextAt: number };
+    | {
+          phase: 'ended';
+          winner: string | null;
+          winnerId: string | null;
+          outcome: RoundOutcome;
+          nextAt: number;
+      };
 
 export type Vec3Tuple = [number, number, number];
 

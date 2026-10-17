@@ -13,6 +13,7 @@ import type {
     ClientMessage,
     GroundDisc,
     GoldState,
+    RoundOutcome,
     RoundState,
     PlayerPose,
     PlayerSummary,
@@ -564,7 +565,12 @@ export class Room {
         if (!this.blackout(now) || this.round?.phase !== 'playing') return;
         const standing = [...this.players.values()].filter((each) => !each.spectating);
         if (standing.length > 1 || this.players.size < 2) return;
-        this.endRound(now, standing[0] ?? null, standing[0] ? `${standing[0].name} 是最后的幸存者，赢得本局！` : null);
+        this.endRound(
+            now,
+            standing[0] ?? null,
+            standing[0] ? `${standing[0].name} 是最后的幸存者，赢得本局！` : null,
+            standing[0] ? 'last-survivor' : 'draw'
+        );
     }
 
     // ---------- rounds and the golden disc ----------
@@ -601,13 +607,18 @@ export class Room {
         if (!this.round || !this.players.size) return;
         if (this.round.phase === 'playing' && now >= this.round.endsAt) {
             const holder = this.gold.holder ? this.players.get(this.gold.holder) : undefined;
-            this.endRound(now, holder ?? null, holder ? `${holder.name} 守住了金飞盘，赢得本局！` : null);
+            this.endRound(
+                now,
+                holder ?? null,
+                holder ? `${holder.name} 守住了金飞盘，赢得本局！` : null,
+                holder ? 'golden-disc' : 'draw'
+            );
         } else if (this.round.phase === 'ended' && now >= this.round.nextAt) {
             this.startRound(now);
         }
     }
 
-    private endRound(now: number, winner: Player | null, line: string | null) {
+    private endRound(now: number, winner: Player | null, line: string | null, outcome: RoundOutcome) {
         if (this.round?.phase !== 'playing') return;
         this.cancelAllExecutions('本局结束');
         for (const name of this.roundParticipants) {
@@ -626,6 +637,7 @@ export class Room {
             phase: 'ended',
             winner: winner?.name ?? null,
             winnerId: winner?.id ?? null,
+            outcome,
             nextAt: now + ROUND.intermissionSeconds * 1000
         };
         this.out.all({ type: 'round', round: this.round, scores: this.scores() });

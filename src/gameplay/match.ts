@@ -730,7 +730,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             if (next.phase === 'ended') {
                 const result = feedback.submit({ id: `round:${next.nextAt}`, kind: 'round-result' }, performance.now());
                 const mine = next.winnerId === selfId();
-                if (result.accepted) sound.roundEnd(mine);
+                if (result.accepted) sound.roundEnd(mine, next.outcome);
             } else if (was?.phase === 'ended') {
                 sound.roundStart();
                 ui.notify('新一局开始！争夺金飞盘');
@@ -1403,7 +1403,12 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 const left = Math.max(0, (current.nextAt - roomMs) / 1000);
                 if (Math.ceil(left) !== roundEndSecond) {
                     roundEndSecond = Math.ceil(left);
-                    ui.roundEnd({ winner: current.winner, mine: current.winnerId === me, nextIn: left });
+                    ui.roundEnd({
+                        winner: current.winner,
+                        mine: current.winnerId === me,
+                        outcome: current.outcome,
+                        nextIn: left
+                    });
                 }
             }
         } else {

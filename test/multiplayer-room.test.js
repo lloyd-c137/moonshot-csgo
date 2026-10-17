@@ -331,6 +331,7 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
         .at(-1);
     assert.equal(ended.round.phase, 'ended');
     assert.equal(ended.round.winner, 'B');
+    assert.equal(ended.round.outcome, 'golden-disc');
     room.tick(ROUND.roundSeconds * 1000 + ROUND.intermissionSeconds * 1000 + 2);
     const next = inbox
         .get('a')
@@ -507,6 +508,7 @@ test('blackout: eliminations are final, the guard can spot players, the last one
         .at(-1);
     assert.equal(ended.round.phase, 'ended');
     assert.equal(ended.round.winner, 'A');
+    assert.equal(ended.round.outcome, 'last-survivor');
     // The next round brings everyone back.
     room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 1);
     room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 100);
@@ -516,4 +518,32 @@ test('blackout: eliminations are final, the guard can spot players, the last one
         .filter((m) => m.type === 'respawn')
         .map((m) => m.id);
     assert.ok(respawned.includes('b') && respawned.includes('c'), 'the watchers are respawned');
+});
+
+test('a round that ends without a gold holder or final survivor is reported as a draw', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24,
+        null,
+        () => 0
+    );
+    for (const id of ['a', 'b']) {
+        inbox.set(id, []);
+        room.connect(id);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name: id.toUpperCase() }, 0);
+    }
+    room.tick(ROUND.roundSeconds * 1000 + 1);
+    const ended = inbox
+        .get('a')
+        .filter((message) => message.type === 'round')
+        .at(-1);
+    assert.equal(ended.round.winnerId, null);
+    assert.equal(ended.round.outcome, 'draw');
 });

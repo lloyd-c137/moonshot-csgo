@@ -197,7 +197,7 @@ test('only signed-in players may join; they play under their username, keep stat
     room.message('b', { type: 'pose', pose: { p: [6, 0.9, 0], yaw: 0, pitch: 0 } }, 3000);
     for (const [id, at, contact] of [
         [1, 4000, [6, 1.0, 0]],
-        [2, 5000, [6, 1.5, 0]]
+        [2, 5000, [6, 1.7, 0]]
     ]) {
         room.message('a', { type: 'throw', throw: { id, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, at);
         room.message('a', { type: 'hit', throwId: id, target: 'b', at: contact }, at + 300);

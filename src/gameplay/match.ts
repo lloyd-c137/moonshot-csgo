@@ -137,6 +137,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let labExecution: Execution | null = null;
     let labGolden = false;
     let labUi: AudioLabUi | undefined;
+    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden') => void = () => undefined;
     if (audioLab) {
         void import('../ui/audioLab').then(async ({ mountAudioLab }) => {
             labUi = await mountAudioLab({
@@ -149,6 +150,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                     labDummyHeight = CHARACTER_SOURCE_HEIGHT * scale;
                     avatars.setScale(labTargetId, scale);
                 },
+                simulateDummyHit: (scenario) => simulateDummyHit(scenario),
                 position: () => {
                     const p = camera.getPosition();
                     return [p.x, p.y, p.z];
@@ -240,6 +242,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     let nickname = '';
     let inputPaused = false;
     let poses = new Map<string, PlayerPose>();
+    const targets = new Map<string, V3>();
     /** Recent eliminations per killer, for streak announcements. */
     const streaks = new Map<string, { count: number; at: number }>();
     // Feel: FOV punch on release, damped local camera impulses, in-hand disc that winds up and snaps forward.
@@ -316,6 +319,43 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
     const selfId = () => net.id ?? 'local';
     const nameOf = (id: string) =>
         id === 'guard' ? '保安' : id === labTargetId ? '固定测试人偶' : (roster.get(id)?.name ?? '某人');
+    simulateDummyHit = (scenario) => {
+        if (!audioLab || labHp === 0) return;
+        const head = scenario === 'head';
+        const golden = scenario === 'golden' || labGolden;
+        const out = head || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
+        labHp = out ? 0 : labHp - 1;
+        const now = performance.now();
+        const at: V3 = [
+            labTargetPose.p[0],
+            labTargetPose.p[1] + (head ? 1.55 : 0.9),
+            labTargetPose.p[2]
+        ];
+        if (out) {
+            labRespawnAt = now + RESPAWN_SECONDS * 1000;
+            poses.delete(labTargetId);
+            targets.delete(labTargetId);
+        }
+        if (out && golden) sound.snipeConfirm(head, true);
+        else sound.hitConfirm(out, head);
+        effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
+        avatars.flash(labTargetId, now);
+        avatars.react(labTargetId, head, out, labTargetPose, now);
+        cameraImpulses.trigger(out ? 0.4 : 0.16);
+        ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
+        ui.popup(
+            out && golden
+                ? '人偶 · 金飞盘击杀'
+                : head
+                  ? '人偶 · 爆头淘汰'
+                  : out
+                    ? '人偶 · 击杀'
+                    : '人偶 · 身体命中（1/2）',
+            out ? 'kill' : head ? 'head' : 'hit'
+        );
+        labUi?.hit(head, out, golden);
+        hitsClaimed++;
+    };
     const refreshBoard = () => {
         ui.net(netState, roster.size);
         const me = selfId();
@@ -1494,7 +1534,6 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             specialLocations: SPECIAL_LOCATIONS
         };
     };
-    const targets = new Map<string, V3>();
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     return {
         /**
@@ -1592,32 +1631,8 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 (throwId, target, contact: DiscContact) => {
                     const { at } = contact;
                     if (audioLab && target === labTargetId) {
-                        if (labHp === 0) return;
                         const head = at[1] - labTargetPose.p[1] > HEAD_ABOVE;
-                        labHp = head ? 0 : Math.max(0, labHp - 1);
-                        const out = labHp === 0;
-                        if (out) {
-                            labRespawnAt = now + RESPAWN_SECONDS * 1000;
-                            targets.delete(labTargetId);
-                        }
-                        if (out && labGolden) sound.snipeConfirm(head, true);
-                        else sound.hitConfirm(out, head);
-                        effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
-                        avatars.flash(target, performance.now());
-                        avatars.react(target, head, out, poses.get(target), performance.now());
-                        ui.hitMarker(out ? 'kill' : 'hit');
-                        ui.popup(
-                            out && labGolden
-                                ? '人偶 · 金飞盘击杀'
-                                : head
-                                  ? '人偶 · 爆头淘汰'
-                                  : out
-                                    ? '人偶 · 击杀'
-                                    : '人偶 · 身体命中（1/2）',
-                            out ? 'kill' : 'hit'
-                        );
-                        labUi?.hit(head, out, labGolden);
-                        hitsClaimed++;
+                        simulateDummyHit(head ? 'head' : 'body');
                         return;
                     }
                     // Immediate local prediction is visually distinct; the room alone confirms a hit.
@@ -1658,15 +1673,7 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
                 const record = labExecution;
                 labExecution = null;
                 executionView.stop(record.id);
-                labHp = 0;
-                labRespawnAt = now + RESPAWN_SECONDS * 1000;
-                const impact = [record.target.pose.p[0], record.target.pose.p[1] + 0.25, record.target.pose.p[2]] as V3;
-                if (labGolden) sound.snipeConfirm(true, true);
-                else sound.hitConfirm(true, false);
-                effects.burst(impact, colourFor(labTargetId), 'out');
-                ui.hitMarker('kill');
-                ui.popup(labGolden ? '人偶 · 金飞盘处决' : '人偶 · 处决淘汰', 'kill');
-                labUi?.hit(false, true, labGolden);
+                simulateDummyHit(labGolden ? 'golden' : 'elimination');
             }
             const local = executionView.localRecord(selfId());
             ui.executionState(

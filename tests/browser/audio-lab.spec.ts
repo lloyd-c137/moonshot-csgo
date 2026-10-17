@@ -2,6 +2,28 @@ import { expect, test } from '@playwright/test';
 
 import './support';
 
+test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({ page }) => {
+    await page.goto('/?audioLab=1&offline=1');
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab')).toBeVisible();
+
+    await page.locator('[data-scenario="body"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(1);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/2）');
+
+    await page.locator('[data-scenario="head"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 爆头淘汰');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2, {
+        timeout: 6000
+    });
+
+    await page.locator('[data-scenario="golden"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
+});
+
 test('offline target stays visible after entry, uses selected defaults and respawns in place', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

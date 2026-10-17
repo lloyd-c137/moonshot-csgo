@@ -109,6 +109,23 @@
     grid-column: 1 / -1;
     color: #b8c6b6;
 }
+.audio-lab-scenarios {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #202b24;
+    border: 1px solid #425647;
+    border-radius: 9px;
+}
+.audio-lab-scenarios strong {
+    margin-right: 8px;
+}
+.audio-lab-scenarios small {
+    flex-basis: 100%;
+    color: #b8c6b6;
+}
 .audio-lab output {
     margin-left: 8px;
 }

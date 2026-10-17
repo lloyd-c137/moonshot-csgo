@@ -11,9 +11,18 @@ type Options = {
     position: () => [number, number, number];
     setGolden: (value: boolean) => void;
     setDummyScale: (scale: number) => void;
+    simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden') => void;
 };
 
-export const mountAudioLab = async ({ sound, canvas, range, position, setGolden, setDummyScale }: Options) => {
+export const mountAudioLab = async ({
+    sound,
+    canvas,
+    range,
+    position,
+    setGolden,
+    setDummyScale,
+    simulateDummyHit
+}: Options) => {
     const host = document.createElement('div');
     host.innerHTML = `
       <button class="audio-lab-toggle" type="button">音效配置 · P</button>
@@ -21,6 +30,7 @@ export const mountAudioLab = async ({ sound, canvas, range, position, setGolden,
         <header><div><small>MOONSHOT · LOCAL AUDIO LAB</small><h2 id="audio-lab-title">拆分音效 · 游戏内对比</h2></div><button data-action="close" type="button">关闭</button></header>
         <p>金飞盘击杀候选来自第一段视频的片段 06；破空候选来自新视频，作用于普通与狙击投掷释放声。选“原有音效”使用生产默认配置。按 P 暂停并切换。</p>
         <label class="audio-lab-scale">测试人偶高度 <output data-dummy-height>2.10 m</output><input data-dummy-scale type="range" min="0.60" max="2.10" step="0.05" value="2.10"><small>仅调整本地测试人偶；拖动比较不同高度，其他角色与碰撞判定不变。</small></label>
+        <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><small>直接驱动固定人偶的本地命中、动作、特效和音效流程，不影响战绩；人偶死亡后原地复活。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
@@ -40,6 +50,11 @@ export const mountAudioLab = async ({ sound, canvas, range, position, setGolden,
         const height = Number(dummyScale.value);
         dummyHeight.value = `${height.toFixed(2)} m`;
         setDummyScale(height / 1.829);
+    });
+    host.querySelectorAll<HTMLButtonElement>('[data-scenario]').forEach((button) => {
+        button.addEventListener('click', () =>
+            simulateDummyHit(button.dataset.scenario as 'body' | 'head' | 'elimination' | 'golden')
+        );
     });
     host.querySelector<HTMLInputElement>('[data-golden]')!.addEventListener('change', (event) => {
         setGolden((event.target as HTMLInputElement).checked);

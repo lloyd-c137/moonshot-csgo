@@ -55,6 +55,7 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | Production smoke after round outcome changes | First run collided with a second simultaneous build/preview run and could not connect to port 4174; rerun against a single preview server passed the FF-01/physics/pointer-lock entry flow | PASS, 1/1 on clean rerun; initial failure was test-process contention |
 | Blackout/floodlight fade browser regression | Local blackout visibly passes through nonzero pooled-light and fixture intensity before reaching zero; repair restores lighting; two clients receive the same authoritative outage/repair route | PASS, `tests/browser/power.spec.ts` 2/2 |
 | Typecheck/lint/build after lighting transition | TS client and Worker checks, ESLint, production bundle | PASS; bundle 1,887.05 kB raw / 484.27 kB gzip with existing chunk warning |
+| Combat Feel Lab dummy presets | Development-only P panel buttons exercise shared dummy body-hit, headshot, normal elimination and golden-elimination feedback; browser test checks hit state, kill copy, respawn and golden confirmation | PASS, targeted browser test 1/1 |
 | E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
 | Live rendered training-dummy capture | Separate Chromium window against local Vite; idle, confirmed body reaction, death reaction, fixed-position respawn; zero page errors | PASS for the observed sequence |
 | Baseline `typecheck` and `lint` | Ran after smoke correction | PASS |
@@ -78,7 +79,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | HUD hierarchy and duplicate suppression | IN PROGRESS | Hit/kill/golden/personal-damage/round-result priority windows and server-event dedupe are integrated. More combat and simultaneous-event browser coverage remains. |
 | Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct kicker/title and audio cue. Unit and room tests pass; rendered visual review of each result card remains. |
 | Blackout/final-showdown/victory presentation | PARTIAL | Blackout ambience, pooled lights, fixture panels and sun fade over 0.65 s; arena floodlights fade over 420 ms. Browser test checks the blackout light transition and multiplayer repair route. Sky color still changes immediately; final arena relocation is still abrupt; round-result presentation has not had visual review. |
-| Combat Feel Lab | NOT RUN | Existing audio lab not yet extended. |
+| Combat Feel Lab | PARTIAL | Development-only P panel now has repeatable body-hit, headshot, normal-elimination and golden-elimination presets that invoke the same local dummy response path as practice hits/execution. The broader latency, trail, particle, HUD-duration, blackout, final-showdown, victory and two-player execution preset set remains pending. |
 | Performance / 2–32 player profiling | NOT RUN | No frame-time, draw-call, memory, or 2–32-player measurements recorded. Trail frequency is capped in code, but that is not a performance result. |
 | Subjective human playtest | NOT RUN | No human acceptance claim. |
 | Production deploy | NOT RUN | No deployment was authorized or performed. |
@@ -100,4 +101,4 @@ Captured in an independent Chromium window with real rendering enabled at 1440×
 
 ## Outstanding acceptance
 
-The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, blackout/final-showdown presentation audit, audio/FX performance measurements, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.
+The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, final-arena relocation and result-card presentation, the remaining Combat Feel Lab scenarios, audio/FX performance measurements, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.

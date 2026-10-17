@@ -2,8 +2,10 @@
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { canExecute, EXECUTION } from '../src/gameplay/execution.ts';
+import { canExecute, canStartGlobalFinisher, EXECUTION } from '../src/gameplay/execution.ts';
 import type { Execution } from '../src/gameplay/execution.ts';
+import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';
+import type { GlobalFinisher } from '../src/gameplay/finisher/FinisherTypes.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
 import { nearBreaker } from '../src/gameplay/power.ts';
 import type { PowerState } from '../src/gameplay/power.ts';
@@ -29,6 +31,7 @@ import {
     cleanChat,
     cleanName,
     colourFor,
+    DETENTION_SECONDS,
     isHeadHit,
     HEAL_SECONDS,
     MAX_HP,
@@ -71,10 +74,18 @@ type Player = Omit<PlayerSummary, 'account'> & {
     /** Golden throws so far, and when the golden disc may be thrown again after a burst. */
     goldThrows: number;
     goldCooldownUntil: number;
+    detainedUntil: number;
     /** Recent (arrival − sender clock) samples and the smoothed offset that maps the sender's clock to room time. */
     clockSamples: number[];
     clockOffset: number | null;
     throws: Map<number, { record: ThrowRecord; at: number; scored: boolean; golden: boolean; landed: boolean }>;
+};
+type FinisherPreparation = {
+    requestId: string;
+    intentId: string;
+    targetId: string;
+    preparedAt: number;
+    commitRequested: boolean;
 };
 
 export type Outbox = {
@@ -103,6 +114,16 @@ export class Room {
     readonly executions = new Map<string, Execution>();
     private executionCounter = 0;
     private executedAccounts = new Set<string>();
+    private roundId = 0;
+    private finisherSequence = 0;
+    private finisherCounter = 0;
+    private finisherCooldownUntil = 0;
+    private finisherUses = new Map<string, number>();
+    private finisherRoundUses = 0;
+    private preparations = new Map<string, FinisherPreparation>();
+    private globalFinisher: GlobalFinisher | null = null;
+    /** Match-time offset grows only while the authoritative world is globally frozen. */
+    private matchClockOffset = 0;
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
     /** Discs a newcomer carries (tests raise it to throw repeatedly). */
@@ -124,15 +145,23 @@ export class Room {
         return this.players.size;
     }
 
+    private matchNow(realNow: number) {
+        return (this.globalFinisher ? Math.min(realNow, this.globalFinisher.pauseAt) : realNow) - this.matchClockOffset;
+    }
+
     /** A socket connected; it becomes a player once it says hello. */
     connect(id: string) {
         this.pending.add(id);
     }
 
-    disconnect(id: string, now = Date.now()) {
+    disconnect(id: string, realNow = Date.now()) {
+        const now = this.matchNow(realNow);
         this.pending.delete(id);
         const player = this.players.get(id);
         if (!player) return;
+        if (this.globalFinisher && (this.globalFinisher.attacker.id === id || this.globalFinisher.target.id === id))
+            this.cancelGlobalFinisher('处决参与者断开连接', realNow);
+        this.preparations.delete(id);
         this.cancelExecutionFor(id, '玩家离开');
         // Leaving with the golden disc drops it where they stood.
         if (this.gold.holder === id) this.dropGold(player, now);
@@ -141,6 +170,9 @@ export class Room {
         this.checkLastStanding(now);
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
+            this.globalFinisher = null;
+            this.matchClockOffset = 0;
+            this.preparations.clear();
             this.round = null;
             this.executedAccounts.clear();
             this.power = { pulledAt: null };
@@ -150,7 +182,7 @@ export class Room {
         }
     }
 
-    message(id: string, message: ClientMessage | null, now: number) {
+    message(id: string, message: ClientMessage | null, realNow: number) {
         if (!message) {
             if (this.pending.has(id)) {
                 this.out.to(id, { type: 'rejected', reason: 'protocol' });
@@ -158,9 +190,17 @@ export class Room {
             }
             return;
         }
-        if (message.type === 'hello') return this.hello(id, message.version, message.name, message.token, now);
+        if (message.type === 'hello') return this.hello(id, message.version, message.name, message.token, realNow);
         const player = this.players.get(id);
         if (!player) return;
+        if (message.type === 'ping') return this.out.to(player.id, { type: 'pong', c: message.c });
+        // The room is authoritative: no gameplay or chat message is queued while a finisher owns the world.
+        if (this.globalFinisher) return;
+        if (message.type === 'executionPrepare')
+            return this.prepareFinisher(player, message.requestId, message.target, realNow, this.matchNow(realNow));
+        if (message.type === 'executionCommit') return this.commitFinisher(player, message.requestId, realNow);
+        if (message.type === 'executionCancel') return this.cancelFinisherPreparation(player, message.requestId);
+        const now = this.matchNow(realNow);
         switch (message.type) {
             case 'pose':
             case 'respawned':
@@ -204,16 +244,25 @@ export class Room {
                 this.out.all({ type: 'power', power: this.power });
                 this.system(`${player.name} 拉下了配电室总闸，保安正在前往恢复供电`, now);
                 return;
-            case 'execute':
-                return this.startExecution(player, message.target, now);
-            case 'ping':
-                return this.out.to(player.id, { type: 'pong', c: message.c });
         }
     }
 
     /** Periodic work: respawns that are due, and the pose snapshot. */
-    tick(now: number) {
+    tick(realNow: number) {
+        if (this.globalFinisher) {
+            const finisher = this.globalFinisher;
+            if (finisher.phase === 'pending' && realNow >= finisher.startsAt) {
+                finisher.phase = 'active';
+                finisher.sequence = ++this.finisherSequence;
+                this.out.all({ type: 'globalFinisherState', finisher: structuredClone(finisher) });
+            }
+            if (realNow >= finisher.endsAt) this.finishGlobalFinisher(finisher, realNow);
+            return;
+        }
+        const now = this.matchNow(realNow);
         this.advanceRound(now);
+        this.processFinisherCommits(realNow, now);
+        if (this.globalFinisher) return;
         for (const execution of [...this.executions.values()])
             if (now >= execution.endsAt) this.finishExecution(execution, now);
         this.officeTick(now);
@@ -237,9 +286,9 @@ export class Room {
         }
         const poses: Record<string, StampedPose> = {};
         for (const player of this.players.values()) {
-            if (player.pose && player.alive) poses[player.id] = { ...player.pose, t: player.poseAt };
+            if (player.pose && player.alive) poses[player.id] = { ...player.pose, t: realNow };
         }
-        if (this.players.size) this.out.all({ type: 'snapshot', t: now, poses });
+        if (this.players.size) this.out.all({ type: 'snapshot', t: realNow, poses });
     }
 
     summaries(): PlayerSummary[] {
@@ -254,8 +303,9 @@ export class Room {
         this.out.all({ type: 'profileUpdated', playerId: player.id, avatarId, avatarVersion });
     }
 
-    private hello(id: string, version: number, rawName: string, token: string | undefined, now: number) {
+    private hello(id: string, version: number, rawName: string, token: string | undefined, realNow: number) {
         if (!this.pending.has(id)) return;
+        const now = this.matchNow(realNow);
         this.pending.delete(id);
         if (version !== PROTOCOL_VERSION) {
             this.out.to(id, { type: 'rejected', reason: 'version' });
@@ -265,7 +315,7 @@ export class Room {
             this.out.to(id, { type: 'rejected', reason: 'full' });
             return this.out.close(id);
         }
-        const account = this.accounts?.resolve(token, now) ?? null;
+        const account = this.accounts?.resolve(token, realNow) ?? null;
         // With accounts enabled every player must be signed in (there is no guest entry).
         if (this.accounts && !account) {
             this.out.to(id, { type: 'rejected', reason: 'auth' });
@@ -277,7 +327,7 @@ export class Room {
             for (const other of this.players.values()) {
                 if (other.accountName === account.name) {
                     this.out.close(other.id);
-                    this.disconnect(other.id, now);
+                    this.disconnect(other.id, realNow);
                 }
             }
             name = account.name;
@@ -302,7 +352,7 @@ export class Room {
             lastThrowAt: -Infinity,
             respawnAt: 0,
             hurtAt: 0,
-            spawnedAt: now,
+            spawnedAt: this.matchNow(realNow),
             accountName: account?.name ?? null,
             avatarId: account?.avatarId ?? null,
             avatarVersion: account?.avatarVersion ?? null,
@@ -311,12 +361,13 @@ export class Room {
             spectating: false,
             goldThrows: 0,
             goldCooldownUntil: 0,
+            detainedUntil: 0,
             clockSamples: [],
             clockOffset: null,
             throws: new Map()
         };
         this.players.set(id, player);
-        if (!this.round) this.startRound(now, false);
+        if (!this.round) this.startRound(this.matchNow(realNow), false);
         // Arriving after the lights went out: watch until the next round.
         if (this.blackout(now) || (account && this.executedAccounts.has(account.name))) {
             player.alive = false;
@@ -335,10 +386,12 @@ export class Room {
             round: this.round!,
             power: this.power,
             executions: [...this.executions.values()],
+            globalFinisher: this.globalFinisher ? structuredClone(this.globalFinisher) : null,
             gold: this.gold,
             ammo: player.ammo,
             discs: this.discs,
-            t: now
+            t: realNow,
+            matchTime: this.matchNow(realNow)
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
@@ -356,6 +409,175 @@ export class Room {
 
     private cancelAllExecutions(reason: string) {
         for (const entry of [...this.executions.values()]) this.cancelExecutionFor(entry.attacker.id, reason);
+    }
+
+    private prepareFinisher(attacker: Player, requestId: string, targetId: string, realNow: number, matchNow: number) {
+        const pending = this.preparations.get(attacker.id);
+        if (pending) {
+            if (pending.requestId === requestId)
+                this.out.to(attacker.id, { type: 'executionPrepared', requestId, intentId: pending.intentId });
+            else this.out.to(attacker.id, { type: 'executionPrepareDenied', requestId, reason: '已有处决准备正在进行' });
+            return;
+        }
+        const reason = this.finisherDenial(attacker, targetId, matchNow);
+        if (reason) {
+            this.out.to(attacker.id, { type: 'executionPrepareDenied', requestId, reason });
+            return;
+        }
+        const preparation: FinisherPreparation = {
+            requestId,
+            intentId: `${this.roundId}-${++this.finisherCounter}-${attacker.id}`,
+            targetId,
+            preparedAt: realNow,
+            commitRequested: false
+        };
+        this.preparations.set(attacker.id, preparation);
+        this.out.to(attacker.id, { type: 'executionPrepared', requestId, intentId: preparation.intentId });
+    }
+
+    private commitFinisher(attacker: Player, requestId: string, realNow: number) {
+        const preparation = this.preparations.get(attacker.id);
+        if (!preparation || preparation.requestId !== requestId) {
+            this.out.to(attacker.id, { type: 'executionPrepareDenied', requestId, reason: '处决准备已失效，请重新尝试' });
+            return;
+        }
+        preparation.commitRequested = true;
+        if (realNow >= preparation.preparedAt + GLOBAL_FINISHER_CONFIG.holdDurationMs)
+            this.tryStartGlobalFinisher(attacker, preparation, realNow, this.matchNow(realNow));
+    }
+
+    private cancelFinisherPreparation(attacker: Player, requestId: string) {
+        const preparation = this.preparations.get(attacker.id);
+        if (preparation?.requestId === requestId) this.preparations.delete(attacker.id);
+    }
+
+    private processFinisherCommits(realNow: number, matchNow: number) {
+        const ready = [...this.preparations.entries()]
+            .filter(([, preparation]) =>
+                preparation.commitRequested && realNow >= preparation.preparedAt + GLOBAL_FINISHER_CONFIG.holdDurationMs
+            )
+            .sort((a, b) => a[1].preparedAt - b[1].preparedAt);
+        for (const [id, preparation] of ready) {
+            if (this.globalFinisher) break;
+            const attacker = this.players.get(id);
+            if (attacker) this.tryStartGlobalFinisher(attacker, preparation, realNow, matchNow);
+        }
+        for (const [id, preparation] of this.preparations)
+            if (realNow - preparation.preparedAt > 3000) this.preparations.delete(id);
+    }
+
+    private finisherDenial(attacker: Player, targetId: string, now: number): string | null {
+        const target = this.players.get(targetId);
+        if (this.globalFinisher) return '全场处决正在进行';
+        if (this.round?.phase !== 'playing') return '当前回合不能处决';
+        if (!target || target === attacker) return '没有有效的处决目标';
+        if (!attacker.alive || attacker.spectating || !target.alive || target.spectating)
+            return '处决双方都必须处于存活状态';
+        if (!attacker.pose || !target.pose || now - attacker.poseAt > 1000 || now - target.poseAt > 1000)
+            return '玩家位置数据已过期';
+        if (now - attacker.spawnedAt < SPAWN_PROTECTION * 1000 || now - target.spawnedAt < SPAWN_PROTECTION * 1000)
+            return '出生保护期间不能处决';
+        if (attacker.detainedUntil > now) return '罚站期间不能处决';
+        if (target.detainedUntil > now) return '目标正在罚站，无法发动全场处决';
+        if (this.executionFor(attacker.id) || this.executionFor(target.id)) return '处决双方正在参与其他动作';
+        if ((this.finisherUses.get(attacker.accountName ?? attacker.id) ?? 0) >= GLOBAL_FINISHER_CONFIG.maxPerPlayerPerRound)
+            return '本局处决次数已用完';
+        if (this.finisherRoundUses >= GLOBAL_FINISHER_CONFIG.maxPerRound) return '本局全场处决次数已达上限';
+        if (now < this.finisherCooldownUntil) return '全场处决冷却中';
+        if (this.gold.holder !== attacker.id && attacker.ammo <= 0) return '至少需要一张可用飞盘';
+        if (!canStartGlobalFinisher(attacker.pose, target.pose)) return '需要位于目标身后、靠近目标且无遮挡';
+        return null;
+    }
+
+    private tryStartGlobalFinisher(attacker: Player, preparation: FinisherPreparation, realNow: number, matchNow: number) {
+        if (this.preparations.get(attacker.id) !== preparation || this.globalFinisher) return;
+        const reason = this.finisherDenial(attacker, preparation.targetId, matchNow);
+        if (reason) {
+            this.preparations.delete(attacker.id);
+            this.out.to(attacker.id, {
+                type: 'executionPrepareDenied', requestId: preparation.requestId, reason
+            });
+            return;
+        }
+        const target = this.players.get(preparation.targetId)!;
+        const actor = (entry: Player) => ({
+            id: entry.id,
+            name: entry.name,
+            colour: entry.colour,
+            pose: { ...entry.pose!, p: [...entry.pose!.p] as Vec3Tuple }
+        });
+        const startsAt = realNow + GLOBAL_FINISHER_CONFIG.initialSyncLeadMs;
+        const finisher: GlobalFinisher = {
+            id: `${this.roundId}-finisher-${++this.finisherCounter}`,
+            roundId: this.roundId,
+            sequence: ++this.finisherSequence,
+            phase: 'pending',
+            attacker: actor(attacker),
+            target: actor(target),
+            variant: this.gold.holder === attacker.id ? 'THE_BOOMERANG_GOLD' : 'THE_BOOMERANG',
+            cinematicId: 'THE_BOOMERANG',
+            cameraPlanId: 'COMPACT',
+            pauseAt: realNow,
+            startsAt,
+            endsAt: startsAt + GLOBAL_FINISHER_CONFIG.cinematicDurationMs
+        };
+        this.globalFinisher = finisher;
+        this.preparations.clear();
+        this.out.all({ type: 'globalFinisherStarted', finisher: structuredClone(finisher) });
+    }
+
+    private finishGlobalFinisher(finisher: GlobalFinisher, now: number) {
+        if (this.globalFinisher?.id !== finisher.id || finisher.phase === 'settling') return;
+        finisher.phase = 'settling';
+        finisher.sequence = ++this.finisherSequence;
+        this.out.all({ type: 'globalFinisherState', finisher: structuredClone(finisher) });
+        const attacker = this.players.get(finisher.attacker.id);
+        const target = this.players.get(finisher.target.id);
+        this.matchClockOffset += Math.max(0, now - finisher.pauseAt);
+        this.globalFinisher = null;
+        const matchNow = this.matchNow(now);
+        if (attacker?.alive && target?.alive && this.round?.phase === 'playing') {
+            target.hp = 0;
+            target.alive = false;
+            target.spectating = true;
+            target.respawnAt = 0;
+            target.deaths++;
+            if (target.accountName) this.executedAccounts.add(target.accountName);
+            attacker.kills++;
+            attacker.score += POINTS.elimination;
+            this.out.all({
+                type: 'struck', target: target.id, by: attacker.id, hp: 0, out: true,
+                head: false, sniper: false, gold: false, final: true, execution: true,
+                at: [...target.pose!.p], scores: this.scores()
+            });
+            this.persist(attacker, target, true, matchNow, false);
+            this.fallen(target, matchNow);
+            const key = attacker.accountName ?? attacker.id;
+            this.finisherUses.set(key, (this.finisherUses.get(key) ?? 0) + 1);
+            this.finisherRoundUses++;
+            this.finisherCooldownUntil = matchNow + GLOBAL_FINISHER_CONFIG.globalCooldownMs;
+        }
+        this.out.all({
+            type: 'globalFinisherCompleted', id: finisher.id, sequence: ++this.finisherSequence,
+            target: finisher.target.id, by: finisher.attacker.id, resumedAt: now
+        });
+        this.broadcastResumedClock();
+    }
+
+    private cancelGlobalFinisher(reason: string, now: number) {
+        const finisher = this.globalFinisher;
+        if (!finisher) return;
+        this.globalFinisher = null;
+        this.matchClockOffset += Math.max(0, now - finisher.pauseAt);
+        this.out.all({
+            type: 'globalFinisherCancelled', id: finisher.id, sequence: ++this.finisherSequence, reason, resumedAt: now
+        });
+        this.broadcastResumedClock();
+    }
+
+    private broadcastResumedClock() {
+        if (this.round) this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        this.out.all({ type: 'power', power: this.power });
     }
 
     private startExecution(attacker: Player, targetId: string, now: number) {
@@ -592,6 +814,10 @@ export class Room {
         this.executedAccounts.clear();
         this.power = { pulledAt: null };
         this.roundParticipants.clear();
+        this.roundId++;
+        this.finisherRoundUses = 0;
+        this.finisherUses.clear();
+        this.preparations.clear();
         for (const player of this.players.values()) {
             if (player.accountName) this.roundParticipants.add(player.accountName);
             player.score = 0;
@@ -633,11 +859,13 @@ export class Room {
     /** Local-development QA only: broadcast one of the authored climax thresholds to the whole room. */
     setTestRoundRemaining(now: number, remainingMs: number) {
         if (
+            this.globalFinisher ||
             this.round?.phase !== 'playing' ||
             ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft].some((seconds) => seconds * 1000 === remainingMs)
         )
             return false;
-        this.round = { ...this.round, endsAt: now + remainingMs };
+        const round = this.round;
+        this.round = { ...round, endsAt: this.matchNow(now) + remainingMs };
         this.out.all({ type: 'round', round: this.round, scores: this.scores() });
         return true;
     }
@@ -738,6 +966,7 @@ export class Room {
         if (!player.pose) return;
         const teacher = teacherAt(now);
         if (Math.hypot(player.pose.p[0] - teacher.x, player.pose.p[2] - teacher.z) > 20) return;
+        player.detainedUntil = Math.max(player.detainedUntil, now + DETENTION_SECONDS * 1000);
         this.out.all({ type: 'caught', id: player.id });
     }
 

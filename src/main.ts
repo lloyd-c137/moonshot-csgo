@@ -286,6 +286,7 @@ const boot = async () => {
     const stuck = new StuckDetector();
     const moveKeys = new Set<string>();
     let stuckShown = false;
+    let previousFinisherLocked = false;
     let closeChat: (() => void) | null = null;
     let stuckAt: [number, number] = [0, 0];
     const escapeStuck = () => {
@@ -356,6 +357,11 @@ const boot = async () => {
         sun.light!.intensity += ((night ? 0.04 : 0.55) - sun.light!.intensity) * Math.min(1, deltaTime * 6);
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
+        if (match.finisherLocked !== previousFinisherLocked) {
+            previousFinisherLocked = match.finisherLocked;
+            moveKeys.clear();
+            if (previousFinisherLocked) clearVelocity();
+        }
         const forward = camera.forward;
         shell.drawMaps(position.x, position.z, forward.x, forward.z, match.markers());
     });
@@ -430,6 +436,7 @@ const boot = async () => {
         } else if (hasEntered) {
             clearVelocity();
             rigidbodySystem.timeScale = 0;
+            if (match.finisherLocked) return;
             shell.paused();
         }
     });
@@ -440,6 +447,7 @@ const boot = async () => {
     const pause = () => {
         clearVelocity();
         rigidbodySystem.timeScale = 0;
+        if (match.finisherLocked) return;
         if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
     window.addEventListener('blur', pause);
@@ -449,6 +457,13 @@ const boot = async () => {
     window.addEventListener(
         'keydown',
         (event) => {
+            if (match.finisherLocked) {
+                if (event.code !== 'Escape') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+                return;
+            }
             if (shell.chatOpen()) return; // typing in the chat box
             if (
                 (event.code === 'Enter' || event.code === 'KeyT') &&

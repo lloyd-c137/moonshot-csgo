@@ -17,9 +17,11 @@ import { attachHeldItemSocket, RIGHT_HAND_SOCKET_POSITION } from '../src/charact
 const root = new URL('../', import.meta.url);
 const sourcePath = new URL('assets/source/characters/UAL1_Standard.fbx', root);
 const runtimePath = new URL('public/assets/characters/moonshot-humanoid.glb', root);
+const finisherSourcePath = new URL('assets/source/characters/Finisher_Boomerang.blend', root);
 const manifest = JSON.parse(readFileSync(new URL('public/assets/characters/manifest.json', root), 'utf8'));
 const source = readFileSync(sourcePath);
 const bytes = readFileSync(runtimePath);
+const finisherSource = readFileSync(finisherSourcePath);
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
 function readGlb(buffer) {
@@ -55,6 +57,37 @@ test('published character derivative matches its CC0 source and manifest hashes'
     assert.equal(sha256(bytes), manifest.runtime.sha256);
     assert.equal(manifest.source.license, 'CC0-1.0');
     assert.match(readFileSync(new URL('assets/source/characters/LICENSE.txt', root), 'utf8'), /CC0 1\.0 Universal/);
+});
+
+test('paired finisher source and runtime clips are versioned and distinct', () => {
+    assert.equal(sha256(finisherSource), manifest.finisher.authoringSceneSha256);
+    assert.equal(finisherSource.byteLength, manifest.finisher.authoringSceneBytes);
+    const { gltf, readAccessor } = readGlb(bytes);
+    for (const name of manifest.finisher.actions) {
+        const action = gltf.animations.find((animation) => animation.name === name);
+        assert.ok(action, `runtime has ${name}`);
+        assert.ok(action.channels.length >= 190, `${name} is a baked full-body rig action`);
+        const duration = Math.max(...action.samplers.map((sampler) => gltf.accessors[sampler.input].max[0]));
+        assert.ok(duration >= 2.59 && duration <= 2.61, `${name} spans the 2.6 second film`);
+        const channels = action.channels.map((channel) => `${gltf.nodes[channel.target.node].name}:${channel.target.path}`);
+        assert.ok(channels.some((channel) => channel === 'upperarm_r:rotation'));
+        assert.ok(channels.some((channel) => channel === 'Head:rotation'));
+        const root = gltf.skins[0].joints.find((index) => gltf.nodes[index].name === 'root');
+        const translation = action.channels.find(
+            (channel) => channel.target.node === root && channel.target.path === 'translation'
+        );
+        assert.ok(translation, `${name} carries an explicit in-place root channel`);
+        const rootValues = readAccessor(action.samplers[translation.sampler].output);
+        assert.ok(rootValues.every((value) => value.every((axis) => Math.abs(axis) < 1e-5)));
+    }
+    const [attacker, victim] = manifest.finisher.actions.map((name) =>
+        gltf.animations.find((animation) => animation.name === name)
+    );
+    const actionSignature = (action) =>
+        action.samplers
+            .map((sampler) => JSON.stringify(readAccessor(sampler.output).map((value) => value.map((x) => x.toFixed(5)))))
+            .join('|');
+    assert.notEqual(actionSignature(attacker), actionSignature(victim), 'attacker and target have different poses');
 });
 
 test('runtime model keeps the shared rig, body/head material split and complete head UVs', () => {

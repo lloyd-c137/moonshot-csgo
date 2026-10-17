@@ -36,12 +36,14 @@ import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
-import { canExecute, executionProgress } from './execution';
+import { canStartGlobalFinisher, executionProgress } from './execution';
 import type { Execution } from './execution';
 import { createExecutionView } from './executionView';
 import { CameraImpulseController } from './feedback/CameraImpulseController';
 import type { CameraMotion } from './feedback/CameraImpulseController';
 import { CombatFeedbackDirector } from './feedback/CombatFeedbackDirector';
+import type { GlobalFinisher } from './finisher/FinisherTypes';
+import { GLOBAL_FINISHER_CONFIG } from './finisher/FinisherTypes';
 import type { DiscContact, V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { createGold, GOLD_COLOUR } from './gold';
@@ -82,6 +84,16 @@ type Options = {
     mirrors: RestroomMirrorMount[];
     mirrorLayer: Layer;
 };
+
+const globalExecution = (finisher: GlobalFinisher): Execution => ({
+    id: finisher.id,
+    attacker: finisher.attacker,
+    target: finisher.target,
+    startsAt: finisher.startsAt,
+    endsAt: finisher.endsAt,
+    cameraPlanId: finisher.cameraPlanId,
+    variant: finisher.variant
+});
 
 export const createMatch = ({
     app,
@@ -143,13 +155,21 @@ export const createMatch = ({
     const feedback = new CombatFeedbackDirector();
     const cameraImpulses = new CameraImpulseController();
     let executionFrozen = false;
-    const executionView = createExecutionView(app, camera, characters, (active) => {
+    let globalFinisher: GlobalFinisher | null = null;
+    let finisherRequestId: string | null = null;
+    let finisherHoldTarget: string | null = null;
+    let finisherHoldStartedAt: number | null = null;
+    let finisherCommitSent = false;
+    const executionView = createExecutionView(app, camera, characters, discs.mesh, (active) => {
         executionFrozen = active;
         const script = controller();
         if (script) script.enabled = alive && !inputPaused && !spectating && !active;
-        player.rigidbody!.linearVelocity = Vec3.ZERO;
-        player.rigidbody!.angularVelocity = Vec3.ZERO;
-        player.rigidbody!.enabled = !spectating && !active;
+        if (!globalFinisher) {
+            player.rigidbody!.linearVelocity = Vec3.ZERO;
+            player.rigidbody!.angularVelocity = Vec3.ZERO;
+        }
+        player.rigidbody!.enabled = !spectating && (!active || !!globalFinisher);
+        rigidbody.timeScale = active ? 0 : (document.pointerLockElement === canvas ? 1 : 0);
         if (active) {
             cancelCharge();
             inspectSince = null;
@@ -336,8 +356,14 @@ export const createMatch = ({
     const currentPower = () => labPowerOverride ?? power;
     const goldHolder = () => goldView.state?.holder ?? null;
     const holdingGold = () => goldHolder() === selfId();
-    /** Room clock now: the server's while online, the local clock offline. */
-    const roomNow = () => (net.state === 'online' ? (net.serverNow() ?? Date.now()) : Date.now());
+    /** Real server clock drives networking and cinematic seeking; match clock stops during a global finisher. */
+    let matchPausedAt: number | null = null;
+    let matchClockOffset = 0;
+    const realRoomNow = () => (net.state === 'online' ? (net.serverNow() ?? Date.now()) : Date.now());
+    const roomNow = () => {
+        const realNow = realRoomNow();
+        return (matchPausedAt ?? realNow) - matchClockOffset;
+    };
     let nickname = '';
     let inputPaused = false;
     let poses = new Map<string, PlayerPose>();
@@ -566,8 +592,25 @@ export const createMatch = ({
         ui.spectate({ reason: null, watching: target.name });
     };
     window.addEventListener('mousedown', (event) => {
-        if (spectating && event.button === 0) watchIndex++;
+        if (!globalFinisher && spectating && event.button === 0) watchIndex++;
     });
+
+    const pauseMatchClock = (at: number) => {
+        if (matchPausedAt === null) matchPausedAt = at;
+    };
+    const resumeMatchClock = (resumedAt: number) => {
+        if (matchPausedAt === null) return;
+        const delta = Math.max(0, resumedAt - matchPausedAt);
+        matchClockOffset += delta;
+        matchPausedAt = null;
+        detainedUntil += delta;
+        teacherGraceUntil += delta;
+        radarUntil += delta;
+        if (Number.isFinite(lastThrowAt)) lastThrowAt += delta;
+        if (deadUntil > 0) deadUntil += delta;
+        if (goldCooldownUntil > 0) goldCooldownUntil += delta;
+        for (const [id, expiry] of pendingHitClaims) pendingHitClaims.set(id, expiry + delta);
+    };
 
     const net = createNetClient(url, {
         state: (state, detail) => {
@@ -582,6 +625,13 @@ export const createMatch = ({
                 ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
             }
             if (state !== 'online') {
+                if (matchPausedAt !== null) resumeMatchClock(Date.now());
+                globalFinisher = null;
+                ui.finisherMode(false);
+                finisherRequestId = null;
+                finisherHoldTarget = null;
+                finisherHoldStartedAt = null;
+                finisherCommitSent = false;
                 executionView.clear();
                 power = { pulledAt: null };
                 roster.clear();
@@ -600,8 +650,17 @@ export const createMatch = ({
             refreshCount();
         },
         welcome: (me, players, extra) => {
+            matchClockOffset = Math.max(0, realRoomNow() - extra.matchTime);
+            matchPausedAt = null;
+            globalFinisher = null;
             executionView.clear();
             for (const record of extra.executions) executionView.start(record);
+            if (extra.globalFinisher) {
+                globalFinisher = extra.globalFinisher;
+                pauseMatchClock(extra.globalFinisher.pauseAt);
+                ui.finisherMode(true);
+                executionView.start(globalExecution(extra.globalFinisher), true);
+            }
             power = extra.power;
             roster.clear();
             if (me.spectating) {
@@ -907,6 +966,47 @@ export const createMatch = ({
             if (local && !completed) ui.notify(`处决中断：${reason}`);
         },
         executionDenied: (reason) => ui.notify(reason),
+        executionPrepared: (requestId) => {
+            if (requestId === finisherRequestId) ui.notify('处决准备已确认');
+        },
+        executionPrepareDenied: (requestId, reason) => {
+            if (requestId !== finisherRequestId) return;
+            finisherRequestId = null;
+            finisherHoldTarget = null;
+            finisherHoldStartedAt = null;
+            finisherCommitSent = false;
+            ui.executionState(null, 0);
+            ui.notify(reason);
+        },
+        globalFinisherStarted: (finisher) => {
+            globalFinisher = finisher;
+            pauseMatchClock(finisher.pauseAt);
+            ui.finisherMode(true);
+            finisherRequestId = null;
+            finisherHoldTarget = null;
+            finisherHoldStartedAt = null;
+            finisherCommitSent = false;
+            executionView.start(globalExecution(finisher), true);
+        },
+        globalFinisherState: (finisher) => {
+            if (globalFinisher?.id === finisher.id) globalFinisher = finisher;
+        },
+        globalFinisherCompleted: (id, resumedAt) => {
+            resumeMatchClock(resumedAt);
+            executionView.stop(id);
+            if (globalFinisher?.id === id) globalFinisher = null;
+            ui.executionState(null, 0);
+            ui.finisherMode(false);
+            ui.notify('GLOBAL FINISHER 完成 · 比赛继续');
+        },
+        globalFinisherCancelled: (id, reason, resumedAt) => {
+            resumeMatchClock(resumedAt);
+            executionView.stop(id);
+            if (globalFinisher?.id === id) globalFinisher = null;
+            ui.executionState(null, 0);
+            ui.finisherMode(false);
+            ui.notify(`全场处决已取消：${reason}`);
+        },
         ammo: (next) => {
             if (next > ammo) {
                 sound.pickup();
@@ -943,7 +1043,7 @@ export const createMatch = ({
     const right = new Vec3();
     const origin = new Vec3();
     const throwDisc = (speed: number, sniper = false) => {
-        if (executionView.hasActor(selfId())) return false;
+        if (globalFinisher || executionView.hasActor(selfId())) return false;
         const now = performance.now();
         if (!alive || now - lastThrowAt < THROW_COOLDOWN * 1000) return false;
         // The golden disc: a short cooldown after every burst of throws.
@@ -1055,7 +1155,7 @@ export const createMatch = ({
         return (dx * forward.x + dy * forward.y + dz * forward.z) / distance > 0.94;
     };
     const activateMonitor = () => {
-        if (!started || !alive || spectating || inputPaused || performance.now() < detainedUntil || !lookingAtMonitor())
+        if (globalFinisher || !started || !alive || spectating || inputPaused || performance.now() < detainedUntil || !lookingAtMonitor())
             return false;
         radarUntil = performance.now() + RADAR_SECONDS * 1000;
         sound.scopeReady();
@@ -1091,7 +1191,7 @@ export const createMatch = ({
         else throwDisc(chargeSpeed(held));
     });
     const startInspect = () => {
-        if (executionView.hasActor(selfId())) return false;
+        if (globalFinisher || executionView.hasActor(selfId())) return false;
         if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
         const now = performance.now();
         if ((now - lastThrowAt) / 1000 <= THROW_COOLDOWN) return false; // disc not back in hand yet
@@ -1122,12 +1222,14 @@ export const createMatch = ({
             !alive ||
             spectating ||
             inputPaused ||
+            globalFinisher !== null ||
             executionView.hasActor(selfId()) ||
-            performance.now() < detainedUntil
+            performance.now() < detainedUntil ||
+            (!holdingGold() && ammo <= 0)
         )
             return null;
         const mine = pose();
-        if (audioLab && labHp > 0 && !executionView.hasActor(labTargetId) && canExecute(mine, labTargetPose)) {
+        if (audioLab && labHp > 0 && !executionView.hasActor(labTargetId) && canStartGlobalFinisher(mine, labTargetPose)) {
             const blocked = rigidbody
                 .raycastAll(
                     new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
@@ -1145,7 +1247,7 @@ export const createMatch = ({
                         roster.get(id)?.alive &&
                         !roster.get(id)?.spectating &&
                         !executionView.hasActor(id) &&
-                        canExecute(mine, other) &&
+                        canStartGlobalFinisher(mine, other) &&
                         !rigidbody
                             .raycastAll(
                                 new Vec3(mine.p[0], mine.p[1] + 0.3, mine.p[2]),
@@ -1161,13 +1263,42 @@ export const createMatch = ({
         );
     };
     let lastExecutionRequest = -Infinity;
-    const attemptExecution = () => {
-        if (performance.now() - lastExecutionRequest < 500) return;
+    const beginFinisherHold = () => {
+        if (globalFinisher || finisherHoldStartedAt !== null || finisherRequestId !== null) return;
+        if (performance.now() - lastExecutionRequest < 250) return;
         const target = executionTarget();
         if (!target) return;
         lastExecutionRequest = performance.now();
         cancelCharge();
-        if (audioLab && target === labTargetId) {
+        finisherHoldTarget = target;
+        finisherHoldStartedAt = performance.now();
+        finisherCommitSent = false;
+        if (!(audioLab && target === labTargetId)) {
+            finisherRequestId = net.prepareExecution(target);
+            net.pose(pose(), true);
+        } else finisherRequestId = `practice:${performance.now()}`;
+    };
+    const cancelFinisherHold = () => {
+        if (finisherRequestId && !finisherCommitSent && !finisherRequestId.startsWith('practice:'))
+            net.cancelExecution(finisherRequestId);
+        finisherRequestId = null;
+        finisherHoldTarget = null;
+        finisherHoldStartedAt = null;
+        finisherCommitSent = false;
+        ui.executionState(null, 0);
+    };
+    const completeFinisherHold = () => {
+        if (finisherHoldStartedAt === null || !finisherRequestId || !finisherHoldTarget) return;
+        if (performance.now() - finisherHoldStartedAt < GLOBAL_FINISHER_CONFIG.holdDurationMs) {
+            cancelFinisherHold();
+            return;
+        }
+        if (executionTarget() !== finisherHoldTarget) {
+            cancelFinisherHold();
+            ui.notify('目标已离开处决范围');
+            return;
+        }
+        if (finisherRequestId.startsWith('practice:')) {
             const now = roomNow();
             const record: Execution = {
                 id: `practice-${now}`,
@@ -1178,24 +1309,44 @@ export const createMatch = ({
                     colour: colourFor(labTargetId),
                     pose: { ...labTargetPose, p: [...labTargetPose.p] }
                 },
-                startsAt: now + 150,
-                endsAt: now + 150 + 2600
+                startsAt: now,
+                endsAt: now + GLOBAL_FINISHER_CONFIG.cinematicDurationMs,
+                variant: labGolden ? 'THE_BOOMERANG_GOLD' : 'THE_BOOMERANG'
             };
             labExecution = record;
-            executionView.start(record);
-            return;
-        }
-        net.pose(pose(), true);
-        net.execute(target);
+            executionView.start(record, true);
+            globalFinisher = {
+                id: record.id,
+                roundId: 0,
+                sequence: 0,
+                phase: 'active',
+                attacker: record.attacker,
+                target: record.target,
+                variant: labGolden ? 'THE_BOOMERANG_GOLD' : 'THE_BOOMERANG',
+                cinematicId: 'THE_BOOMERANG',
+                cameraPlanId: 'COMPACT',
+                pauseAt: now,
+                startsAt: record.startsAt,
+                endsAt: record.endsAt
+            };
+        } else net.commitExecution(finisherRequestId);
+        finisherCommitSent = true;
+        finisherHoldStartedAt = null;
+        ui.executionState('服务器确认 GLOBAL FINISHER · THE BOOMERANG', 1);
     };
     ui.onExecute(() => {
-        attemptExecution();
+        beginFinisherHold();
+        window.setTimeout(completeFinisherHold, GLOBAL_FINISHER_CONFIG.holdDurationMs);
         if (!locked()) void canvas.requestPointerLock().catch(() => undefined);
     });
     window.addEventListener('keydown', (event) => {
+        if (globalFinisher) {
+            if (event.code !== 'Escape') event.preventDefault();
+            return;
+        }
         if (event.code === 'KeyV' && !event.repeat && locked()) {
             event.preventDefault();
-            attemptExecution();
+            beginFinisherHold();
         }
         if (
             event.code === 'KeyE' &&
@@ -1233,7 +1384,9 @@ export const createMatch = ({
     });
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
+        if (event.code === 'KeyV' && finisherHoldStartedAt !== null) completeFinisherHold();
     });
+    window.addEventListener('blur', cancelFinisherHold);
 
     const animateFeel = (deltaTime: number, now: number) => {
         if (executionView.hasActor(selfId())) {
@@ -1759,6 +1912,32 @@ export const createMatch = ({
         },
         update(deltaTime: number) {
             const now = performance.now();
+            poses = net.poses();
+            if (globalFinisher) {
+                avatars.update(poses, now, executionView.hiddenIds());
+                executionView.update(realRoomNow(), selfId());
+                const progress = executionProgress(globalExecution(globalFinisher), realRoomNow());
+                ui.executionPrompt(null);
+                ui.executionState(
+                    `GLOBAL FINISHER · THE BOOMERANG · ${globalFinisher.attacker.name} × ${globalFinisher.target.name}`,
+                    progress
+                );
+                return;
+            }
+            if (finisherHoldStartedAt !== null && !finisherCommitSent) {
+                const current = executionTarget();
+                if (current !== finisherHoldTarget) {
+                    cancelFinisherHold();
+                    ui.notify('处决条件已失效');
+                } else {
+                    const progress = Math.min(
+                        1,
+                        (now - finisherHoldStartedAt) / GLOBAL_FINISHER_CONFIG.holdDurationMs
+                    );
+                    ui.executionState(`准备 GLOBAL FINISHER · THE BOOMERANG · ${nameOf(current!)}`, progress);
+                    if (progress >= 1) completeFinisherHold();
+                }
+            }
             // The charge ring fills for quick throws; once aiming starts the scope takes over.
             if (chargingSince !== null && aim < 0.02) {
                 ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
@@ -1768,7 +1947,6 @@ export const createMatch = ({
             const eye = camera.getPosition();
             const f = camera.forward;
             sound.listener([eye.x, eye.y, eye.z], [f.x, f.y, f.z]);
-            poses = net.poses();
             const localPose = pose();
             const velocity = player.rigidbody?.linearVelocity;
             restroomMirrors.update(
@@ -1839,8 +2017,8 @@ export const createMatch = ({
                 ui.rejectHitPrediction(throwId);
             }
             ground.update(now);
-            executionView.update(roomNow(), selfId());
-            if (labExecution && roomNow() >= labExecution.endsAt) {
+            executionView.update(realRoomNow(), selfId());
+            if (labExecution && realRoomNow() >= labExecution.endsAt) {
                 const record = labExecution;
                 labExecution = null;
                 executionView.stop(record.id);
@@ -1853,7 +2031,7 @@ export const createMatch = ({
                         ? `正在处决 ${local.target.name}`
                         : `正在被 ${local.attacker.name} 处决`
                     : null,
-                local ? executionProgress(local, roomNow()) : 0
+                local ? executionProgress(local, realRoomNow()) : 0
             );
             const target = executionTarget();
             ui.executionPrompt(target ? nameOf(target) : null);
@@ -1862,7 +2040,10 @@ export const createMatch = ({
             return alive;
         },
         get executing() {
-            return executionView.hasActor(selfId());
+            return globalFinisher !== null || executionView.hasActor(selfId());
+        },
+        get finisherLocked() {
+            return globalFinisher !== null;
         },
         get detained() {
             return performance.now() < detainedUntil;
@@ -1912,6 +2093,7 @@ export const createMatch = ({
         chat: (text: string) => net.chat(text),
         /** Freezes movement and throwing while the chat box is open. */
         setInputPaused(paused: boolean) {
+            if (globalFinisher) return;
             inputPaused = paused;
             const script = controller();
             if (script) script.enabled = alive && !paused && !executionFrozen && !spectating;
@@ -1931,7 +2113,8 @@ export const createMatch = ({
                 id: net.id,
                 alive,
                 spectating,
-                executions: executionView.debug(roomNow(), selfId()),
+                executions: executionView.debug(realRoomNow(), selfId()),
+                globalFinisher: globalFinisher ? { ...globalFinisher } : null,
                 hp,
                 players: [...roster.values()].map((entry) => ({ ...entry })),
                 discs: discs.count,

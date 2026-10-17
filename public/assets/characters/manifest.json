@@ -10,16 +10,32 @@
     },
     "runtime": {
         "path": "public/assets/characters/moonshot-humanoid.glb",
-        "sha256": "57bc427212dd993e3f48fd6f1337d3fc310fe56f79d9792a56238127d0c430e5",
-        "bytes": 3372192,
-        "generator": "tools/prepareCharacter.py with Blender 4.5.10",
+        "sha256": "c43e612307de459eff95d33cabe8389c9f3e8d5e82c09d26a1b05e1a15090e91",
+        "bytes": 3502980,
+        "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14",
         "headMaterial": "M_Head",
         "headUv": "cylindrical, seam at the back"
     },
+    "finisher": {
+        "name": "THE BOOMERANG",
+        "authoringScene": "assets/source/characters/Finisher_Boomerang.blend",
+        "authoringSceneSha256": "9e88507b739a2971c7ca54accda1ad8928fccc9c76ce031e2e037ef36de6bea4",
+        "authoringSceneBytes": 31506962,
+        "actions": [
+            "Finisher_Boomerang_Attacker",
+            "Finisher_Boomerang_Victim"
+        ],
+        "durationSeconds": 2.6,
+        "fps": 30,
+        "keyframeBeatsSeconds": [0, 0.45, 1.15, 1.65, 2.15, 2.6],
+        "rootTranslation": false,
+        "prop": "Finisher_Disc_Animation_Prop",
+        "propTimeline": "Blender source path is editorial reference; browser path is hand-following runtime spline"
+    },
     "verified": {
-        "triangles": 13744,
+        "triangles": 13743,
         "joints": 65,
-        "animationClips": 43,
+        "animationClips": 45,
         "heightMeters": 1.829,
         "skinInfluencesPerVertex": 4
     }

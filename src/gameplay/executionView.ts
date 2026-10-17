@@ -1,14 +1,25 @@
-// Original GAMEPLAY_AUTHORED paired animation for the existing simple avatar style. No imported animation assets.
-import type { AppBase, Entity, RigidBodyComponentSystem } from 'playcanvas';
-import { Vec3 } from 'playcanvas';
+// Shared cinematic actor staging and deterministic camera. The current mannequin action clips remain temporary until
+// the authored, paired Blender GLB is installed; this module must not be represented as final Boomerang animation.
+import { Entity, Vec3 } from 'playcanvas';
+import type { AppBase, Mesh, RigidBodyComponentSystem } from 'playcanvas';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 
-import { executionFrame, executionProgress } from './execution';
+import { executionProgress } from './execution';
 import type { Execution, ExecutionActor } from './execution';
+import { FinisherDiscController } from './finisher/FinisherDiscController';
+
+const actorColour = (hue: number): [number, number, number] => {
+    const h = ((hue % 360) + 360) % 360;
+    const f = (n: number) => {
+        const k = (n + h / 60) % 6;
+        return 0.28 + 0.64 * Math.max(0, Math.min(k, 4 - k, 1));
+    };
+    return [f(5), f(3), f(1)];
+};
 
 const makeActor = (app: AppBase, characters: CharacterAssetLoader, actor: ExecutionActor) => {
-    const character = characters.create({ name: `execution-actor-${actor.id}`, colour: [0.12, 0.55, 0.82] });
+    const character = characters.create({ name: `execution-actor-${actor.id}`, colour: actorColour(actor.colour) });
     app.root.addChild(character.root);
     return { ...character, character, root: character.root };
 };
@@ -17,28 +28,42 @@ export const createExecutionView = (
     app: AppBase,
     camera: Entity,
     characters: CharacterAssetLoader,
+    discMesh: Mesh,
     onLocalChange: (active: boolean) => void
 ) => {
     const system = app.systems.rigidbody as RigidBodyComponentSystem;
+    const cinematicCamera = new Entity('global-finisher-camera');
+    cinematicCamera.addComponent('camera');
+    cinematicCamera.camera!.copy(camera.camera!);
+    app.root.addChild(cinematicCamera);
+    cinematicCamera.enabled = false;
+    const originalCameraEnabled = camera.enabled;
     const scenes = new Map<
         string,
-        { record: Execution; attacker: ReturnType<typeof makeActor>; target: ReturnType<typeof makeActor> }
+        {
+            record: Execution;
+            attacker: ReturnType<typeof makeActor>;
+            target: ReturnType<typeof makeActor>;
+            disc: FinisherDiscController | null;
+            global: boolean;
+        }
     >();
     let shot: {
         id: string;
-        parent: Entity;
-        position: Vec3;
-        rotation: ReturnType<Entity['getLocalRotation']>;
-        fov: number;
-        eye: Vec3;
         look: Vec3;
+        right: Vec3;
+        forward: Vec3;
+        radius: number;
+        global: boolean;
     } | null = null;
-    const restoreCamera = () => {
-        if (!shot) return;
-        shot.parent.addChild(camera);
-        camera.setLocalPosition(shot.position);
-        camera.setLocalRotation(shot.rotation);
-        camera.camera!.fov = shot.fov;
+    const useCinematicCamera = () => {
+        camera.enabled = false;
+        cinematicCamera.enabled = true;
+    };
+    const restoreCamera = (force = false) => {
+        if (!shot && !force) return;
+        cinematicCamera.enabled = false;
+        camera.enabled = originalCameraEnabled;
         shot = null;
         onLocalChange(false);
     };
@@ -46,18 +71,32 @@ export const createExecutionView = (
         const scene = scenes.get(id);
         if (!scene) return;
         if (shot?.id === id) restoreCamera();
+        else if (scene.global) restoreCamera(true);
         scene.attacker.dispose();
         scene.target.dispose();
+        scene.disc?.destroy();
         scenes.delete(id);
     };
     return {
-        start(record: Execution) {
+        start(record: Execution, global = false) {
             if (scenes.has(record.id)) return;
+            const attacker = makeActor(app, characters, record.attacker);
+            const target = makeActor(app, characters, record.target);
+            const disc = global
+                ? new FinisherDiscController(discMesh, attacker, target, record.variant === 'THE_BOOMERANG_GOLD')
+                : null;
+            if (disc) disc.attach(app.root);
             scenes.set(record.id, {
                 record,
-                attacker: makeActor(app, characters, record.attacker),
-                target: makeActor(app, characters, record.target)
+                attacker,
+                target,
+                disc,
+                global
             });
+            if (global) {
+                useCinematicCamera();
+                onLocalChange(true);
+            }
         },
         stop,
         clear() {
@@ -74,35 +113,25 @@ export const createExecutionView = (
         update(now: number, self: string) {
             for (const scene of scenes.values()) {
                 const { record, attacker, target } = scene;
-                const frame = executionFrame(executionProgress(record, now));
+                const progress = executionProgress(record, now);
                 const dx = record.target.pose.p[0] - record.attacker.pose.p[0],
                     dz = record.target.pose.p[2] - record.attacker.pose.p[2],
                     distance = Math.hypot(dx, dz);
-                const lunge = Math.min(0.4, Math.max(0, distance - 0.85)) * frame.reach * (1 - frame.recover);
                 attacker.root.enabled = target.root.enabled = true;
-                attacker.root.setPosition(
-                    record.attacker.pose.p[0] + (dx / distance) * lunge,
-                    record.attacker.pose.p[1] - 0.9,
-                    record.attacker.pose.p[2] + (dz / distance) * lunge
-                );
+                attacker.root.setPosition(record.attacker.pose.p[0], record.attacker.pose.p[1] - 0.9, record.attacker.pose.p[2]);
                 attacker.root.setEulerAngles(0, (Math.atan2(-dx, -dz) * 180) / Math.PI, 0);
-                attacker.character.play(frame.reach > 0.45 ? 'Punch_Cross' : 'Interact', 0.08);
-                target.character.play(frame.fall > 0.1 ? 'Death01' : 'Hit_Chest', 0.08);
+                const actionTime = progress * 2.6;
+                attacker.character.playAt('Finisher_Boomerang_Attacker', actionTime);
+                target.character.playAt('Finisher_Boomerang_Victim', actionTime);
                 target.root.setPosition(
                     record.target.pose.p[0],
-                    record.target.pose.p[1] - 0.9 - Math.min(0.45, frame.fall * 0.45),
+                    record.target.pose.p[1] - 0.9,
                     record.target.pose.p[2]
                 );
-                target.root.setEulerAngles(0, (Math.atan2(dx, dz) * 180) / Math.PI, frame.fall * 45);
-                if (record.attacker.id !== self && record.target.id !== self) continue;
+                target.root.setEulerAngles(0, (Math.atan2(dx, dz) * 180) / Math.PI, 0);
+                scene.disc?.update(progress);
+                if (!scene.global && record.attacker.id !== self && record.target.id !== self) continue;
                 if (!shot) {
-                    const saved = {
-                        parent: camera.parent as Entity,
-                        position: camera.getLocalPosition().clone(),
-                        rotation: camera.getLocalRotation().clone(),
-                        fov: camera.camera!.fov
-                    };
-                    onLocalChange(true);
                     const look = new Vec3(
                         (record.attacker.pose.p[0] + record.target.pose.p[0]) / 2,
                         record.target.pose.p[1] + 0.3,
@@ -110,40 +139,46 @@ export const createExecutionView = (
                     );
                     const forward = new Vec3(dx / distance, 0, dz / distance),
                         right = new Vec3(-forward.z, 0, forward.x);
-                    let eye = look.clone();
-                    const directions = [
-                        right.clone(),
-                        right.clone().mulScalar(-1),
-                        forward.clone(),
-                        forward.clone().mulScalar(-1),
-                        right.clone().add(forward),
-                        right.clone().sub(forward),
-                        right.clone().mulScalar(-1).add(forward),
-                        right.clone().mulScalar(-1).sub(forward)
-                    ];
-                    let bestScore = -Infinity;
-                    for (const direction of directions) {
-                        direction.normalize();
-                        const candidate = look.clone().add(direction.mulScalar(4.2));
-                        candidate.y += 0.9;
-                        const hit = system.raycastFirst(look, candidate);
-                        const wanted = hit
-                            ? look.clone().lerp(look, hit.point, Math.max(0, 1 - 0.22 / look.distance(hit.point)))
-                            : candidate;
-                        const clearance = look.distance(wanted);
-                        const score = clearance - Math.abs(direction.dot(forward)) * 4.5;
-                        if (clearance > 0.35 && score > bestScore) {
-                            bestScore = score;
-                            eye = wanted;
-                        }
-                    }
-                    app.root.addChild(camera);
-                    shot = { id: record.id, ...saved, eye, look };
+                    const radius = record.cameraPlanId === 'OPEN' ? 4.1 : record.cameraPlanId === 'TIGHT' ? 2 : 3;
+                    shot = { id: record.id, look, right, forward, radius, global: scene.global };
+                    useCinematicCamera();
+                    if (!scene.global) onLocalChange(true);
                 }
-                // Both participants use the same fixed, collision-clamped shot. No orbit, camera shake or FOV pulse.
-                camera.setPosition(shot.eye);
-                camera.lookAt(shot.look);
-                camera.camera!.fov = 86;
+                if (scene.global) {
+                    const keyframes = [
+                        [0, -0.55, 62],
+                        [0.18, -0.18, 58],
+                        [0.44, 0.43, 52],
+                        [0.63, 0.12, 56],
+                        [0.83, -0.32, 56],
+                        [1, 0.06, 60]
+                    ];
+                    let index = 0;
+                    while (index < keyframes.length - 2 && progress > keyframes[index + 1][0]) index++;
+                    const left = keyframes[index];
+                    const rightKey = keyframes[index + 1];
+                    const raw = Math.max(0, Math.min(1, (progress - left[0]) / (rightKey[0] - left[0])));
+                    const eased = raw * raw * (3 - 2 * raw);
+                    const angle = left[1] + (rightKey[1] - left[1]) * eased;
+                    const fov = left[2] + (rightKey[2] - left[2]) * eased;
+                    const direction = shot.right.clone().mulScalar(Math.cos(angle)).add(shot.forward.clone().mulScalar(Math.sin(angle)));
+                    const desired = shot.look.clone().add(direction.mulScalar(shot.radius));
+                    desired.y += 0.85;
+                    const hit = system.raycastFirst(shot.look, desired);
+                    const distance = shot.look.distance(desired);
+                    const eye = hit
+                        ? shot.look.clone().lerp(shot.look, hit.point, Math.max(0.15, 1 - 0.28 / distance))
+                        : desired;
+                    cinematicCamera.setPosition(eye);
+                    cinematicCamera.lookAt(shot.look);
+                    cinematicCamera.camera!.fov = fov;
+                } else {
+                    const eye = shot.look.clone().add(shot.right.clone().mulScalar(4.2));
+                    eye.y += 0.9;
+                    cinematicCamera.setPosition(eye);
+                    cinematicCamera.lookAt(shot.look);
+                    cinematicCamera.camera!.fov = 86;
+                }
             }
         },
         debug(now: number, self: string) {
@@ -151,14 +186,13 @@ export const createExecutionView = (
                 id: s.record.id,
                 role: s.record.attacker.id === self ? 'attacker' : s.record.target.id === self ? 'target' : 'observer',
                 progress: executionProgress(s.record, now),
-                frame: executionFrame(executionProgress(s.record, now)),
                 actorsVisible: s.attacker.root.enabled && s.target.root.enabled,
                 camera: shot?.id === s.record.id,
-                attackerArm: executionFrame(executionProgress(s.record, now)).attackerArm,
-                targetLean: executionFrame(executionProgress(s.record, now)).targetLean,
+                attackerAnimation: s.attacker.character.animationState(),
+                targetAnimation: s.target.character.animationState(),
                 renderedParts:
                     s.attacker.root.findComponents('render').length + s.target.root.findComponents('render').length,
-                cameraPosition: camera.getPosition().toArray()
+                cameraPosition: (shot?.id === s.record.id ? cinematicCamera : camera).getPosition().toArray()
             }));
         }
     };

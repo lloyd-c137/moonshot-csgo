@@ -42,6 +42,7 @@ test('camera impulses are bounded, deterministic, damped and do not alter look s
     for (let i = 0; i < 45; i++) camera.update(1 / 60);
     assert.deepEqual(camera.update(1), [0, 0]);
     camera.trigger(1);
+    assert.deepEqual(camera.update(0.71), [0, 0]);
     camera.setMode('off');
     assert.equal(camera.scale, 0);
     assert.deepEqual(camera.update(1 / 60), [0, 0]);

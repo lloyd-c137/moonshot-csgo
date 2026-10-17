@@ -4,6 +4,10 @@ import test from 'node:test';
 
 import {
     aisleDistance,
+    COURT_SURROUND,
+    courtSurroundPath,
+    inSurroundGap,
+    petalJoinDistance,
     petalShape,
     ringRadii,
     seatAssignment,
@@ -23,20 +27,36 @@ test('the bowl wraps the FF-01 arena outline and rises outward above the 3.6 m b
         radii.every((r) => r > 20 && r < 28),
         'follows the ~22–26 m outline'
     );
-    assert.ok(tierHeight(0) >= 4.8 && tierHeight(STADIUM.tiers - 1) > tierHeight(0));
+    assert.ok(tierHeight(STADIUM.tiers - 1) > tierHeight(0));
     assert.ok(tierRadius(radii, 0, 5) > tierRadius(radii, 0, 0));
     // Everything stays inside the campus slab (x −67…70, z −61…59).
-    const outer = Math.max(...radii) + STADIUM.setback + STADIUM.tiers * STADIUM.tierRun + STADIUM.roofOverhang;
+    const outer =
+        tierRadius(radii, 0, STADIUM.tiers) - radii[0] + Math.max(...radii) + STADIUM.roofOverhang + STADIUM.petalBulge;
     assert.ok(center[0] - outer > -67 && center[0] + outer < 70 && center[1] - outer > -61 && center[1] + outer < 59);
     // The roof opening sits over the court: its inner edge is inside the outline, high above the stands.
     assert.ok(STADIUM.roofInnerHeight > tierHeight(STADIUM.tiers - 1) + STADIUM.tierRise);
 });
 
-test('twelve petals: aisles at the joins, the scallop peaks mid-petal', () => {
-    const step = (Math.PI * 2) / STADIUM.petals;
-    assert.ok(aisleDistance(0) < 1e-9);
-    assert.ok(Math.abs(aisleDistance(step / 2) - step / 2) < 1e-9);
-    assert.ok(petalShape(step / 2) > 0.99 && petalShape(0) < 1e-9);
+test('twelve petals with three stair aisles each; the scallop peaks mid-petal', () => {
+    const petal = (Math.PI * 2) / STADIUM.petals,
+        aisleStep = (Math.PI * 2) / STADIUM.aisles;
+    assert.equal(STADIUM.aisles, STADIUM.petals * 3);
+    assert.ok(aisleDistance(0) < 1e-9 && aisleDistance(petal) < 1e-9, 'every petal join is an aisle');
+    assert.ok(Math.abs(aisleDistance(aisleStep / 2) - aisleStep / 2) < 1e-9);
+    assert.ok(petalJoinDistance(0) < 1e-9 && Math.abs(petalJoinDistance(petal / 2) - petal / 2) < 1e-9);
+    assert.ok(petalShape(petal / 2) > 0.99 && petalShape(0) < 1e-9);
+});
+
+test('court surround: boards clear of both stands, inside the outline, with four walk-throughs', () => {
+    const path = courtSurroundPath();
+    assert.ok(path.length > 60);
+    for (const [x, z] of path) {
+        assert.ok(x > -25 && x < 7, 'clear of the west (x ≤ −25) and east (x ≥ 7) stands');
+        assert.ok(Math.hypot(x - center[0], z - center[1]) < Math.min(...radii), 'inside the arena outline');
+    }
+    const { x0, x1, z0, z1 } = COURT_SURROUND;
+    assert.ok(inSurroundGap((x0 + x1) / 2, z0) && inSurroundGap(x0, (z0 + z1) / 2));
+    assert.equal(inSurroundGap(x0 + 4, z0), false);
 });
 
 test('spectator seats spread over every petal and face the court; assignment is the same on every client', () => {

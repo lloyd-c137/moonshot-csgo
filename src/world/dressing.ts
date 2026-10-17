@@ -250,7 +250,8 @@ export const buildDressing = (
         0.021,
         false
     );
-    addMesh(app, root, 'Floor_Court', courtBuilder, makeMaterial('court', { texture: textures.court, gloss: 0.6 }));
+    // Blue hard court (owner photo 2026-10-17), lines drawn over it in white.
+    addMesh(app, root, 'Floor_Court', courtBuilder, makeMaterial('court', { colour: [0.2, 0.38, 0.7], gloss: 0.55 }));
     court.render!.enabled = false;
 
     // Ceiling over the whole slab, cut away over the open-air arena and courtyards by the derived mask.

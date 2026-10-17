@@ -1,7 +1,9 @@
-// Builds the rebuilt 莲花球场 (GAMEPLAY_AUTHORED; layout in stadiumLayout.ts): red lower seats (the FF-01 seat rows,
-// recoloured), a teal upper bowl stepping outward from the 4.8 m fascia, twelve lotus roof petals open over the court,
-// floodlight bars and an out-leaning facade. Decoration only: every collider (floor, stands, the 10 m arena wall)
-// is unchanged, so routes, the nav audit and the upper bowl's unreachability stay as they were.
+// Builds the rebuilt 莲花球场 (GAMEPLAY_AUTHORED; layout in stadiumLayout.ts) after the owner's interior photo
+// (2026-10-17): a blue court on a green apron ringed by low blue/white boards; one continuous light-grey bowl with blue
+// seat blocks rising from a low banner-clad parapet, three stair aisles per petal and a railed cross-aisle walkway;
+// a band of white glazed panels between columns under twelve lotus roof petals open over the court; an out-leaning
+// facade outside. Decoration only: every collider (floor, stands, the 10 m arena wall) is unchanged, so routes, the
+// nav audit and the bowl's unreachability stay as they were.
 import type { AppBase, Entity as EntityType, StandardMaterial as StandardMaterialType } from 'playcanvas';
 import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial } from 'playcanvas';
 
@@ -11,6 +13,8 @@ import type { Point2 } from './stadiumLayout';
 import {
     aisleDistance,
     angleOf,
+    COURT_SURROUND,
+    petalJoinDistance,
     petalShape,
     ringRadii,
     spectatorSeats,
@@ -18,6 +22,7 @@ import {
     tierHeight,
     tierRadius
 } from './stadiumLayout';
+import { courtSurroundPath, inSurroundGap } from './stadiumLayout';
 
 type V3 = [number, number, number];
 
@@ -78,42 +83,39 @@ export const buildStadium = (
     };
 
     const concrete = new MeshBuilder();
-    const seatsTeal = new MeshBuilder();
+    const seatsGrey = new MeshBuilder();
+    const seatsBlue = new MeshBuilder();
     const aisle = new MeshBuilder();
     const roofLight = new MeshBuilder();
     const roofDark = new MeshBuilder();
     const ribs = new MeshBuilder();
     const facade = new MeshBuilder();
     const mullions = new MeshBuilder();
-    const ribbon = new MeshBuilder();
+    const bannerBlue = new MeshBuilder();
+    const bannerWhite = new MeshBuilder();
+    const glazing = new MeshBuilder();
+    const columns = new MeshBuilder();
     const floodlights = new MeshBuilder();
     const rail = new MeshBuilder();
 
-    const { tiers, tierRise, tierRun } = STADIUM;
+    const { tiers, tierRise, tierRun, walkwayTier } = STADIUM;
     const topTier = tiers - 1;
     for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const a0 = angleOf(i, n),
             a1 = angleOf(i + 1, n);
         const mid = (a0 + a1) / 2;
-        const inAisle = aisleDistance(mid) < STADIUM.aisleHalfWidth / tierRadius(radii, i, 4);
-        // LED ribbon on the fascia's inner face, just inside the outline.
+        const petal = Math.floor((mid / (Math.PI * 2)) * STADIUM.petals);
+        const inAisle = (k: number) => aisleDistance(mid) < STADIUM.aisleHalfWidth / tierRadius(radii, i, k);
+        // Banner boards on the parapet's inner face: blue and white panels, as round the photographed bowl.
         quad(
-            ribbon,
+            Math.floor(i / 3) % 2 ? bannerWhite : bannerBlue,
             at(i, radii[i] - 0.02, STADIUM.ribbon.bottom),
             at(j, radii[j] - 0.02, STADIUM.ribbon.bottom),
             at(j, radii[j] - 0.02, STADIUM.ribbon.top),
             at(i, radii[i] - 0.02, STADIUM.ribbon.top)
         );
-        // Glass-railed front edge of the upper bowl.
-        quad(
-            rail,
-            at(i, radii[i] + STADIUM.setback - 0.1, STADIUM.fasciaTop),
-            at(j, radii[j] + STADIUM.setback - 0.1, STADIUM.fasciaTop),
-            at(j, radii[j] + STADIUM.setback - 0.1, STADIUM.fasciaTop + 1.05),
-            at(i, radii[i] + STADIUM.setback - 0.1, STADIUM.fasciaTop + 1.05)
-        );
-        // Deck between the outline and the first tier.
+        // Parapet cap between the outline and the first tier.
         quad(
             concrete,
             at(i, radii[i], STADIUM.fasciaTop),
@@ -125,39 +127,70 @@ export const buildStadium = (
             const y = tierHeight(k);
             const r0i = tierRadius(radii, i, k),
                 r0j = tierRadius(radii, j, k);
-            const r1i = r0i + tierRun,
-                r1j = r0j + tierRun;
-            // Tread and riser.
-            quad(inAisle ? aisle : concrete, at(i, r0i, y), at(j, r0j, y), at(j, r1j, y), at(i, r1i, y));
+            const walkway = k === walkwayTier;
+            const run = tierRun + (walkway ? STADIUM.walkwayExtra : 0);
+            const r1i = r0i + run,
+                r1j = r0j + run;
+            // Tread and riser (stairs in the aisles are a lighter grey).
+            quad(inAisle(k) && !walkway ? aisle : concrete, at(i, r0i, y), at(j, r0j, y), at(j, r1j, y), at(i, r1i, y));
             quad(concrete, at(i, r1i, y), at(j, r1j, y), at(j, r1j, y + tierRise), at(i, r1i, y + tierRise));
-            if (inAisle) continue;
-            // Seats along the tread: a seat pan and a back, teal.
+            if (walkway) {
+                // The cross-aisle walkway: no seats, a glass rail along its front edge.
+                quad(
+                    rail,
+                    at(i, r0i + 0.05, y),
+                    at(j, r0j + 0.05, y),
+                    at(j, r0j + 0.05, y + 1.05),
+                    at(i, r0i + 0.05, y + 1.05)
+                );
+                continue;
+            }
+            if (inAisle(k)) continue;
+            // Seats: light grey, with blue blocks high in every third petal (the photo's blue sections).
+            const builder = k > walkwayTier + 3 && petal % 3 === 1 ? seatsBlue : seatsGrey;
             const arc = ((r0i + r0j) / 2) * (a1 - a0);
             const count = Math.max(1, Math.floor(arc / STADIUM.seatPitch));
             for (let s = 0; s < count; s++) {
                 const t = (s + 0.5) / count;
                 const angle = a0 + (a1 - a0) * t;
                 const r = r0i + (r0j - r0i) * t + tierRun * 0.45;
-                const x = cx + Math.cos(angle) * r,
-                    z = cz + Math.sin(angle) * r;
-                // One block per seat (pan and back read as one at stadium distances; halves the vertex count).
-                seatsTeal.box(x, y + 0.02, z, 0.46, 0.4, 0.48, angle + Math.PI / 2, 5);
+                // One block per seat (pan and back read as one at stadium distances).
+                builder.box(
+                    cx + Math.cos(angle) * r,
+                    y + 0.02,
+                    cz + Math.sin(angle) * r,
+                    0.46,
+                    0.4,
+                    0.46,
+                    angle + Math.PI / 2,
+                    5
+                );
             }
         }
-        // Back wall above the top tier.
+        // Glazed band above the top tier: white panels between columns, under the roof.
         const backI = tierRadius(radii, i, topTier) + tierRun,
             backJ = tierRadius(radii, j, topTier) + tierRun;
         const backY = tierHeight(topTier) + tierRise;
-        quad(concrete, at(i, backI, backY), at(j, backJ, backY), at(j, backJ, backY + 1.4), at(i, backI, backY + 1.4));
-        // Roof petal: from the inner edge over the court down to a scalloped outer edge beyond the top tier.
+        quad(concrete, at(i, backI, backY), at(j, backJ, backY), at(j, backJ, backY + 0.5), at(i, backI, backY + 0.5));
+        quad(
+            glazing,
+            at(i, backI, backY + 0.5),
+            at(j, backJ, backY + 0.5),
+            at(j, backJ, backY + STADIUM.glazingHeight),
+            at(i, backI, backY + STADIUM.glazingHeight)
+        );
+        if (i % 2 === 0) {
+            const [x, , z] = at(i, backI - 0.15, 0);
+            columns.box(x, backY, z, 0.5, 0.5, STADIUM.roofOuterHeight - backY, mid);
+        }
+        // Roof petal: from the inner edge over the court down to a scalloped outer edge beyond the glazing.
         const innerI = radii[i] - STADIUM.roofInnerInset,
             innerJ = radii[j] - STADIUM.roofInnerInset;
         const outerI = backI + STADIUM.roofOverhang + STADIUM.petalBulge * petalShape(a0),
             outerJ = backJ + STADIUM.roofOverhang + STADIUM.petalBulge * petalShape(a1);
-        const petal = Math.floor((mid / (Math.PI * 2)) * STADIUM.petals);
         const roof = petal % 2 ? roofDark : roofLight;
         // Slight gap at each petal join so the twelve leaves read separately.
-        const join = aisleDistance(mid) < 0.012;
+        const join = petalJoinDistance(mid) < 0.012;
         if (!join) {
             quad(
                 roof,
@@ -178,7 +211,7 @@ export const buildStadium = (
                 at(j, footJ, STADIUM.facadeBottom)
             );
         }
-        // Ribs: radial at every fourth sample, heavier at petal joins; floodlight bars along the inner edge.
+        // Ribs: radial at every second sample, heavier at petal joins; floodlight bars along the inner edge.
         if (i % 2 === 0 || join) {
             const [x0, , z0] = at(i, innerI, 0),
                 [x1, , z1] = at(i, outerI, 0);
@@ -190,7 +223,6 @@ export const buildStadium = (
                 const r = innerI + (outerI - innerI) * t;
                 const y = STADIUM.roofInnerHeight + (STADIUM.roofOuterHeight - STADIUM.roofInnerHeight) * t - 0.25;
                 const [x, , z] = at(i, r, 0);
-                // Width runs radially (yaw = the sample's angle).
                 ribs.box(x, y, z, length / steps + 0.05, w, w, mid);
             }
         }
@@ -212,22 +244,69 @@ export const buildStadium = (
         }
     }
 
+    // Court level: a green apron round the (blue) court, ringed by low blue and white boards with four walk-throughs.
+    const apron = new MeshBuilder();
+    const boardBlue = new MeshBuilder();
+    const boardWhite = new MeshBuilder();
+    const path = courtSurroundPath();
+    {
+        const { x0, x1, z0, z1 } = COURT_SURROUND;
+        const y = 0.012;
+        const centre: V3 = [(x0 + x1) / 2, y, (z0 + z1) / 2];
+        for (let p = 0; p < path.length; p++) {
+            const [ax, az] = path[p],
+                [bx, bz] = path[(p + 1) % path.length];
+            apron.vertex(centre, [0, 1, 0], [0, 0]);
+            apron.vertex([ax, y, az], [0, 1, 0], [0, 0]);
+            apron.vertex([bx, y, bz], [0, 1, 0], [0, 0]);
+            const base = apron.positions.length / 3 - 3;
+            apron.triangle(base, base + 1, base + 2);
+        }
+        let travelled = 0;
+        for (let p = 0; p < path.length; p++) {
+            const [ax, az] = path[p],
+                [bx, bz] = path[(p + 1) % path.length];
+            const length = Math.hypot(bx - ax, bz - az);
+            const mx = (ax + bx) / 2,
+                mz = (az + bz) / 2;
+            travelled += length;
+            if (inSurroundGap(mx, mz)) continue;
+            const builder = Math.floor(travelled / 2) % 2 ? boardWhite : boardBlue;
+            builder.box(mx, 0, mz, length + 0.02, 0.12, COURT_SURROUND.boardHeight, Math.atan2(bz - az, bx - ax));
+        }
+    }
+
     const meshes: [string, MeshBuilder, StandardMaterialType][] = [
-        ['Stadium_Concrete', concrete, material('stadium-concrete', [0.62, 0.63, 0.64], { gloss: 0.15 })],
-        ['Stadium_Aisles', aisle, material('stadium-aisle', [0.48, 0.5, 0.52], { gloss: 0.15 })],
-        ['Stadium_UpperSeats', seatsTeal, material('stadium-seat-teal', [0.13, 0.55, 0.55], { gloss: 0.45 })],
+        ['Stadium_Concrete', concrete, material('stadium-concrete', [0.7, 0.71, 0.72], { gloss: 0.15 })],
+        ['Stadium_Aisles', aisle, material('stadium-aisle', [0.82, 0.83, 0.84], { gloss: 0.15 })],
+        ['Stadium_SeatsGrey', seatsGrey, material('stadium-seat-grey', [0.8, 0.82, 0.84], { gloss: 0.4 })],
+        ['Stadium_SeatsBlue', seatsBlue, material('stadium-seat-blue', [0.16, 0.3, 0.72], { gloss: 0.45 })],
         ['Stadium_RoofLight', roofLight, material('stadium-roof-light', [0.6, 0.63, 0.64], { gloss: 0.35 })],
         ['Stadium_RoofDark', roofDark, material('stadium-roof-dark', [0.52, 0.56, 0.57], { gloss: 0.35 })],
         ['Stadium_RoofRibs', ribs, material('stadium-ribs', [0.93, 0.94, 0.91], { gloss: 0.3 })],
         // The facade faces outward only: from inside the bowl you see the roof's underside, not a wall.
         ['Stadium_Facade', facade, material('stadium-facade', [0.66, 0.66, 0.62], { gloss: 0.2, oneSided: true })],
         ['Stadium_Mullions', mullions, material('stadium-mullion', [0.58, 0.6, 0.59], { gloss: 0.2 })],
-        ['Stadium_Rail', rail, material('stadium-rail', [0.55, 0.72, 0.78], { gloss: 0.8 })],
+        ['Stadium_Rail', rail, material('stadium-rail', [0.62, 0.76, 0.82], { gloss: 0.8 })],
         [
-            'Stadium_LedRibbon',
-            ribbon,
-            material('stadium-ribbon', [0.1, 0.25, 0.75], { emissive: [0.18, 0.42, 1], gloss: 0.6 })
+            'Stadium_Glazing',
+            glazing,
+            material('stadium-glazing', [0.88, 0.92, 0.95], { gloss: 0.7, emissive: [0.32, 0.34, 0.36] })
         ],
+        ['Stadium_Columns', columns, material('stadium-column', [0.6, 0.62, 0.63], { gloss: 0.2 })],
+        [
+            'Stadium_BannerBlue',
+            bannerBlue,
+            material('stadium-banner-blue', [0.12, 0.3, 0.78], { emissive: [0.04, 0.1, 0.3] })
+        ],
+        [
+            'Stadium_BannerWhite',
+            bannerWhite,
+            material('stadium-banner-white', [0.92, 0.94, 0.96], { emissive: [0.25, 0.26, 0.28] })
+        ],
+        ['Stadium_Apron', apron, material('stadium-apron', [0.36, 0.6, 0.36], { gloss: 0.35 })],
+        ['Stadium_BoardsBlue', boardBlue, material('stadium-board-blue', [0.14, 0.32, 0.8], { gloss: 0.5 })],
+        ['Stadium_BoardsWhite', boardWhite, material('stadium-board-white', [0.93, 0.94, 0.96], { gloss: 0.5 })],
         [
             'Stadium_Floodlights',
             floodlights,
@@ -246,19 +325,19 @@ export const buildStadium = (
         entities.set(name, entity);
     }
 
-    // Lower bowl: the FF-01 seat rows become red (the photographed lower tier), the stand base stays concrete.
-    const seatRed = material('stadium-seat-red', [0.72, 0.13, 0.12], { gloss: 0.45 });
+    // Lower stands: the FF-01 seat rows take the bowl's light grey.
+    const seatGrey = material('stadium-seat-grey-lower', [0.8, 0.82, 0.84], { gloss: 0.4 });
     for (let row = 0; row < 8; row++) {
         const node = campusRoot.findByName(`Arena_Seats_Row${String(row).padStart(2, '0')}`) as EntityType | null;
-        for (const instance of node?.render?.meshInstances ?? []) instance.material = seatRed;
+        for (const instance of node?.render?.meshInstances ?? []) instance.material = seatGrey;
     }
 
     return {
         root,
-        /** Emissive parts that the blackout dims (LED ribbon and floodlights). */
-        lights: [entities.get('Stadium_LedRibbon'), entities.get('Stadium_Floodlights')].filter(
-            (entity): entity is EntityType => !!entity
-        ),
+        /** Emissive parts that the blackout dims (banners and floodlights). */
+        lights: ['Stadium_BannerBlue', 'Stadium_BannerWhite', 'Stadium_Floodlights']
+            .map((name) => entities.get(name))
+            .filter((entity): entity is EntityType => !!entity),
         seats: spectatorSeats(radii, arena.center)
     };
 };

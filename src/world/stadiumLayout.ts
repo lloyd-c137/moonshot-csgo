@@ -1,23 +1,34 @@
 // 莲花球场 layout (pure; tested in test/stadium.test.js). GAMEPLAY_AUTHORED, proportioned after the owner's photos
-// (twelve out-leaning petals, red lower seats, teal upper bowl, a roof ring open over the court) and fitted to the
+// (twelve out-leaning petals; one continuous light-grey bowl with blue blocks, three stair aisles per petal and a
+// cross-aisle walkway; a glazed band under a roof ring open over the court) and fitted to the
 // FF-01 arena outline. Heights and radii are illustrative, not surveyed.
 
 export type Point2 = readonly [number, number];
 
 export const STADIUM = {
-    /** The lower bowl's front fascia now stops here; the 10 m collider above it stays (invisible). */
-    fasciaTop: 4.8,
-    /** LED ribbon on the fascia's inner face. */
-    ribbon: { bottom: 4.15, top: 4.6 },
-    /** Upper bowl: tiers rising outward from the fascia. */
-    tiers: 14,
-    tierRise: 0.75,
-    tierRun: 0.9,
-    /** Gap (m) between the arena outline and the first upper tier. */
-    setback: 0.6,
-    /** Radial aisles (one per petal). */
+    /**
+     * The bowl's front parapet: a low wall just above the 3.6 m building roof (owner photo 2026-10-17: one continuous
+     * bowl rising from a low parapet). The 10 m collider above it stays (invisible).
+     */
+    fasciaTop: 4.6,
+    /** Blue and white banner boards on the parapet's inner face. */
+    ribbon: { bottom: 3.72, top: 4.42 },
+    /** One continuous bowl: tiers rising outward from the parapet. */
+    tiers: 18,
+    tierRise: 0.62,
+    tierRun: 0.85,
+    /** A wider cross-aisle walkway (with a rail) in front of this tier, splitting lower and upper rows. */
+    walkwayTier: 8,
+    walkwayExtra: 1.1,
+    /** Gap (m) between the arena outline and the first tier. */
+    setback: 0.15,
+    /** Twelve lotus petals (roof, facade, crowd seating). */
     petals: 12,
-    aisleHalfWidth: 0.7,
+    /** Radial stair aisles: three per petal, as in the photo. */
+    aisles: 36,
+    aisleHalfWidth: 0.55,
+    /** Glazed panel band above the top tier, under the roof ring. */
+    glazingHeight: 3.2,
     seatPitch: 0.55,
     /** Roof ring: inner edge over the outline (the opening follows the court), outer edge beyond the top tier. */
     roofInnerHeight: 20.8,
@@ -66,15 +77,25 @@ export const ringRadii = (outline: readonly Point2[], center: Point2, segments: 
 
 export const angleOf = (i: number, segments: number = STADIUM.segments) => (i / segments) * Math.PI * 2;
 
-/** Radius of upper tier `k` (its front edge) at sample `i`. */
+/** Radius of tier `k` (its front edge) at sample `i`; tiers behind the walkway sit further out. */
 export const tierRadius = (radii: readonly number[], i: number, k: number) =>
-    radii[i % radii.length] + STADIUM.setback + k * STADIUM.tierRun;
+    radii[i % radii.length] +
+    STADIUM.setback +
+    k * STADIUM.tierRun +
+    (k > STADIUM.walkwayTier ? STADIUM.walkwayExtra : 0);
 
 /** Floor height of upper tier `k`. */
 export const tierHeight = (k: number) => STADIUM.fasciaTop + k * STADIUM.tierRise;
 
-/** Angular distance (rad) to the nearest radial aisle; aisles sit between petals. */
+/** Angular distance (rad) to the nearest radial stair aisle (three per petal, one on each petal join). */
 export const aisleDistance = (angle: number) => {
+    const step = (Math.PI * 2) / STADIUM.aisles;
+    const offset = (((angle % step) + step) % step) - step / 2;
+    return Math.abs(Math.abs(offset) - step / 2);
+};
+
+/** Angular distance (rad) to the nearest join between two of the twelve petals. */
+export const petalJoinDistance = (angle: number) => {
     const step = (Math.PI * 2) / STADIUM.petals;
     const offset = (((angle % step) + step) % step) - step / 2;
     return Math.abs(Math.abs(offset) - step / 2);
@@ -96,11 +117,12 @@ export type SeatSlot = { x: number; y: number; z: number; yaw: number };
 export const spectatorSeats = (radii: readonly number[], center: Point2, count = 48): SeatSlot[] => {
     const segments = radii.length;
     const slots: SeatSlot[] = [];
-    const tiers = [3, 5, 7, 9];
+    const tiers = [10, 12, 14, 16];
     for (let n = 0; n < count; n++) {
         const petal = n % STADIUM.petals;
         const row = Math.floor(n / STADIUM.petals) % tiers.length;
-        const angle = ((petal + 0.5 + (row % 2 ? 0.18 : -0.18)) / STADIUM.petals) * Math.PI * 2;
+        // Between the petal's stair aisles (at 0, ⅓ and ⅔ of the petal), never on one.
+        const angle = ((petal + 0.5 + (row % 2 ? 0.09 : -0.09)) / STADIUM.petals) * Math.PI * 2;
         const i = Math.round((angle / (Math.PI * 2)) * segments) % segments;
         const k = tiers[row];
         const r = tierRadius(radii, i, k) + STADIUM.tierRun * 0.45;
@@ -122,4 +144,54 @@ export const seatAssignment = (spectatorIds: readonly string[], seats: number) =
         if (index < seats) out.set(id, index);
     });
     return out;
+};
+
+/**
+ * Court level (owner photo 2026-10-17): the green apron and its low blue/white boards, a rounded rectangle round the
+ * FF-01 court (x −13.9…−2.9, z −14.7…9.0) clear of both source stands (x ≤ −25, x ≥ 7) and inside the outline.
+ * Boards are decoration only (no collider), with a walk-through in the middle of every side.
+ */
+export const COURT_SURROUND = {
+    x0: -21,
+    x1: 4,
+    z0: -19.5,
+    z1: 13.5,
+    corner: 3,
+    boardHeight: 0.9,
+    gap: 2.4
+} as const;
+
+/** Closed outline of the surround (rounded corners), as points about a metre apart. */
+export const courtSurroundPath = (): Point2[] => {
+    const { x0, x1, z0, z1, corner } = COURT_SURROUND;
+    const points: Point2[] = [];
+    const straight = (ax: number, az: number, bx: number, bz: number) => {
+        const steps = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az)));
+        for (let s = 0; s < steps; s++) points.push([ax + ((bx - ax) * s) / steps, az + ((bz - az) * s) / steps]);
+    };
+    const arc = (ox: number, oz: number, from: number) => {
+        for (let s = 0; s < 6; s++) {
+            const a = from + (s / 6) * (Math.PI / 2);
+            points.push([ox + Math.cos(a) * corner, oz + Math.sin(a) * corner]);
+        }
+    };
+    straight(x0 + corner, z0, x1 - corner, z0);
+    arc(x1 - corner, z0 + corner, -Math.PI / 2);
+    straight(x1, z0 + corner, x1, z1 - corner);
+    arc(x1 - corner, z1 - corner, 0);
+    straight(x1 - corner, z1, x0 + corner, z1);
+    arc(x0 + corner, z1 - corner, Math.PI / 2);
+    straight(x0, z1 - corner, x0, z0 + corner);
+    arc(x0 + corner, z0 + corner, Math.PI);
+    return points;
+};
+
+/** Whether a board midpoint falls in one of the four walk-throughs (middle of each side). */
+export const inSurroundGap = (x: number, z: number) => {
+    const { x0, x1, z0, z1, gap } = COURT_SURROUND;
+    const mx = (x0 + x1) / 2,
+        mz = (z0 + z1) / 2;
+    const onEnd = Math.abs(z - z0) < 0.5 || Math.abs(z - z1) < 0.5;
+    const onSide = Math.abs(x - x0) < 0.5 || Math.abs(x - x1) < 0.5;
+    return (onEnd && Math.abs(x - mx) < gap / 2) || (onSide && Math.abs(z - mz) < gap / 2);
 };

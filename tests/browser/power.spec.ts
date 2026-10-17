@@ -57,10 +57,13 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     expect(power.phase).toBe('outbound');
     const lighting = () => page.evaluate(() => window.__MOONSHOT__!.lighting());
     const transition = await lighting();
+    expect(transition.skyNight).toBeGreaterThan(0);
+    expect(transition.skyNight).toBeLessThan(1);
     expect(transition.pooled.some((v) => v > 0)).toBe(true);
     expect(transition.panels.some((v) => v > 0)).toBe(true);
     await advance(page, 900);
     const off = await lighting();
+    expect(off.skyNight).toBe(1);
     expect(off.pooled.every((v) => v === 0), JSON.stringify(off.pooled)).toBe(true);
     expect(off.panels.length).toBeGreaterThan(0);
     expect(off.panels.every((v) => v === 0)).toBe(true);
@@ -86,6 +89,7 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     await advanceTo(POWER_RETURN_MS + 100);
     state = await page.evaluate(() => window.__MOONSHOT__!.match.state().power);
     expect(state.phase).toBe('complete');
+    expect((await lighting()).skyNight).toBe(0);
     expect([state.guard.x, state.guard.z]).toEqual(GUARD_ROUTE[0]);
     await page.keyboard.press('e');
     await advance(page, 100);

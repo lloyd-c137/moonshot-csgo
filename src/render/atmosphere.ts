@@ -14,8 +14,14 @@ export const setupAtmosphere = (app: AppBase, camera: Entity) => {
     // interior surface blue through image-based lighting, so the sky is an unlit dome seen above the open-air arena, courtyards and entrances.
     app.scene.ambientLight = new Color(0.55, 0.54, 0.52);
     app.scene.exposure = 1.1;
-    camera.camera!.clearColor = new Color(0.56, 0.72, 0.9);
+    const skyClearColor = new Color(0.56, 0.72, 0.9);
+    camera.camera!.clearColor = skyClearColor;
     const sky = createSkyDome(app, camera);
+    const skyMaterial = sky.render!.meshInstances[0].material as StandardMaterial;
+    let skyNight = 0;
+    let skyTarget = 0;
+    let skyFrom = 0;
+    let skyElapsed = 0;
 
     const sun = new Entity('sun');
     sun.addComponent('light', {
@@ -40,14 +46,29 @@ export const setupAtmosphere = (app: AppBase, camera: Entity) => {
         frame.vignette.enabled = true;
         frame.vignette.intensity = 0.25;
     }
-    /** Night: the sky darkens to a deep blue (emissive tint over the sky texture). */
+    /** Night: the sky darkens to a deep blue in step with the 650 ms interior-light transition. */
     const setNight = (night: boolean) => {
-        const material = sky.render!.meshInstances[0].material as StandardMaterial;
-        material.emissive.set(...((night ? [0.08, 0.1, 0.18] : [1, 1, 1]) as [number, number, number]));
-        material.update();
-        camera.camera!.clearColor = night ? new Color(0.02, 0.03, 0.06) : new Color(0.56, 0.72, 0.9);
+        const target = night ? 1 : 0;
+        if (target === skyTarget) return;
+        skyTarget = target;
+        skyFrom = skyNight;
+        skyElapsed = 0;
     };
-    return { sun, setNight };
+    const update = (deltaTime: number) => {
+        if (skyNight === skyTarget) return;
+        skyElapsed = Math.min(0.65, skyElapsed + deltaTime);
+        const progress = skyElapsed / 0.65;
+        const eased = progress * progress * (3 - 2 * progress);
+        skyNight = skyFrom + (skyTarget - skyFrom) * eased;
+        skyMaterial.emissive.set(1 - 0.92 * skyNight, 1 - 0.9 * skyNight, 1 - 0.82 * skyNight);
+        skyMaterial.update();
+        skyClearColor.set(
+            0.56 + (0.02 - 0.56) * skyNight,
+            0.72 + (0.03 - 0.72) * skyNight,
+            0.9 + (0.06 - 0.9) * skyNight
+        );
+    };
+    return { sun, setNight, update, nightAmount: () => skyNight };
 };
 
 /**

@@ -209,7 +209,8 @@ const boot = async () => {
     shell.stage('characters', 'active');
     const characters = await CharacterAssetLoader.load(app);
     shell.stage('characters', 'done');
-    const { sun, setNight } = setupAtmosphere(app, camera);
+    const atmosphere = setupAtmosphere(app, camera);
+    const { sun, setNight } = atmosphere;
     let night = false;
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     const serverUrl = audioLab && !new URLSearchParams(window.location.search).has('server')
@@ -344,6 +345,7 @@ const boot = async () => {
             night = match.dark;
             setNight(night);
         }
+        atmosphere.update(deltaTime);
         sun.light!.intensity += ((night ? 0.04 : 0.55) - sun.light!.intensity) * Math.min(1, deltaTime * 6);
         lightPool.update(deltaTime, position);
         match.update(deltaTime);
@@ -547,6 +549,7 @@ const boot = async () => {
                     nextIn: 12
                 }),
             lighting: () => ({
+                skyNight: atmosphere.nightAmount(),
                 pooled: lightPool.pool.map((light) => light.light!.intensity),
                 panels: app.root
                     .findComponents('render')

@@ -1399,7 +1399,7 @@ legend {
 }
 
 .hitmarker.show {
-    animation: hitmarker 0.35s ease-out;
+    animation: hitmarker calc(0.35s * var(--combat-hud-duration-scale, 1)) ease-out;
 }
 
 @keyframes hitmarker {
@@ -1542,7 +1542,7 @@ legend {
 }
 
 .broadcast.show {
-    animation: broadcast 2.6s ease-out forwards;
+    animation: broadcast calc(2.6s * var(--combat-hud-duration-scale, 1)) ease-out forwards;
 }
 
 @keyframes broadcast {
@@ -1994,7 +1994,7 @@ legend {
 }
 
 .popup.show {
-    animation: popup 0.9s ease-out;
+    animation: popup calc(0.9s * var(--combat-hud-duration-scale, 1)) ease-out;
 }
 
 @keyframes popup {
@@ -2636,7 +2636,7 @@ legend {
 }
 
 .gold-kill.show {
-    animation: gold-kill 3.2s ease-out forwards;
+    animation: gold-kill calc(3.2s * var(--combat-hud-duration-scale, 1)) ease-out forwards;
 }
 
 @keyframes gold-kill {

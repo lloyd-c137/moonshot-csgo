@@ -400,6 +400,7 @@ export const createUi = () => {
 
     // ---------- HUD: world chat ----------
     const chatLog = $<HTMLOListElement>('#chat-log');
+    let combatHudDurationScale = 1;
     const appendChat = (line: { name: string; colour: number; text: string; system?: true }) => {
         const item = document.createElement('li');
         if (line.system) item.dataset.system = 'true';
@@ -744,6 +745,13 @@ export const createUi = () => {
             popup.dataset.kind = kind;
             replay(popup, 'show');
         },
+        /** Scales transient combat HUD animation and dismissal timings; no gameplay state is affected. */
+        combatHudDuration: (scale?: number) => {
+            if (scale === undefined) return combatHudDurationScale;
+            combatHudDurationScale = Math.max(0.5, Math.min(1.75, scale));
+            root.style.setProperty('--combat-hud-duration-scale', String(combatHudDurationScale));
+            return combatHudDurationScale;
+        },
         /**
          * Offers a reload for a newer version. Shown as a dialog; during play (mouse captured) it waits on the
          * pause screen and a light notice says so.
@@ -916,7 +924,7 @@ export const createUi = () => {
             banner.hidden = false;
             replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
-            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600);
+            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600 * combatHudDurationScale);
         },
         /** Discs in hand (null: offline practice, unlimited). */
         ammo: (count: number | null, max: number) => {
@@ -955,7 +963,7 @@ export const createUi = () => {
             banner.hidden = false;
             replay(banner, 'show');
             window.clearTimeout(goldKillTimer);
-            goldKillTimer = window.setTimeout(() => (banner.hidden = true), 3200);
+            goldKillTimer = window.setTimeout(() => (banner.hidden = true), 3200 * combatHudDurationScale);
         },
         /** A one-line announcement in the broadcast banner (round results and similar). */
         broadcastText: (text: string) => {
@@ -966,7 +974,7 @@ export const createUi = () => {
             banner.hidden = false;
             replay(banner, 'show');
             window.clearTimeout(broadcastTimer);
-            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 4000);
+            broadcastTimer = window.setTimeout(() => (banner.hidden = true), 4000 * combatHudDurationScale);
         },
         /** The crosshair jumps and flashes on a confirmed hit. */
         crosshairKick: (kind: 'hit' | 'head' | 'kill') => {

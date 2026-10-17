@@ -44,6 +44,10 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         element.value = '0.6';
         element.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    await page.locator('[data-hud-duration]').evaluate((element: HTMLInputElement) => {
+        element.value = '1.5';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await page.locator('[data-rtt]').evaluate((element: HTMLInputElement) => {
         element.value = '200';
         element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -52,6 +56,9 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().effectIntensity)).toBe(1.2);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailDensity)).toBe(1.4);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength)).toBe(0.6);
+    await expect
+        .poll(() => page.locator('#app-ui').evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim()))
+        .toBe('1.5');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().simulatedRtt)).toBe(200);
     await expect(page.locator('[data-rtt-value]')).toHaveText('200 ms');
     await page.screenshot({ path: 'test-results/combat-feel-lab-tuning.png' });
@@ -94,6 +101,9 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().trailLength))
         .toBe(originalTuning.trailLength);
+    await expect
+        .poll(() => page.locator('#app-ui').evaluate((element) => getComputedStyle(element).getPropertyValue('--combat-hud-duration-scale').trim()))
+        .toBe('1');
 });
 
 test('offline target stays visible after entry, uses selected defaults and respawns in place', async ({ page }) => {

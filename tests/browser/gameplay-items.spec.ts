@@ -30,7 +30,7 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
         const state = window.__MOONSHOT__!.match.state();
         return [state.abilities?.revive, state.abilities?.frc, state.items?.find((item) => item.id === 'item-revive')?.available];
     })).toEqual([false, true, true]);
-    await page.keyboard.press('z');
+    await page.keyboard.press('Enter');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().abilities?.frcSelected)).toBe(true);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().viewmodelSkin)).toBe('frc');
     await expect(page.locator('#popup')).toContainText('FRC 飞盘启动');
@@ -40,7 +40,7 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
         return [state.abilities?.frc, state.abilities?.eye, state.abilities?.frcSelected];
     })).toEqual([false, true, false]);
     await pickup(-8.39, 23.48, 'stealth');
-    await page.keyboard.press('x');
+    await page.keyboard.press('Enter');
     await advance(page, 100);
     await expect(page.locator('#popup')).toContainText('静止之力发动');
     await expect.poll(() => page.evaluate(() => {

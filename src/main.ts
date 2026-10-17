@@ -533,6 +533,16 @@ const boot = async () => {
             }
             if (shell.chatOpen()) return; // typing in the chat box
             if (
+                event.code === 'Enter' &&
+                !event.repeat &&
+                document.pointerLockElement === canvas &&
+                match.activateActiveSkill()
+            ) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            if (
                 (event.code === 'Enter' || event.code === 'KeyT') &&
                 document.pointerLockElement === canvas &&
                 match.online

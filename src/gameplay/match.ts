@@ -762,6 +762,43 @@ export const createMatch = ({
         }
     };
     let lastEmoteAt = -Infinity;
+    const activateActiveSkill = () => {
+        if (
+            !locked() ||
+            !alive ||
+            inputPaused ||
+            spectating ||
+            executionFrozen ||
+            globalFinisher ||
+            performance.now() < detainedUntil
+        ) return false;
+
+        if (localAbilities.frc) {
+            if (roomNow() < localFrcCooldownUntil) ui.notify('FRC 飞盘仍在冷却');
+            else if (net.state === 'online') net.toggleFrc();
+            else {
+                localFrcSelected = !localFrcSelected;
+                setViewmodelSkin(holdingGold() ? 'gold' : localFrcSelected ? 'frc' : 'normal');
+                if (localFrcSelected) skillActivationFeedback('FRC 飞盘启动 · 红色科技盘', [1, 0.2, 0.12]);
+                else ui.notify('已切回普通飞盘');
+            }
+            return true;
+        }
+
+        if (localAbilities.stealth) {
+            if (roomNow() < localStealthCooldownUntil) ui.notify('静止之力仍在冷却');
+            else if (net.state === 'online') net.activateStealth();
+            else {
+                localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
+                localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
+                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
+            }
+            return true;
+        }
+
+        return false;
+    };
+
     window.addEventListener('keydown', (event) => {
         if (!spectating || !inFinalMinute() || event.repeat) return;
         const kind = ({ Digit1: 'cheer', Digit2: 'stick', Digit3: 'confetti' } as const)[
@@ -1746,25 +1783,6 @@ export const createMatch = ({
             beginFinisherHold();
         }
         if (event.code === 'KeyE' && !event.repeat && locked()) interactNearby();
-        if (event.code === 'KeyZ' && !event.repeat && locked() && alive && localAbilities.frc) {
-            if (roomNow() < localFrcCooldownUntil) ui.notify('FRC 飞盘仍在冷却');
-            else if (net.state === 'online') net.toggleFrc();
-            else {
-                localFrcSelected = !localFrcSelected;
-                setViewmodelSkin(holdingGold() ? 'gold' : localFrcSelected ? 'frc' : 'normal');
-                if (localFrcSelected) skillActivationFeedback('FRC 飞盘启动 · 红色科技盘', [1, 0.2, 0.12]);
-                else ui.notify('已切回普通飞盘');
-            }
-        }
-        if (event.code === 'KeyX' && !event.repeat && locked() && alive && localAbilities.stealth) {
-            if (roomNow() < localStealthCooldownUntil) ui.notify('静止之力仍在冷却');
-            else if (net.state === 'online') net.activateStealth();
-            else {
-                localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
-                localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
-                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
-            }
-        }
         if (
             event.code === 'KeyE' &&
             !event.repeat &&
@@ -2228,13 +2246,13 @@ export const createMatch = ({
         const abilityProgress: number[] = [];
         if (localAbilities.frc) {
             const remaining = Math.max(0, localFrcCooldownUntil - clockNow);
-            abilityLabels.push(remaining ? `FRC 冷却 ${Math.ceil(remaining / 1000)} 秒` : `Z ${localFrcSelected ? '切回普通盘' : '切换 FRC'}`);
+            abilityLabels.push(remaining ? `FRC 冷却 ${Math.ceil(remaining / 1000)} 秒` : `Enter ${localFrcSelected ? '切回普通盘' : '切换 FRC'}`);
             abilityProgress.push(1 - remaining / ITEM_RULES.frcCooldownMs);
         }
         if (localAbilities.stealth) {
             const remaining = Math.max(0, localStealthCooldownUntil - clockNow);
             const active = localStealthUntil > clockNow;
-            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `X 静止之力${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
+            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `Enter 静止之力${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
             abilityProgress.push(remaining ? 1 - remaining / ITEM_RULES.stealthCooldownMs : 1);
         }
         if (localAbilities.revive) abilityLabels.push('复活甲 · 可抵挡一次淘汰');
@@ -2710,6 +2728,8 @@ export const createMatch = ({
             if (started) net.rejoin(nickname, auth.token);
         },
         chat: (text: string) => net.chat(text),
+        /** Uses Enter for the currently held active skill; returns false when Enter may open chat. */
+        activateActiveSkill,
         /** Freezes movement and throwing while the chat box is open. */
         setInputPaused(paused: boolean) {
             if (globalFinisher) return;

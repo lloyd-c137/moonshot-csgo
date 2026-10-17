@@ -165,7 +165,7 @@ test('one shared round clock moves both surviving clients through blackout and f
     const originalEnd = (await state(page)).round?.endsAt;
     await page.keyboard.press('p');
     await page.locator('[data-phase="blackout"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的终局夜晚');
+    await expect(page.locator('.audio-lab-status')).toContainText('已同步触发终局夜晚');
     await page.locator('.audio-lab [data-action="close"]').click();
     await page.getByRole('button', { name: '继续游戏' }).click();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
@@ -179,9 +179,24 @@ test('one shared round clock moves both surviving clients through blackout and f
     await expect(page.locator('#broadcast')).toContainText('终局夜晚开始');
     await expect(b.page.locator('#broadcast')).toContainText('终局夜晚开始');
 
+    const watchCurtain = (target: Page) =>
+        target.evaluate(() => {
+            const debug = window as Window & {
+                __arenaCoverSeen?: boolean;
+                __arenaCoverObserver?: MutationObserver;
+            };
+            const curtain = document.querySelector('#arena-transition');
+            if (!curtain) throw new Error('Missing final-arena transition element');
+            debug.__arenaCoverSeen = false;
+            debug.__arenaCoverObserver = new MutationObserver(() => {
+                if (curtain.getAttribute('data-phase') === 'cover') debug.__arenaCoverSeen = true;
+            });
+            debug.__arenaCoverObserver.observe(curtain, { attributes: true, attributeFilter: ['data-phase'] });
+        });
+    await Promise.all([watchCurtain(page), watchCurtain(b.page)]);
     await page.keyboard.press('p');
     await page.locator('[data-phase="final"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('已触发当前回合的最终对决');
+    await expect(page.locator('.audio-lab-status')).toContainText('已同步触发最终球场对决');
     await page.locator('.audio-lab [data-action="close"]').click();
     await page.getByRole('button', { name: '继续游戏' }).click();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
@@ -189,12 +204,10 @@ test('one shared round clock moves both surviving clients through blackout and f
     await expect.poll(() => state(b.page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
     await expect(b.page.locator('#broadcast')).toContainText('最终对决');
+    await expect.poll(() => page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen)).toBe(true);
     await expect
-        .poll(() => page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
-        .toBe('cover');
-    await expect
-        .poll(() => b.page.locator('#arena-transition').getAttribute('data-phase'), { timeout: 1_000 })
-        .toBe('cover');
+        .poll(() => b.page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen))
+        .toBe(true);
     await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown-curtain.png' });
     await expect
         .poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 })

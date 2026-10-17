@@ -102,7 +102,22 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab')).toBeVisible();
     await page.locator('[data-phase="blackout"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('需要登录并连接本地开发测试服');
+    await expect(page.locator('.audio-lab-status')).toContainText('本机触发终局夜晚');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(true);
+    await page.locator('[data-phase="final"]').click();
+    await expect(page.locator('.audio-lab-status')).toContainText('本机触发最终球场对决');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalRelocationResult))
+        .toBe('relocated');
+    await page.locator('[data-phase="reset"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(false);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(false);
+    await page.locator('[data-phase="breaker"]').click();
+    await expect(page.locator('.audio-lab-status')).toContainText('直接拉闸');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.phase)).toBe('outbound');
+    await page.locator('[data-phase="reset"]').click();
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(false);
     await page.locator('[data-result="last-survivor"]').click();
     await expect(page.locator('#round-end')).toBeVisible();
     await expect(page.locator('#round-end')).toHaveAttribute('data-outcome', 'last-survivor');

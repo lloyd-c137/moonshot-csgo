@@ -157,6 +157,9 @@ export const createMatch = ({
     });
     // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
+    let labNightOverride = false;
+    let labFinalOverride = false;
+    let labPowerOverride: PowerState | null = null;
     const labTargetId = 'audio-lab-target';
     const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 0, pitch: 0 };
     let labHp: number = MAX_HP;
@@ -207,8 +210,25 @@ export const createMatch = ({
                 getHudDuration: () => ui.combatHudDuration(),
                 getSimulatedRtt: () => net.simulatedRtt,
                 simulateDummyHit: (scenario) => simulateDummyHit(scenario),
-                simulateBlackout: () => setRoundTestClock(ROUND.blackoutSecondsLeft),
-                simulateFinalMinute: () => setRoundTestClock(ROUND.finalSecondsLeft),
+                simulateBlackout: async () => {
+                    if (await setRoundTestClock(ROUND.blackoutSecondsLeft)) return 'server';
+                    labNightOverride = true;
+                    return 'local';
+                },
+                simulateFinalMinute: async () => {
+                    if (await setRoundTestClock(ROUND.finalSecondsLeft)) return 'server';
+                    labFinalOverride = true;
+                    return 'local';
+                },
+                simulateBreaker: () => {
+                    labPowerOverride = { pulledAt: roomNow() };
+                },
+                resetTestMechanics: () => {
+                    labNightOverride = false;
+                    labFinalOverride = false;
+                    labPowerOverride = null;
+                    finalRelocationResult = 'idle';
+                },
                 simulateRoundResult: (outcome, mine) => {
                     const now = performance.now();
                     const presentation = feedback.submit(
@@ -308,7 +328,12 @@ export const createMatch = ({
     let watchIndex = 0;
     /** Room time when this round's lights go out, or null (no round / offline). */
     const blackoutAt = () =>
-        roundState?.phase === 'playing' ? roundState.endsAt - ROUND.blackoutSecondsLeft * 1000 : null;
+        audioLab && labNightOverride
+            ? roomNow()
+            : roundState?.phase === 'playing'
+              ? roundState.endsAt - ROUND.blackoutSecondsLeft * 1000
+              : null;
+    const currentPower = () => labPowerOverride ?? power;
     const goldHolder = () => goldView.state?.holder ?? null;
     const holdingGold = () => goldHolder() === selfId();
     /** Room clock now: the server's while online, the local clock offline. */
@@ -1181,7 +1206,7 @@ export const createMatch = ({
             !inputPaused &&
             performance.now() >= detainedUntil &&
             nearBreaker(pose().p) &&
-            power.pulledAt === null &&
+            currentPower().pulledAt === null &&
             !executionView.hasActor(selfId()) &&
             (net.state !== 'online' || roundState?.phase === 'playing')
         ) {
@@ -1391,9 +1416,10 @@ export const createMatch = ({
         // The night guard: at the south gate until the lights go out, then on his rounds with a flashlight.
         const lightsOut = blackoutAt();
         const time = roomNow();
-        const outage = powerOut(time, power);
-        const nightActive = net.state === 'online' && lightsOut !== null && time >= lightsOut;
-        guard.update(time, lightsOut, power);
+        const activePower = currentPower();
+        const outage = powerOut(time, activePower);
+        const nightActive = (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
+        guard.update(time, lightsOut, activePower);
         breakerView.update(outage);
         monitorView.setActive(performance.now() < radarUntil);
         if (outage !== wasPowerOut) {
@@ -1402,7 +1428,7 @@ export const createMatch = ({
                 sound.blackout();
                 sound.blackoutMusic(true);
                 ui.broadcastText('总闸被拉下！全校断电 · 保安前往配电室');
-            } else if (power.pulledAt !== null) {
+            } else if (activePower.pulledAt !== null) {
                 ui.broadcastText(nightActive ? '保安已合闸 · 终局夜晚继续' : '保安已恢复供电，正在返回原位');
                 sound.pickup();
             }
@@ -1411,7 +1437,7 @@ export const createMatch = ({
             started && alive && !spectating && lookingAtMonitor()
                 ? '点击电脑查看其他玩家位置（30 秒）'
                 : started && alive && !spectating && nearBreaker(pose().p)
-                  ? power.pulledAt === null
+                  ? activePower.pulledAt === null
                       ? nightActive
                           ? '终局夜晚 · 无法拉闸'
                           : 'E 拉闸 · 全服每局限一次'
@@ -1444,7 +1470,7 @@ export const createMatch = ({
         if (goldAt) goldLight.setPosition(goldAt[0], goldAt[1] + 1.6, goldAt[2]);
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
-        const finalNow = net.state === 'online' && finalAt !== null && roomNow() >= finalAt;
+        const finalNow = (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
         if (finalNow !== finalShown) {
             finalShown = finalNow;
             floodlightFrom = floodlights[0].light!.intensity;
@@ -1465,13 +1491,15 @@ export const createMatch = ({
             finalRelocationResult = 'pending';
             ui.arenaTransition(() => {
                 const current = roundState;
+                const localTestFinal = audioLab && labFinalOverride;
                 if (
                     !alive ||
                     spectating ||
                     !started ||
-                    net.state !== 'online' ||
-                    current?.phase !== 'playing' ||
-                    roomNow() < current.endsAt - ROUND.finalSecondsLeft * 1000
+                    (!localTestFinal &&
+                        (net.state !== 'online' ||
+                            current?.phase !== 'playing' ||
+                            roomNow() < current.endsAt - ROUND.finalSecondsLeft * 1000))
                 ) {
                     const reason = !alive
                         ? 'dead'
@@ -1479,7 +1507,7 @@ export const createMatch = ({
                           ? 'spectating'
                           : !started
                             ? 'not-started'
-                            : net.state !== 'online'
+                            : !localTestFinal && net.state !== 'online'
                               ? 'offline'
                               : current?.phase !== 'playing'
                                 ? 'round-ended'
@@ -1931,7 +1959,12 @@ export const createMatch = ({
                 roomNow: roomNow(),
                 blackoutAt: blackoutAt(),
                 detained: performance.now() < detainedUntil,
-                power: { ...power, phase: powerPhase(roomNow(), power), dark, guard: { ...guard.pose } }
+                power: {
+                    ...currentPower(),
+                    phase: powerPhase(roomNow(), currentPower()),
+                    dark,
+                    guard: { ...guard.pose }
+                }
             }),
             avatarAction: (id: string) => avatars.actionState(id),
             avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),

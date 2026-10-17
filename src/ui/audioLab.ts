@@ -24,8 +24,10 @@ type Options = {
     getHudDuration: () => number;
     getSimulatedRtt: () => number;
     simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void;
-    simulateBlackout: () => Promise<boolean>;
-    simulateFinalMinute: () => Promise<boolean>;
+    simulateBlackout: () => Promise<'server' | 'local'>;
+    simulateFinalMinute: () => Promise<'server' | 'local'>;
+    simulateBreaker: () => void;
+    resetTestMechanics: () => void;
     simulateRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
 };
 
@@ -51,6 +53,8 @@ export const mountAudioLab = async ({
     simulateDummyHit,
     simulateBlackout,
     simulateFinalMinute,
+    simulateBreaker,
+    resetTestMechanics,
     simulateRoundResult
 }: Options) => {
     const host = document.createElement('div');
@@ -70,7 +74,7 @@ export const mountAudioLab = async ({
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><button data-action="execution-demo" type="button">处决人偶测试</button><small>命中预设直接驱动固定人偶反馈；处决按钮会进入背后站位，再按 V 播放实际双角色动作。人偶死亡后原地复活。</small></div>
-        <div class="audio-lab-scenarios" aria-label="回合高潮场景"><strong>回合高潮</strong><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终对决</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>夜晚与最终对决使用当前联机回合逻辑，需要显式连接本地测试服；结果卡片为本地 UI/音效演示，不改变战绩。</small></div>
+        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终球场对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>本地测试可以直接查看拉闸、终局夜晚与最终球场传送，不需跑图或等待倒计时；本机演示不改战绩、不影响其他玩家。连上开发测试服时，夜晚/最终对决优先使用服务器时钟。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
@@ -157,14 +161,24 @@ export const mountAudioLab = async ({
         button.addEventListener('click', () => simulateDummyHit(button.dataset.scenario as 'body' | 'head' | 'elimination' | 'golden' | 'execution'));
     });
     host.querySelector<HTMLButtonElement>('[data-phase="blackout"]')!.addEventListener('click', async () => {
-        status.textContent = (await simulateBlackout())
-            ? '已触发当前回合的终局夜晚；关闭面板观察校园照明与保安。'
-            : '终局夜晚场景需要登录并连接本地开发测试服（?server=ws://127.0.0.1:8787/ws）。';
+        const result = await simulateBlackout();
+        status.textContent = result === 'server'
+            ? '已同步触发终局夜晚；关闭面板观察照明、保安和最终规则。'
+            : '已在本机触发终局夜晚；仅当前浏览器演示，不改变服务器回合。';
     });
     host.querySelector<HTMLButtonElement>('[data-phase="final"]')!.addEventListener('click', async () => {
-        status.textContent = (await simulateFinalMinute())
-            ? '已触发当前回合的最终对决；关闭面板观察公告、遮罩、灯光与传送。'
-            : '最终对决场景需要登录并连接本地开发测试服（?server=ws://127.0.0.1:8787/ws）。';
+        const result = await simulateFinalMinute();
+        status.textContent = result === 'server'
+            ? '已同步触发最终球场对决；关闭面板观察公告、遮罩、灯光与传送。'
+            : '已在本机触发最终球场对决；仅当前浏览器演示，不改变服务器回合。';
+    });
+    host.querySelector<HTMLButtonElement>('[data-phase="breaker"]')!.addEventListener('click', () => {
+        simulateBreaker();
+        status.textContent = '已在本机直接拉闸；可观察灭灯、提示音、背景音乐和保安修闸路线。';
+    });
+    host.querySelector<HTMLButtonElement>('[data-phase="reset"]')!.addEventListener('click', () => {
+        resetTestMechanics();
+        status.textContent = '测试机制已复位。';
     });
     host.querySelectorAll<HTMLButtonElement>('[data-result]').forEach((button) => {
         button.addEventListener('click', () => {

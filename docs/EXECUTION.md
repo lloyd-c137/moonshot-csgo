@@ -19,6 +19,10 @@ The online room revalidates proximity, facing, pose freshness, spawn protection,
 
 In a development build, open `/?audioLab=1&offline=1`, press **P**, then select **去试音靶场并进入游戏**. The fixed mannequin now faces away from the player's practice position. The same behind/range/facing and collision checks show the execution button. Press **V** (or click the button) to see the local paired animation; completion plays the selected kill cue and the mannequin respawns at its original position after 2.5 seconds. Practice eliminations do not affect player stats.
 
+## Mechanism quick triggers
+
+While in the development audio lab, open **P → 机制快速测试** to directly trigger a local breaker outage, terminal night, or final-arena transition without walking to the electrical room or waiting for the round timer. **恢复测试状态** resets those local overrides. With the local test server connected, night and final-showdown triggers use the authoritative shared round clock; local fallbacks affect only this browser and never change scores.
+
 ## Source mask
 
 `src/config/executionOcclusion.ts` is generated from the existing derived campus collision audit by `node tools/executionOcclusionCli.ts`. The generator uses 0.1 m cells and excludes only arena stands from the blocked mask; floor absence, walls, glazing, barriers, and furniture block an execution. It reads the local campus source through `tools/campusGeometry.ts`; do not substitute a fabricated map if the source is missing. The mask is an approximate conservative gate, not a replacement for the live Ammo raycast.

@@ -74,6 +74,7 @@ type Handlers = {
     executionStarted: (execution: Execution) => void;
     executionEnded: (id: string, completed: boolean, reason: string) => void;
     executionDenied: (reason: string) => void;
+    emote: (id: string, kind: 'cheer' | 'stick' | 'confetti') => void;
     executionPrepared: (requestId: string, intentId: string) => void;
     executionPrepareDenied: (requestId: string, reason: string) => void;
     globalFinisherStarted: (finisher: GlobalFinisher) => void;
@@ -244,6 +245,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'executionEnded':
                 handlers.executionEnded(message.id, message.completed, message.reason);
                 break;
+            case 'emote':
+                handlers.emote(message.id, message.kind);
+                break;
             case 'executionDenied':
                 handlers.executionDenied(message.reason);
                 break;
@@ -394,6 +398,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         pullBreaker() {
             send({ type: 'pullBreaker' });
+        },
+        emote(kind: 'cheer' | 'stick' | 'confetti') {
+            send({ type: 'emote', kind });
         },
         prepareExecution(target: string) {
             const requestId = crypto.randomUUID();

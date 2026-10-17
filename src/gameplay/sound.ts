@@ -613,6 +613,20 @@ export const createSound = () => {
                 'confirmation',
                 AUDIO_PRIORITY.elimination
             ),
+        /** A spectator in the stands: a cheer swell, a light-stick whoosh or a confetti pop (positioned). */
+        crowd: (at: V3, kind: 'cheer' | 'stick' | 'confetti') =>
+            play((audio, now) => {
+                const out = output(audio, at);
+                if (kind === 'cheer') {
+                    hiss(audio, out, now, 0.9, 0.5, 900, 1600, 0.7);
+                    hiss(audio, out, now + 0.08, 0.8, 0.35, 1500, 2400, 0.9);
+                } else if (kind === 'stick') {
+                    hiss(audio, out, now, 0.35, 0.3, 2600, 900, 1.6);
+                } else {
+                    tone(audio, out, 'triangle', 900, 300, now, 0.08, 0.35);
+                    hiss(audio, out, now + 0.02, 0.5, 0.25, 4000, 6000, 0.8);
+                }
+            }, 'environment'),
         /** The throw is fully charged: one short, bright ding. */
         chargeFull: () =>
             play(

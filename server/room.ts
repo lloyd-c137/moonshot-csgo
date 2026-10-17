@@ -54,6 +54,8 @@ import { implausibleMove, judgeHit, PoseHistory } from './combatValidation.ts';
 const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
 /** Slack (m) on the flight-length check: the disc's own radius, bounce losses and claim rounding. */
 const REACH_SLACK = 1.5;
+/** Minimum time (ms) between two crowd emotes from one spectator. */
+const EMOTE_INTERVAL = 1000;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
@@ -83,6 +85,8 @@ type Player = Omit<PlayerSummary, 'account'> & {
     history: PoseHistory;
     /** Moves faster than sprinting allows (logged only; see combatValidation.ts). */
     suspiciousMoves: number;
+    /** Last final-minute crowd emote (rate limit). */
+    lastEmoteAt: number;
 };
 type FinisherPreparation = {
     requestId: string;
@@ -247,6 +251,8 @@ export class Room {
                 );
             case 'chat':
                 return this.chat(player, message.text, now);
+            case 'emote':
+                return this.emote(player, message.kind, now);
             case 'caught':
                 return this.caught(player, now);
             case 'landed':
@@ -393,7 +399,8 @@ export class Room {
             clockOffset: null,
             throws: new Map(),
             history: new PoseHistory(),
-            suspiciousMoves: 0
+            suspiciousMoves: 0,
+            lastEmoteAt: -Infinity
         };
         this.players.set(id, player);
         if (!this.round) this.startRound(this.matchNow(realNow), false);
@@ -1110,6 +1117,18 @@ export class Room {
             return;
         }
         this.pushChat({ id: ++this.chatId, t: now, name: player.name, colour: player.colour, text });
+    }
+
+    /**
+     * Final-minute stands: only players out for the round may cheer, at most once per EMOTE_INTERVAL. Everyone
+     * receives it (the living see and hear the crowd); it carries no gameplay effect.
+     */
+    private emote(player: Player, kind: 'cheer' | 'stick' | 'confetti', now: number) {
+        if (!player.spectating || this.round?.phase !== 'playing') return;
+        if (now < this.round.endsAt - ROUND.finalSecondsLeft * 1000) return;
+        if (now - player.lastEmoteAt < EMOTE_INTERVAL) return;
+        player.lastEmoteAt = now;
+        this.out.all({ type: 'emote', id: player.id, kind });
     }
 
     /** A system line in the world chat. */

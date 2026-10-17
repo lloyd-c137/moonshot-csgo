@@ -32,6 +32,7 @@ import type { AudioLabUi } from '../ui/audioLab';
 import { killIcons } from '../ui/killFeed';
 import type { Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
+import type { SeatSlot } from '../world/stadiumLayout';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
@@ -77,6 +78,8 @@ import type { PowerState } from './power';
 import { createRestroomMirrors } from './restroomMirrors';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
 import { createSound } from './sound';
+import { createStands } from './stands';
+import type { Emote } from './stands';
 import { TEACHER } from './teacher';
 import { createTeacher } from './teacherView';
 
@@ -93,6 +96,8 @@ type Options = {
     characters: CharacterAssetLoader;
     mirrors: RestroomMirrorMount[];
     mirrorLayer: Layer;
+    /** Spectator seats in the rebuilt 莲花球场's upper bowl (world/stadium.ts). */
+    stadiumSeats: readonly SeatSlot[];
 };
 
 const globalExecution = (finisher: GlobalFinisher): Execution => ({
@@ -116,7 +121,8 @@ export const createMatch = ({
     arenaCenter,
     characters,
     mirrors,
-    mirrorLayer
+    mirrorLayer,
+    stadiumSeats
 }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
@@ -124,6 +130,7 @@ export const createMatch = ({
         auth.avatarUrl(id, version)
     );
     const roster = new Map<string, PlayerSummary>();
+    const stands = createStands(app, characters, stadiumSeats);
     const restroomMirrors = createRestroomMirrors(
         app,
         camera,
@@ -598,6 +605,15 @@ export const createMatch = ({
     };
     /** Places the camera behind and above the watched player, looking at them; click switches who. */
     const spectate = (now: number) => {
+        // Final minute: everyone out for the round watches from their seat in the 莲花球场 stands.
+        const seat = inFinalMinute() ? stands.seatOf(selfId()) : null;
+        if (seat) {
+            player.setPosition(seat.x, seat.y + 1.25 + Math.sin(now / 1800) * 0.03, seat.z);
+            lookAt.set(arenaCenter[0], 1.2, arenaCenter[1]);
+            camera.lookAt(lookAt);
+            ui.spectate({ reason: '看台观战 · 1 欢呼 · 2 挥应援棒 · 3 撒彩带', watching: null });
+            return;
+        }
         const candidates = [...roster.values()].filter(
             (entry) => entry.id !== selfId() && entry.alive && poses.has(entry.id)
         );
@@ -616,6 +632,32 @@ export const createMatch = ({
     };
     window.addEventListener('mousedown', (event) => {
         if (!globalFinisher && spectating && event.button === 0) watchIndex++;
+    });
+    /** The last minute of a round (or the lab's final-arena override). */
+    const inFinalMinute = () =>
+        labFinalOverride ||
+        (roundState?.phase === 'playing' && roomNow() >= roundState.endsAt - ROUND.finalSecondsLeft * 1000);
+    const playEmote = (id: string, kind: Emote) => {
+        const at = stands.emote(id, kind, performance.now());
+        if (!at) return;
+        sound.crowd(at, kind);
+        if (kind === 'confetti') {
+            const hue = roster.get(id)?.colour ?? 0;
+            effects.burst(at, hue, 'out');
+            effects.burst(at, (hue + 120) % 360, 'head');
+            effects.burst(at, (hue + 240) % 360, 'hit');
+        }
+    };
+    let lastEmoteAt = -Infinity;
+    window.addEventListener('keydown', (event) => {
+        if (!spectating || !inFinalMinute() || event.repeat) return;
+        const kind = ({ Digit1: 'cheer', Digit2: 'stick', Digit3: 'confetti' } as const)[
+            event.code as 'Digit1' | 'Digit2' | 'Digit3'
+        ];
+        if (!kind || performance.now() - lastEmoteAt < 1000) return;
+        lastEmoteAt = performance.now();
+        if (net.state === 'online') net.emote(kind);
+        else playEmote(selfId(), kind);
     });
 
     const pauseMatchClock = (at: number) => {
@@ -1021,6 +1063,7 @@ export const createMatch = ({
             if (local && !completed) ui.notify(`处决中断：${reason}`);
         },
         executionDenied: (reason) => ui.notify(reason),
+        emote: (id, kind) => playEmote(id, kind),
         executionPrepared: (requestId) => {
             if (requestId === finisherRequestId) ui.notify('处决准备已确认');
         },
@@ -2045,6 +2088,7 @@ export const createMatch = ({
             avatars.add('prewarm', '', colourFor('local'));
             // The finisher pair is pooled and drawn here once, so a real move starts without a hitch.
             const coolExecution = executionView.warm(at);
+            const coolStands = stands.warm(at);
             avatars.update(new Map([['prewarm', { p: [at[0], at[1] - 0.9, at[2]], yaw: 0, pitch: 0, aim: 1 }]]), 0);
             discs.launch({
                 owner: 'warm-up',
@@ -2060,6 +2104,7 @@ export const createMatch = ({
             for (const ghost of ghosts) ghost.entity.enabled = false;
             avatars.remove('prewarm');
             coolExecution();
+            coolStands();
             discs.clear();
             effects.clear();
             goldView.set(null);
@@ -2113,6 +2158,12 @@ export const createMatch = ({
             } else if (chargingSince !== null) ui.charge(null);
             if (chargingSince === null) chargeFullPlayed = false;
             updateCombatFeel(deltaTime, now);
+            stands.update(
+                [...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
+                (id) => roster.get(id)?.colour ?? 0,
+                inFinalMinute(),
+                now
+            );
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
             if (net.state === 'online' && alive && !executionView.hasActor(selfId())) {
                 // A move the game made itself is flagged so the room resets (not rewinds across) this player's history.

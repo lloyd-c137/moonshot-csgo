@@ -193,6 +193,8 @@ export type ClientMessage =
     | { type: 'spotted' }
     | { type: 'pullBreaker' }
     | { type: 'executionPrepare'; requestId: string; target: string }
+    /** A spectator in the final-minute stands cheers, waves a light stick or throws confetti. */
+    | { type: 'emote'; kind: 'cheer' | 'stick' | 'confetti' }
     | { type: 'executionCommit'; requestId: string }
     | { type: 'executionCancel'; requestId: string }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
@@ -251,6 +253,7 @@ export type ServerMessage =
           scores: Scores;
       }
     | { type: 'hitRejected'; throwId: number }
+    | { type: 'emote'; id: string; kind: 'cheer' | 'stick' | 'confetti' }
     | { type: 'chat'; line: ChatLine }
     | { type: 'king'; king: King; isNew: boolean }
     | { type: 'account'; account: AccountStats }
@@ -337,6 +340,10 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'spotted':
         case 'pullBreaker':
             return value as ClientMessage;
+        case 'emote':
+            return value.kind === 'cheer' || value.kind === 'stick' || value.kind === 'confetti'
+                ? (value as ClientMessage)
+                : null;
         case 'executionPrepare':
             return typeof value.requestId === 'string' &&
                 value.requestId.length <= 80 &&

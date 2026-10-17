@@ -3195,18 +3195,114 @@ legend {
 
 .kill-marks i {
     position: absolute;
-    top: -11px;
-    left: -11px;
-    width: 22px;
-    height: 22px;
-    background:
-        linear-gradient(45deg, transparent 40%, #ff3b3b 40%, #ff3b3b 60%, transparent 60%),
-        linear-gradient(-45deg, transparent 40%, #ff3b3b 40%, #ff3b3b 60%, transparent 60%);
-    filter: drop-shadow(0 0 4px rgb(0 0 0 / 0.8));
+    top: -16px;
+    left: -9px;
+    width: 18px;
+    height: 16px;
+    background: linear-gradient(180deg, #ff7a5c, #e8322a);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    filter: drop-shadow(0 0 5px rgb(255 90 70 / 0.75));
+    animation: kill-mark-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes kill-mark-bob {
+    50% {
+        translate: 0 -3px;
+    }
+}
+
+/* Elimination burst: four chevrons snap in on a tightening ring, then the whole lock fades. */
+.kill-burst {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 60px;
+    height: 60px;
+    overflow: visible;
+    opacity: 0;
+    pointer-events: none;
+    translate: -50% -50%;
+    filter: drop-shadow(0 0 5px rgb(255 80 64 / 0.8));
+}
+
+.kill-burst-ring,
+.kill-burst-chevrons path {
+    fill: none;
+    stroke: #ff5a48;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.kill-burst-ring {
+    stroke-width: 1.6;
+}
+
+.kill-burst-chevrons path {
+    stroke: #fff4ef;
+    stroke-width: 3;
+}
+
+.kill-burst-core {
+    fill: #fff4ef;
+}
+
+.kill-burst.show {
+    animation: kill-burst calc(0.42s * var(--combat-hud-duration-scale, 1)) ease-out;
+}
+
+.kill-burst.show .kill-burst-chevrons {
+    animation: kill-chevrons calc(0.42s * var(--combat-hud-duration-scale, 1)) cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.kill-burst.show .kill-burst-ring {
+    animation: kill-ring calc(0.42s * var(--combat-hud-duration-scale, 1)) ease-out;
+}
+
+@keyframes kill-burst {
+    0%,
+    70% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+@keyframes kill-chevrons {
+    0% {
+        scale: 1.9;
+        opacity: 0;
+    }
+    35% {
+        scale: 0.9;
+        opacity: 1;
+    }
+    55% {
+        scale: 1;
+    }
+}
+
+@keyframes kill-ring {
+    0% {
+        scale: 1.8;
+        opacity: 0.2;
+    }
+    40% {
+        scale: 1;
+        opacity: 1;
+    }
+    100% {
+        scale: 1.15;
+        opacity: 0;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .hitmarker.show,
+    .kill-burst.show,
+    .kill-burst.show .kill-burst-chevrons,
+    .kill-burst.show .kill-burst-ring,
+    .kill-marks i,
     .hit-ring.show,
     .kill-banner.show,
     .kill-pips i[data-fresh='true'],

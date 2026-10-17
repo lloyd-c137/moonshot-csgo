@@ -188,6 +188,7 @@ const MARKUP = `
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
     <span class="hit-ring" id="hit-ring" aria-hidden="true"></span>
+    <svg class="kill-burst" id="kill-burst" viewBox="-30 -30 60 60" aria-hidden="true"><circle class="kill-burst-ring" r="15" /><g class="kill-burst-chevrons"><path d="M-21 -11 -11 -11 -11 -21" /><path d="M21 -11 11 -11 11 -21" /><path d="M21 11 11 11 11 21" /><path d="M-21 11 -11 11 -11 21" /></g><circle class="kill-burst-core" r="2.4" /></svg>
     <span class="popup" id="popup" aria-hidden="true"></span>
     <p class="interaction" id="interaction" hidden></p>
     <div class="chat" id="chat" data-open="false">
@@ -992,9 +993,17 @@ export const createUi = () => {
         hitMarker: (kind: 'hit' | 'head' | 'kill' | 'snipe') => {
             const marker = $('#hitmarker');
             delete marker.dataset.prediction;
+            // Eliminations use the lock-on burst (chevrons closing in on a tightening ring), not a cross.
+            if (kind === 'kill') {
+                // The kind stays recorded (tests and debugging read it); the cross itself never shows.
+                marker.dataset.kind = 'kill';
+                marker.classList.remove('show');
+                replay($('#kill-burst'), 'show');
+                return;
+            }
             marker.dataset.kind = kind;
             replay(marker, 'show');
-            // Head and kill tiers add an expanding ring around the crosshair.
+            // Head and sniper tiers add an expanding ring around the crosshair.
             if (kind !== 'hit') {
                 const ring = $('#hit-ring');
                 ring.dataset.kind = kind;

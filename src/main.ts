@@ -54,6 +54,7 @@ import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roo
 import { applyRoomNaming } from './world/roomNaming';
 import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
 import { buildSigns } from './world/signage';
+import { buildStadium } from './world/stadium';
 
 let ui: Ui | null = null;
 
@@ -209,6 +210,8 @@ const boot = async () => {
     const authoredScenes = authoredRoomScenes();
     for (const scene of authoredScenes) buildAuthoredRoom(app, campus.root, scene);
     buildSigns(app, campus.root, derivedWorld, namedRooms);
+    // The rebuilt 莲花球场 (decoration only; colliders unchanged) and its spectator seats.
+    const stadium = buildStadium(app, campus.root, campus.root, derivedWorld.arena);
     const { player, camera } = createPlayer(app);
     shell.stage('characters', 'active');
     const characters = await CharacterAssetLoader.load(app);
@@ -235,7 +238,8 @@ const boot = async () => {
         arenaCenter: derivedWorld.arena.center as [number, number],
         characters,
         mirrors: dressing.mirrors,
-        mirrorLayer: dressing.mirrorLayer
+        mirrorLayer: dressing.mirrorLayer,
+        stadiumSeats: stadium.seats
     });
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {

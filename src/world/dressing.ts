@@ -14,6 +14,7 @@ import type { Doorway } from './doorways';
 import type { RestroomMirrorLayout } from './restroomMirrors';
 import { restroomMirrorLayouts } from './restroomMirrors';
 import type { CampusRoom } from './roomIndex';
+import { STADIUM } from './stadiumLayout';
 
 export type RestroomMirrorMount = RestroomMirrorLayout & { surface: Entity; material: StandardMaterial };
 
@@ -268,7 +269,10 @@ export const buildDressing = (
     );
 
     // Tall perimeter wall around the open-air arena, standing on the source walls along the derived outline.
+    // The visible wall is now the stadium's lower-bowl fascia (to STADIUM.fasciaTop); the collider keeps the full
+    // ARENA_WALL_HEIGHT so the upper bowl built above it (world/stadium.ts) stays out of reach.
     const arenaWall = new MeshBuilder();
+    const arenaWallCollider = new MeshBuilder();
     const arenaCoping = new MeshBuilder();
     const { outline, center } = world.arena;
     const wallBottom = world.ceilingHeight - 0.05;
@@ -292,15 +296,24 @@ export const buildDressing = (
             mz + nz * 0.12,
             length + 0.35,
             0.35,
+            STADIUM.fasciaTop - wallBottom,
+            yaw
+        );
+        arenaWallCollider.box(
+            mx + nx * 0.12,
+            wallBottom,
+            mz + nz * 0.12,
+            length + 0.35,
+            0.35,
             ARENA_WALL_HEIGHT - wallBottom,
             yaw
         );
-        arenaCoping.box(mx + nx * 0.12, ARENA_WALL_HEIGHT, mz + nz * 0.12, length + 0.5, 0.55, 0.35, yaw);
+        arenaCoping.box(mx + nx * 0.12, STADIUM.fasciaTop, mz + nz * 0.12, length + 0.5, 0.55, 0.12, yaw);
     });
     addMesh(app, root, 'Arena_PerimeterWall', arenaWall, plaster);
     addMesh(app, root, 'Arena_Coping', arenaCoping, makeMaterial('coping', { colour: [0.62, 0.64, 0.67], gloss: 0.3 }));
     const arenaWallBody = new Entity('GameplayAuthored_ArenaWallCollider');
-    arenaWallBody.addComponent('collision', { type: 'mesh', render: { meshes: [arenaWall.build(device)] } });
+    arenaWallBody.addComponent('collision', { type: 'mesh', render: { meshes: [arenaWallCollider.build(device)] } });
     arenaWallBody.addComponent('rigidbody', { type: 'static', friction: 0, restitution: SURFACE_RESTITUTION.wall });
     root.addChild(arenaWallBody);
 

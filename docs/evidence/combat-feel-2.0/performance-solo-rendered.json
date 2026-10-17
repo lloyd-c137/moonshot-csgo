@@ -1,13 +1,6 @@
 {
   "capturedAt": "2026-10-16",
-  "scenario": "offline practice, one local player, stationary campus view",
-  "sampleDurationMs": 5002,
-  "frames": 301,
-  "medianFrameMs": 16.7,
-  "p95FrameMs": 16.7,
-  "medianDrawCalls": 119,
-  "p95DrawCalls": 121,
-  "maxDrawCalls": 123,
+  "scenario": "offline stationary campus, fixed-dummy body hit and headshot elimination",
   "host": {
     "model": "Apple M1",
     "gpu": "Apple M1, 7 cores",
@@ -21,9 +14,38 @@
     "viewport": [1280, 720],
     "devicePixelRatio": 1
   },
+  "measurements": {
+    "idle": {
+      "durationMs": 2010,
+      "frames": 121,
+      "medianFrameMs": 16.7,
+      "p95FrameMs": 16.7,
+      "medianDrawCalls": 123,
+      "p95DrawCalls": 125,
+      "maxDrawCalls": 126
+    },
+    "bodyImpact": {
+      "durationMs": 2005,
+      "frames": 121,
+      "medianFrameMs": 16.7,
+      "p95FrameMs": 16.7,
+      "medianDrawCalls": 121,
+      "p95DrawCalls": 129,
+      "maxDrawCalls": 131
+    },
+    "headshotElimination": {
+      "durationMs": 2011,
+      "frames": 121,
+      "medianFrameMs": 16.7,
+      "p95FrameMs": 16.7,
+      "medianDrawCalls": 124,
+      "p95DrawCalls": 136,
+      "maxDrawCalls": 141
+    }
+  },
   "limitations": [
-    "One opt-in Playwright sample, not a repeated benchmark distribution.",
-    "No movement, active combat, audio burst, remote clients, or 2-32 player load was included.",
-    "This headless Chromium result is a local baseline, not a desktop release performance claim."
+    "Opt-in Playwright sample on one local client; this is not a repeated benchmark distribution.",
+    "No remote clients, movement, extended audio burst, or 2-32 player load was included.",
+    "Headless Chromium frame cadence is capped by the renderer and does not establish desktop release performance."
   ]
 }

@@ -63,7 +63,7 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | Full development browser suite after fixes | Audio lab, dummy execution, every authored doorway, campus movement/interaction, route, multiplayer combat/execution and power-switch scenarios | PASS, 16/16 in 2.5 min |
 | Production browser smoke at HEAD `1a8f92a` | Production preview loads FF-01 and physics, then enters through pointer lock | PASS, 1/1 |
 | Production browser smoke after opt-in performance instrumentation | Current Vite production build, FF-01/physics fetch and pointer-lock entry | PASS, 1/1 |
-| Solo rendered-scene performance sample | Opt-in 5-second Playwright sample on Apple M1 / HeadlessChrome 155 at 1280×720: 16.7 ms P95 frame interval, 121 P95 draw calls, 123 max | PARTIAL baseline only; no combat or multiplayer load |
+| Solo rendered-scene performance sample | Opt-in idle, body-hit and headshot-elimination samples on Apple M1 / HeadlessChrome 155 at 1280×720: 16.7 ms P95 frame interval throughout; headshot reached 136 P95 / 141 max draw calls | PARTIAL baseline only; no remote-player load |
 | Damage vignette and reduced-flash checks | Multiplayer body hit captured from the victim client; reduced-flash test checks both cues have a 280 ms animation and end at zero; movement/sprint/pause/recovery route rerun | PASS, 3 targeted browser tests |
 | Typecheck/lint/build/production smoke after damage-feedback adjustment | Client and Worker type checks, ESLint, production bundle and production entry smoke | PASS; 1,886.88 kB raw / 484.24 kB gzip, existing chunk-size warning |
 | E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
@@ -91,7 +91,7 @@ The Ammo.js build logs a warning that scaled BVH triangle mesh shapes are unavai
 | Round result distinction | PARTIAL | Server sends protocol-v10 outcome `golden-disc`, `last-survivor`, or `draw`; result card has distinct copy, outcome colors, and audio cue. Unit and room tests pass, and the development browser rendered and checked all three outcomes plus a loss state. Actual round-event timing and audio remain part of live play review. |
 | Blackout/final-showdown/victory presentation | PARTIAL | Blackout ambience, pooled lights, fixture panels and sun fade over 0.65 s; arena floodlights fade over 420 ms. Final relocation now runs behind a short non-interactive curtain with stale-round/alive-state checks before teleporting. The curtain sequence and blackout route are browser-tested; the live last-minute trigger and round-result presentation still need visual review. Sky color still changes immediately. |
 | Combat Feel Lab | PARTIAL | Development-only P panel now has repeatable body-hit, headshot, normal-elimination and golden-elimination presets that invoke the same local dummy response path as practice hits/execution. The broader latency, trail, particle, HUD-duration, blackout, final-showdown, victory and two-player execution preset set remains pending. |
-| Performance / 2–32 player profiling | PARTIAL | A reproducible opt-in solo scene sample recorded 16.7 ms P95 frame interval and 121 P95 draw calls on Apple M1 / HeadlessChrome 155. It excludes active combat and remote players; 2–32 player profiling and memory/voice/particle measurements remain NOT RUN. Trail frequency is capped in code, but that is not a performance result. |
+| Performance / 2–32 player profiling | PARTIAL | Reproducible opt-in solo samples cover idle, fixed-dummy body hit and headshot elimination. On Apple M1 / HeadlessChrome 155 at 1280×720, each recorded 16.7 ms P95 frame interval; the headshot reached 136 P95 and 141 maximum draw calls. This does not cover remote clients, memory, audio polyphony, or 2–32 player load; those remain NOT RUN. |
 | Subjective human playtest | NOT RUN | No human acceptance claim. |
 | Production deploy | NOT RUN | No deployment was authorized or performed. |
 
@@ -101,7 +101,7 @@ The contact scan uses the existing hit volume (`PLAYER_HIT.radius = 0.36 m`, `ha
 
 Rigged mannequin provenance, clips, skeleton, derived runtime GLB, and license are documented in `docs/CHARACTER_ASSET_AUDIT.md`. Current work does not replace the source character or animation assets.
 
-The solo rendered-scene sample can be reproduced with `COMBAT_PERF=1 npx playwright test tests/browser/performance-sample.spec.ts`. It is intentionally opt-in and has no machine-specific FPS pass threshold. Raw environment and metrics are recorded in [performance-solo-rendered.json](evidence/combat-feel-2.0/performance-solo-rendered.json).
+The rendered-scene sample can be reproduced with `COMBAT_PERF=1 npx playwright test tests/browser/performance-sample.spec.ts`. It is intentionally opt-in and has no machine-specific FPS pass threshold. Raw environment and metrics are recorded in [performance-solo-rendered.json](evidence/combat-feel-2.0/performance-solo-rendered.json).
 
 ## Rendered visual evidence
 
@@ -117,6 +117,8 @@ Captured in an independent Chromium window with real rendering enabled at 1440×
 - Last-survivor win result: [round-result-survivor-win.png](evidence/combat-feel-2.0/round-result-survivor-win.png)
 - Loss result: [round-result-loss.png](evidence/combat-feel-2.0/round-result-loss.png)
 - Draw result: [round-result-draw.png](evidence/combat-feel-2.0/round-result-draw.png)
+- Fixed-dummy body-impact performance capture: [performance-body-hit.png](evidence/combat-feel-2.0/performance-body-hit.png)
+- Fixed-dummy headshot-elimination performance capture: [performance-headshot.png](evidence/combat-feel-2.0/performance-headshot.png)
 
 ## Outstanding acceptance
 

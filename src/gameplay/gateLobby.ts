@@ -20,8 +20,8 @@ export const stepGate = (state: GateState, x: number, z: number) => {
     return { state, open: false, light: (tryingToLeave ? 'denied' : 'red') as GateLight, joined: false };
 };
 
-/** Inside the fenced waiting plaza (outside the gate). */
+/** Lobby is only the short indoor vestibule between the south entrance doors and turnstile. */
 export const inPlaza = (x: number, z: number) => {
-    const { x0, x1, z0, z1 } = SOUTH_GATE.plaza;
-    return x >= x0 && x <= x1 && z >= z0 && z <= z1;
+    const vestibule = SOUTH_GATE.vestibule;
+    return x >= vestibule.x0 && x <= vestibule.x1 && z >= SOUTH_GATE.line && z <= SOUTH_GATE.outer.line + 0.2;
 };

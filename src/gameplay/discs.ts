@@ -46,6 +46,7 @@ type Disc = {
     sniper: boolean;
     hue: number;
     gold: boolean;
+    frc: boolean;
     flybyPlayed: boolean;
     /** Where a local disc has bounced off the level so far (sent with a hit claim so the room can check walls). */
     bounces: V3[];
@@ -134,6 +135,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             normal: V3;
             local: boolean;
             sniper?: boolean;
+            frc?: boolean;
             /** Thrown by the golden disc's holder: drawn in gold. */
             gold?: boolean;
         }) {
@@ -143,7 +145,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             const visual = new Entity('disc-visual');
             visual.addComponent('render', {
                 meshInstances:
-                    options.gold && goldMaterial ? [new MeshInstance(mesh, goldMaterial)] : meshFor(options.hue),
+                    options.gold && goldMaterial ? [new MeshInstance(mesh, goldMaterial)] : meshFor(options.frc ? 0 : options.hue),
                 castShadows: false
             });
             visual.setLocalPosition(0, -0.008, 0);
@@ -206,8 +208,9 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 last: options.origin,
                 settledFor: 0,
                 sniper: options.sniper === true,
-                hue: options.hue,
+                hue: options.frc ? 0 : options.hue,
                 gold: options.gold === true,
+                frc: options.frc === true,
                 flybyPlayed: false,
                 bounces
             });

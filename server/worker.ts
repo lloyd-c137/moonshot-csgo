@@ -104,7 +104,9 @@ export class World extends DurableObject<Env> {
                 }
             },
             SPAWN_POINTS.length,
-            this.accounts
+            this.accounts,
+            Math.random,
+            true
         );
         if (env.START_AMMO) this.room.startAmmo = Number(env.START_AMMO) || this.room.startAmmo;
     }

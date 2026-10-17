@@ -1,11 +1,14 @@
 // Pure game-room logic for the shared campus world (no Cloudflare APIs, so node tests drive it directly).
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
+import { SOUTH_GATE } from '../src/config/gameplay.ts';
+import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import { canExecute, canStartGlobalFinisher, EXECUTION, executionWatched } from '../src/gameplay/execution.ts';
 import type { Execution } from '../src/gameplay/execution.ts';
 import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';
 import type { GlobalFinisher } from '../src/gameplay/finisher/FinisherTypes.ts';
+import { inPlaza } from '../src/gameplay/gateLobby.ts';
 import { guardAt, GUARD } from '../src/gameplay/guard.ts';
 import { nearBreaker, powerOut } from '../src/gameplay/power.ts';
 import type { PowerState } from '../src/gameplay/power.ts';
@@ -23,7 +26,8 @@ import type {
     ServerMessage,
     StampedPose,
     ThrowRecord,
-    Vec3Tuple
+    Vec3Tuple,
+    WorldItem
 } from '../src/net/protocol.ts';
 import {
     AMMO,
@@ -87,6 +91,21 @@ type Player = Omit<PlayerSummary, 'account'> & {
     suspiciousMoves: number;
     /** Last final-minute crowd emote (rate limit). */
     lastEmoteAt: number;
+    lastJoinAttemptAt: number;
+    lastBoundaryCorrectionAt: number;
+    hasReviveArmor: boolean;
+    reviveUsed: boolean;
+    hasFrc: boolean;
+    hasEye: boolean;
+    hasStealth: boolean;
+    hasCreation: boolean;
+    coachGift: boolean;
+    ammoCapacity: number;
+    frcSelected: boolean;
+    frcCooldownUntil: number;
+    stealthUntil: number;
+    stealthCooldownUntil: number;
+    creationNextAt: number;
 };
 type FinisherPreparation = {
     requestId: string;
@@ -114,6 +133,10 @@ export class Room {
     private readonly spawnCount: number;
     private readonly out: Outbox;
     private readonly accounts: Accounts | null;
+    private readonly requireLobbyEntry: boolean;
+    private items = new Map<string, WorldItem>();
+    private markGiven = false;
+    private interactionTimes = new Map<string, number>();
     private readonly chatLog: ChatLine[] = [];
     private chatId = 0;
     /** The current round and the golden disc (null while the room is empty). */
@@ -142,11 +165,18 @@ export class Room {
     private officeAt: number | null = null;
     private readonly random: () => number;
 
-    constructor(out: Outbox, spawnCount: number, accounts: Accounts | null = null, random = Math.random) {
+    constructor(
+        out: Outbox,
+        spawnCount: number,
+        accounts: Accounts | null = null,
+        random = Math.random,
+        requireLobbyEntry = false
+    ) {
         this.out = out;
         this.random = random;
         this.spawnCount = spawnCount;
         this.accounts = accounts;
+        this.requireLobbyEntry = requireLobbyEntry;
     }
 
     get online() {
@@ -171,6 +201,8 @@ export class Room {
             this.cancelGlobalFinisher('处决参与者断开连接', realNow);
         this.preparations.delete(id);
         this.cancelExecutionFor(id, '玩家离开');
+        this.interactionTimes.delete(id);
+        this.dropHeldItems(player, now);
         // Leaving with the golden disc drops it where they stood.
         if (this.gold.holder === id) this.dropGold(player, now);
         this.players.delete(id);
@@ -198,12 +230,18 @@ export class Room {
             }
             return;
         }
-        if (message.type === 'hello') return this.hello(id, message.version, message.name, message.token, realNow);
+        if (message.type === 'hello')
+            return this.hello(id, message.version, message.name, message.token, realNow, message.phase ?? 'playing');
         const player = this.players.get(id);
         if (!player) return;
         if (message.type === 'ping') return this.out.to(player.id, { type: 'pong', c: message.c });
         // The room is authoritative: no gameplay or chat message is queued while a finisher owns the world.
         if (this.globalFinisher) return;
+        if (message.type === 'joinRound') return this.joinRound(player, realNow);
+        if (message.type === 'interact') return this.interact(player, message.target, this.matchNow(realNow));
+        if (message.type === 'toggleFrc') return this.toggleFrc(player, this.matchNow(realNow));
+        if (message.type === 'activateStealth') return this.activateStealth(player, this.matchNow(realNow));
+        if (player.phase === 'lobby' && message.type !== 'chat' && message.type !== 'pose') return;
         if (message.type === 'executionPrepare')
             return this.prepareFinisher(player, message.requestId, message.target, realNow, this.matchNow(realNow));
         if (message.type === 'executionCommit') return this.commitFinisher(player, message.requestId, realNow);
@@ -214,6 +252,14 @@ export class Room {
             case 'respawned': {
                 if (player.spectating || this.executionFor(id)) return;
                 if (!inBounds(message.pose)) return;
+                if (player.phase === 'lobby' && !this.validLobbyPose(message.pose.p)) {
+                    if (now - player.lastBoundaryCorrectionAt >= 250 && player.pose) {
+                        player.lastBoundaryCorrectionAt = now;
+                        this.out.to(player.id, { type: 'positionCorrected', pose: player.pose });
+                    }
+                    return;
+                }
+                if (player.phase === 'lobby' && message.type === 'respawned') return;
                 if (message.type === 'respawned' && !player.alive && now >= player.respawnAt) {
                     player.alive = true;
                     player.spawnedAt = now;
@@ -262,6 +308,7 @@ export class Room {
             case 'pullBreaker':
                 if (
                     this.round?.phase !== 'playing' ||
+                    player.phase !== 'playing' ||
                     this.blackout(now) ||
                     this.power.pulledAt !== null ||
                     !player.alive ||
@@ -298,12 +345,32 @@ export class Room {
         for (const execution of [...this.executions.values()])
             if (now >= execution.endsAt) this.finishExecution(execution, now);
         this.officeTick(now);
+        let itemsReturned = false;
+        for (const item of this.items.values()) {
+            if (item.returnAt !== null && now >= item.returnAt) {
+                const spawn = ITEM_SPAWNS.find((candidate) => candidate.id === item.id)!;
+                item.at = [...spawn.at];
+                item.returnAt = null;
+                item.available = true;
+                itemsReturned = true;
+            }
+        }
         for (const player of this.players.values()) {
+            if (player.stealthUntil && now >= player.stealthUntil) {
+                player.stealthUntil = 0;
+                this.broadcastAbility(player);
+            }
+            if (player.hasCreation && player.alive && player.ammo < player.ammoCapacity && now >= player.creationNextAt) {
+                player.ammo++;
+                player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+                this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+            }
             if (!player.alive && !player.spectating && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
                 player.hp = MAX_HP;
-                if (player.ammo < this.startAmmo) {
-                    player.ammo = this.startAmmo;
+                const respawnAmmo = Math.min(this.startAmmo, player.ammoCapacity);
+                if (player.ammo < respawnAmmo) {
+                    player.ammo = respawnAmmo;
                     this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
                 }
                 this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
@@ -316,12 +383,19 @@ export class Room {
                 if (now - entry.at > THROW_CLAIM_WINDOW * 1000) player.throws.delete(throwId);
             }
         }
-        const poses: Record<string, StampedPose> = {};
-        for (const player of this.players.values()) {
-            // Each pose carries its own stamp (sender clock, on the real room clock) so others interpolate it evenly.
-            if (player.pose && player.alive) poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now) };
+        if (this.players.size) {
+            for (const recipient of this.players.values()) {
+                const poses: Record<string, StampedPose> = {};
+                for (const player of this.players.values()) {
+                    // Stealth positions are omitted per recipient, never merely hidden by a presentation flag.
+                    if (player.id === recipient.id || player.stealthUntil > now) continue;
+                    if (player.pose && player.alive)
+                        poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now) };
+                }
+                this.out.to(recipient.id, { type: 'snapshot', t: realNow, poses });
+            }
         }
-        if (this.players.size) this.out.all({ type: 'snapshot', t: realNow, poses });
+        if (itemsReturned) this.broadcastItems();
     }
 
     summaries(): PlayerSummary[] {
@@ -336,9 +410,18 @@ export class Room {
         this.out.all({ type: 'profileUpdated', playerId: player.id, avatarId, avatarVersion });
     }
 
-    private hello(id: string, version: number, rawName: string, token: string | undefined, realNow: number) {
+    private hello(
+        id: string,
+        version: number,
+        rawName: string,
+        token: string | undefined,
+        realNow: number,
+        phase: 'lobby' | 'playing'
+    ) {
         if (!this.pending.has(id)) return;
         const now = this.matchNow(realNow);
+        // Production Worker rooms never trust the client's initial phase claim; the turnstile is the only entry.
+        phase = this.requireLobbyEntry ? 'lobby' : phase;
         this.pending.delete(id);
         if (version !== PROTOCOL_VERSION) {
             this.out.to(id, { type: 'rejected', reason: 'version' });
@@ -374,14 +457,17 @@ export class Room {
         const player: Player = {
             id,
             name,
+            phase,
             colour: this.freeColour(id),
             alive: true,
             hp: MAX_HP,
             score: 0,
             kills: 0,
             deaths: 0,
-            pose: null,
-            poseAt: 0,
+            pose: phase === 'lobby'
+                ? { p: [SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.y, SOUTH_GATE.spawn.z], yaw: 0, pitch: 0 }
+                : null,
+            poseAt: phase === 'lobby' ? now : 0,
             lastThrowAt: -Infinity,
             respawnAt: 0,
             hurtAt: 0,
@@ -400,16 +486,31 @@ export class Room {
             throws: new Map(),
             history: new PoseHistory(),
             suspiciousMoves: 0,
-            lastEmoteAt: -Infinity
+            lastEmoteAt: -Infinity,
+            lastJoinAttemptAt: -Infinity,
+            lastBoundaryCorrectionAt: -Infinity,
+            hasReviveArmor: false,
+            reviveUsed: false,
+            hasFrc: false,
+            hasEye: false,
+            hasStealth: false,
+            hasCreation: false,
+            coachGift: false,
+            ammoCapacity: AMMO.max,
+            frcSelected: false,
+            frcCooldownUntil: 0,
+            stealthUntil: 0,
+            stealthCooldownUntil: 0,
+            creationNextAt: now + ITEM_RULES.creationRefillMs
         };
         this.players.set(id, player);
         if (!this.round) this.startRound(this.matchNow(realNow), false);
         // Arriving after the lights went out: watch until the next round.
-        if (this.blackout(now) || (account && this.executedAccounts.has(account.name))) {
+        if (phase === 'playing' && (this.blackout(now) || (account && this.executedAccounts.has(account.name)))) {
             player.alive = false;
             player.spectating = true;
         }
-        if (this.round?.phase === 'playing' && !player.spectating && player.accountName)
+        if (phase === 'playing' && this.round?.phase === 'playing' && !player.spectating && player.accountName)
             this.roundParticipants.add(player.accountName);
         this.out.to(id, {
             type: 'welcome',
@@ -426,10 +527,56 @@ export class Room {
             gold: this.gold,
             ammo: player.ammo,
             discs: this.discs,
+            items: [...this.items.values()],
             t: realNow,
             matchTime: this.matchNow(realNow)
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
+    }
+
+    private validLobbyPose(p: Vec3Tuple) {
+        if (inPlaza(p[0], p[2])) return true;
+        const { x0, x1, line } = SOUTH_GATE;
+        // Allow a narrow approach/crossing window so joinRound can be validated on the following message.
+        return p[0] >= x0 - 0.35 && p[0] <= x1 + 0.35 && p[2] >= line - 0.9 && p[2] <= line + 1.8;
+    }
+
+    private joinRound(player: Player, realNow: number) {
+        const now = this.matchNow(realNow);
+        if (realNow - player.lastJoinAttemptAt < 500) return;
+        player.lastJoinAttemptAt = realNow;
+        if (player.phase !== 'lobby') {
+            this.out.to(player.id, { type: 'joinRoundDenied', reason: '你已经加入本局' });
+            return;
+        }
+        if (!player.pose || !this.validJoinGatePose(player.pose.p)) {
+            this.out.to(player.id, { type: 'joinRoundDenied', reason: '请在闸机通道内完成加入' });
+            return;
+        }
+        player.phase = 'playing';
+        player.spawnedAt = now;
+        player.hp = MAX_HP;
+        player.alive = true;
+        player.spectating = false;
+        player.respawnAt = 0;
+        if (this.blackout(now) || (player.accountName && this.executedAccounts.has(player.accountName))) {
+            player.alive = false;
+            player.spectating = true;
+        }
+        if (this.round?.phase === 'playing' && !player.spectating && player.accountName)
+            this.roundParticipants.add(player.accountName);
+        this.out.all({ type: 'phaseChanged', id: player.id, phase: 'playing' });
+    }
+
+    private validJoinGatePose(p: Vec3Tuple) {
+        const { x0, x1, line, approach, through } = SOUTH_GATE;
+        return (
+            p[0] >= x0 - 0.35 &&
+            p[0] <= x1 + 0.35 &&
+            p[2] >= line - through - 0.45 &&
+            p[2] < line &&
+            p[2] <= line + approach
+        );
     }
 
     private executionFor(id: string) {
@@ -514,13 +661,21 @@ export class Room {
         if (this.globalFinisher) return '全场处决正在进行';
         if (this.round?.phase !== 'playing') return '当前回合不能处决';
         if (!target || target === attacker) return '没有有效的处决目标';
-        if (!attacker.alive || attacker.spectating || !target.alive || target.spectating)
+        if (
+            attacker.phase !== 'playing' ||
+            target.phase !== 'playing' ||
+            !attacker.alive ||
+            attacker.spectating ||
+            !target.alive ||
+            target.spectating
+        )
             return '处决双方都必须处于存活状态';
         if (!attacker.pose || !target.pose || now - attacker.poseAt > 1000 || now - target.poseAt > 1000)
             return '玩家位置数据已过期';
         if (now - attacker.spawnedAt < SPAWN_PROTECTION * 1000 || now - target.spawnedAt < SPAWN_PROTECTION * 1000)
             return '出生保护期间不能处决';
         if (attacker.detainedUntil > now) return '罚站期间不能处决';
+        if (target.stealthUntil > now) return '隐身期间无法处决';
         if (target.detainedUntil > now) return '目标正在罚站，无法发动全场处决';
         if (this.executionFor(attacker.id) || this.executionFor(target.id)) return '处决双方正在参与其他动作';
         if (
@@ -592,30 +747,35 @@ export class Room {
         this.globalFinisher = null;
         const matchNow = this.matchNow(now);
         if (attacker?.alive && target?.alive && this.round?.phase === 'playing') {
-            target.hp = 0;
-            target.alive = false;
-            target.spectating = true;
-            target.respawnAt = 0;
-            target.deaths++;
-            if (target.accountName) this.executedAccounts.add(target.accountName);
-            attacker.kills++;
-            attacker.score += POINTS.elimination;
+            const revived = this.reviveOnLethal(target, matchNow);
+            if (!revived) {
+                target.hp = 0;
+                target.alive = false;
+                target.spectating = true;
+                target.respawnAt = 0;
+                target.deaths++;
+                if (target.accountName) this.executedAccounts.add(target.accountName);
+                attacker.kills++;
+                attacker.score += POINTS.elimination;
+            }
             this.out.all({
                 type: 'struck',
                 target: target.id,
                 by: attacker.id,
-                hp: 0,
-                out: true,
+                hp: revived ? MAX_HP : 0,
+                out: !revived,
                 head: false,
                 sniper: false,
                 gold: false,
-                final: true,
+                final: !revived,
                 execution: true,
+                revived,
                 at: [...target.pose!.p],
                 scores: this.scores()
             });
-            this.persist(attacker, target, true, matchNow, false);
-            this.fallen(target, matchNow);
+            this.persist(attacker, target, !revived, matchNow, false);
+            if (!revived) this.fallen(target, matchNow);
+            else this.out.all({ type: 'revived', id: target.id, at: [...target.pose!.p] });
             const key = attacker.accountName ?? attacker.id;
             this.finisherUses.set(key, (this.finisherUses.get(key) ?? 0) + 1);
             this.finisherRoundUses++;
@@ -703,40 +863,53 @@ export class Room {
     private finishExecution(execution: Execution, now: number) {
         const attacker = this.players.get(execution.attacker.id),
             target = this.players.get(execution.target.id);
-        if (!attacker?.alive || !target?.alive || this.round?.phase !== 'playing') {
+        if (
+            !attacker ||
+            !target ||
+            attacker.phase !== 'playing' ||
+            target.phase !== 'playing' ||
+            !attacker.alive ||
+            !target.alive ||
+            this.round?.phase !== 'playing'
+        ) {
             this.cancelExecutionFor(execution.attacker.id, '处决已中断');
             return;
         }
         this.executions.delete(execution.id);
-        target.hp = 0;
-        target.alive = false;
-        target.spectating = true;
-        target.respawnAt = 0;
-        target.deaths++;
-        if (target.accountName) this.executedAccounts.add(target.accountName);
-        attacker.kills++;
-        attacker.score += POINTS.elimination;
+        const revived = this.reviveOnLethal(target, now);
+        if (!revived) {
+            target.hp = 0;
+            target.alive = false;
+            target.spectating = true;
+            target.respawnAt = 0;
+            target.deaths++;
+            if (target.accountName) this.executedAccounts.add(target.accountName);
+            attacker.kills++;
+            attacker.score += POINTS.elimination;
+        }
         this.out.all({ type: 'executionEnded', id: execution.id, completed: true, reason: '处决完成' });
         this.out.all({
             type: 'struck',
             target: target.id,
             by: attacker.id,
-            hp: 0,
-            out: true,
+            hp: revived ? MAX_HP : 0,
+            out: !revived,
             head: false,
             sniper: false,
             gold: false,
-            final: true,
+            final: !revived,
             execution: true,
+            revived,
             at: [...target.pose!.p],
             scores: this.scores()
         });
-        this.persist(attacker, target, true, now, false);
-        this.fallen(target, now);
+        this.persist(attacker, target, !revived, now, false);
+        if (!revived) this.fallen(target, now);
+        else this.out.all({ type: 'revived', id: target.id, at: [...target.pose!.p] });
     }
 
     private throw(player: Player, record: ThrowRecord, now: number) {
-        if (this.round?.phase !== 'playing' || this.executionFor(player.id)) return;
+        if (player.phase !== 'playing' || this.round?.phase !== 'playing' || this.executionFor(player.id)) return;
         if (!player.alive || now - player.lastThrowAt < THROW_COOLDOWN * 1000 * 0.8) return;
         const speed = Math.hypot(...record.v);
         if (speed > MAX_THROW_SPEED + 12 || player.throws.has(record.id)) return;
@@ -744,9 +917,17 @@ export class Room {
         if (player.pose && distance(player.pose.p, record.o) > 3) return;
         // A sniper flag only counts on a full-speed launch.
         if (record.sniper && speed < SNIPER.minSpeed) record.sniper = false;
-        // Every throw spends a disc, except the golden one (it comes back).
+        const usingFrc = record.frc === true;
+        if (usingFrc && (!player.hasFrc || !player.frcSelected || now < player.frcCooldownUntil)) return;
+        // Every regular throw spends a disc, except the golden one (it comes back) and the reusable FRC disc.
         const golden = this.gold.holder === player.id;
-        if (golden) {
+        if (usingFrc) {
+            player.frcSelected = false;
+            player.frcCooldownUntil = now + ITEM_RULES.frcCooldownMs;
+            const frc = this.items.get('item-frc');
+            if (frc) frc.cooldownUntil = player.frcCooldownUntil;
+            this.broadcastAbility(player, frc ?? null);
+        } else if (golden) {
             // Every ROUND.goldBurst golden throws, a cooldown (a little slack for latency).
             if (now < player.goldCooldownUntil) return;
             player.goldThrows++;
@@ -758,6 +939,10 @@ export class Room {
             this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
         }
         player.lastThrowAt = now;
+        if (player.stealthUntil) {
+            player.stealthUntil = 0;
+            this.broadcastAbility(player);
+        }
         player.throws.set(record.id, { record, at: now, scored: false, golden, landed: false });
         this.out.all({ type: 'thrown', from: player.id, t: now, throw: record }, player.id);
     }
@@ -777,9 +962,11 @@ export class Room {
         const reject = () => this.out.to(player.id, { type: 'hitRejected', throwId });
         if (
             this.round?.phase !== 'playing' ||
+            player.phase !== 'playing' ||
             !entry ||
             entry.scored ||
             !target ||
+            target.phase !== 'playing' ||
             target === player ||
             !target.alive ||
             !target.pose
@@ -804,10 +991,12 @@ export class Room {
         const head = verdict.head;
         const sniper = entry.record.sniper === true;
         // Every disc to the head is lethal outright; body hits take one point of health.
-        target.hp = head ? 0 : Math.max(0, target.hp - 1);
+        target.hp = head || entry.record.frc ? 0 : Math.max(0, target.hp - 1);
         target.hurtAt = now;
         player.score += POINTS.hit;
-        const out = target.hp === 0;
+        let out = target.hp === 0;
+        const revived = out && this.reviveOnLethal(target, now);
+        if (revived) out = false;
         if (out) {
             player.kills++;
             player.score += POINTS.elimination;
@@ -831,8 +1020,10 @@ export class Room {
             out,
             head,
             sniper,
+            frc: entry.record.frc === true,
             gold: entry.golden,
             final: out && target.spectating,
+            revived,
             ...(verdict.bank ? { bank: true } : {}),
             range: verdict.range,
             at,
@@ -840,10 +1031,12 @@ export class Room {
         });
         this.persist(player, target, out, now);
         if (out) this.fallen(target, now);
+        if (revived) this.out.all({ type: 'revived', id: target.id, at: [...target.pose.p] });
     }
 
     /** Someone was eliminated: the golden disc (if theirs) and a spare disc drop where they fell. */
     private fallen(target: Player, now: number) {
+        this.dropHeldItems(target, now);
         if (this.gold.holder === target.id) this.dropGold(target, now);
         if (target.pose) {
             this.discs.push({ id: ++this.discId, at: [target.pose.p[0], 0.02, target.pose.p[2]] });
@@ -864,15 +1057,18 @@ export class Room {
 
     /** The guard's flashlight caught a player (checked against walls on their client; the room checks reach). */
     private spotted(player: Player, now: number) {
-        if (!player.alive || !player.pose || !this.blackout(now)) return;
+        if (player.phase !== 'playing' || !player.alive || !player.pose || !this.blackout(now)) return;
         const guard = guardAt(now, this.blackoutAt(), this.power);
         if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
         this.cancelExecutionFor(player.id, '被保安淘汰');
-        player.hp = 0;
-        player.alive = false;
-        player.deaths++;
-        player.spectating = true;
-        player.respawnAt = 0;
+        const revived = this.reviveOnLethal(player, now);
+        if (!revived) {
+            player.hp = 0;
+            player.alive = false;
+            player.deaths++;
+            player.spectating = true;
+            player.respawnAt = 0;
+        }
         this.out.all({
             type: 'struck',
             target: player.id,
@@ -882,18 +1078,42 @@ export class Room {
             head: false,
             sniper: false,
             gold: false,
-            final: true,
+            final: !revived,
+            revived,
             at: [player.pose.p[0], player.pose.p[1] + 0.5, player.pose.p[2]],
             scores: this.scores()
         });
-        this.fallen(player, now);
+        if (!revived) this.fallen(player, now);
+        else this.out.all({ type: 'revived', id: player.id, at: [...player.pose.p] });
+    }
+
+    private reviveOnLethal(player: Player, now: number) {
+        if (!player.hasReviveArmor || player.reviveUsed) return false;
+        player.hasReviveArmor = false;
+        player.reviveUsed = true;
+        player.hp = MAX_HP;
+        player.alive = true;
+        player.spectating = false;
+        player.respawnAt = 0;
+        player.spawnedAt = now;
+        player.hurtAt = now;
+        const item = this.items.get('item-revive');
+        if (item) {
+            item.available = false;
+            item.holder = null;
+            item.returnAt = null;
+        }
+        this.broadcastItems();
+        this.broadcastAbility(player, item ?? null);
+        return true;
     }
 
     /** After the lights go out: when one player (or nobody) is left standing, the round ends at once. */
     private checkLastStanding(now: number) {
         if (!this.blackout(now) || this.round?.phase !== 'playing') return;
-        const standing = [...this.players.values()].filter((each) => !each.spectating);
-        if (standing.length > 1 || this.players.size < 2) return;
+        const participants = [...this.players.values()].filter((each) => each.phase === 'playing');
+        const standing = participants.filter((each) => !each.spectating);
+        if (standing.length > 1 || participants.length < 2) return;
         this.endRound(
             now,
             standing[0] ?? null,
@@ -914,10 +1134,24 @@ export class Room {
         this.finisherUses.clear();
         this.preparations.clear();
         for (const player of this.players.values()) {
+            if (player.phase !== 'playing') continue;
             if (player.accountName) this.roundParticipants.add(player.accountName);
             player.score = 0;
             player.kills = 0;
             player.deaths = 0;
+            player.hasReviveArmor = false;
+            player.reviveUsed = false;
+            player.hasFrc = false;
+            player.hasEye = false;
+            player.hasStealth = false;
+            player.hasCreation = false;
+            player.coachGift = false;
+            player.ammoCapacity = AMMO.max;
+            player.frcSelected = false;
+            player.frcCooldownUntil = 0;
+            player.stealthUntil = 0;
+            player.stealthCooldownUntil = 0;
+            player.creationNextAt = now + ITEM_RULES.creationRefillMs;
             // Everyone watching from the last round's blackout plays again.
             if (player.spectating || !player.alive) {
                 player.spectating = false;
@@ -926,6 +1160,18 @@ export class Room {
             }
         }
         this.officeAt = now;
+        this.items = new Map(ITEM_SPAWNS.map((spawn) => [spawn.id, {
+            id: spawn.id,
+            kind: spawn.kind,
+            name: spawn.name,
+            at: [...spawn.at] as Vec3Tuple,
+            holder: null,
+            // Mark holds the one-time creation power; there is no free-floating pickup until it is dropped.
+            available: spawn.kind !== 'creation',
+            returnAt: null,
+            cooldownUntil: 0
+        }]));
+        this.markGiven = false;
         this.round = { phase: 'playing', endsAt: now + ROUND.roundSeconds * 1000 };
         const [x, z] = SPAWN_POINTS[Math.floor(this.random() * SPAWN_POINTS.length) % SPAWN_POINTS.length];
         this.gold = { holder: null, at: [x, 0.92, z] };
@@ -934,6 +1180,7 @@ export class Room {
         this.out.all({ type: 'round', round: this.round, scores: this.scores() });
         this.out.all({ type: 'power', power: this.power });
         this.out.all({ type: 'gold', gold: this.gold, event: 'spawned' });
+        this.broadcastItems();
     }
 
     private advanceRound(now: number) {
@@ -992,7 +1239,14 @@ export class Room {
     }
 
     private tryPickup(player: Player, now: number) {
-        if (this.gold.holder || !player.alive || !player.pose || this.round?.phase !== 'playing') return;
+        if (
+            player.phase !== 'playing' ||
+            this.gold.holder ||
+            !player.alive ||
+            !player.pose ||
+            this.round?.phase !== 'playing'
+        )
+            return;
         if (now - this.goldDroppedAt < ROUND.pickupDelay * 1000) return;
         const [x, y, z] = player.pose.p;
         const [gx, gy, gz] = this.gold.at;
@@ -1010,6 +1264,7 @@ export class Room {
 
     /** The thrower reports where its (ordinary) disc came to rest: it lies there for anyone to pick up. */
     private landed(player: Player, throwId: number, at: Vec3Tuple) {
+        if (player.phase !== 'playing') return;
         const entry = player.throws.get(throwId);
         // Golden throws count too: the golden disc flies home, but leaves an ordinary disc where it came down.
         if (!entry || entry.landed) return;
@@ -1024,7 +1279,7 @@ export class Room {
     }
 
     private pickupDiscs(player: Player) {
-        if (!player.alive || !player.pose || player.ammo >= AMMO.max) return;
+        if (player.phase !== 'playing' || !player.alive || !player.pose || player.ammo >= player.ammoCapacity) return;
         const [x, y, z] = player.pose.p;
         const taken = this.discs.filter(
             (disc) =>
@@ -1032,7 +1287,7 @@ export class Room {
                 Math.abs(disc.at[1] - (y - 0.9)) < 1.6
         );
         if (!taken.length) return;
-        const room = AMMO.max - player.ammo;
+        const room = player.ammoCapacity - player.ammo;
         const picked = taken.slice(0, room);
         player.ammo += picked.length;
         this.discs = this.discs.filter((disc) => !picked.includes(disc));
@@ -1055,8 +1310,113 @@ export class Room {
         this.out.all({ type: 'discs', discs: this.discs, added: { id, office: true } });
     }
 
+    private interact(player: Player, targetId: string, now: number) {
+        if (player.phase !== 'playing' || !player.alive || player.spectating || !player.pose || this.executionFor(player.id)) return;
+        const previous = this.interactionTimes.get(player.id) ?? -Infinity;
+        if (now - previous < ITEM_RULES.interactionIntervalMs) return;
+        this.interactionTimes.set(player.id, now);
+        const [x, y, z] = player.pose.p;
+        if (targetId === 'mark') {
+            const mark = NPC_SPAWNS.find((npc) => npc.id === 'mark')!;
+            if (Math.hypot(x - mark.at[0], z - mark.at[2]) > ITEM_RULES.pickupRadius || Math.abs(y - mark.at[1]) > 1.6) return;
+            if (this.markGiven || player.hasCreation) {
+                this.out.to(player.id, { type: 'interactionDenied', reason: 'Mark：创造之力已经交给别人了' });
+                return;
+            }
+            const item = this.items.get('item-creation');
+            if (!item) return;
+            this.markGiven = true;
+            item.available = false;
+            item.holder = player.id;
+            item.at = [x, Math.max(0.02, y - 0.9), z];
+            player.hasCreation = true;
+            player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+            this.broadcastItems();
+            this.broadcastAbility(player, item);
+            this.system(`${player.name} 获得创造之力`, now);
+            return;
+        }
+        if (targetId === 'coach-michael') {
+            const coach = NPC_SPAWNS.find((npc) => npc.id === targetId)!;
+            if (player.coachGift || Math.hypot(x - coach.at[0], z - coach.at[2]) > ITEM_RULES.pickupRadius || Math.abs(y - coach.at[1]) > 1.6) return;
+            player.coachGift = true;
+            player.ammoCapacity = 5;
+            player.ammo = Math.min(5, player.ammo + 2);
+            this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+            this.broadcastAbility(player);
+            this.system(`${player.name} 获得飞盘天赋：携带上限提升至 5`, now);
+            return;
+        }
+        const item = this.items.get(targetId);
+        if (!item || !item.available || Math.hypot(x - item.at[0], z - item.at[2]) > ITEM_RULES.pickupRadius || Math.abs(y - item.at[1]) > 1.8) return;
+        if (item.kind === 'revive' && (player.hasReviveArmor || player.reviveUsed)) return;
+        if ((item.kind === 'frc' && player.hasFrc) || (item.kind === 'eye' && player.hasEye) ||
+            (item.kind === 'stealth' && player.hasStealth) || (item.kind === 'creation' && player.hasCreation)) return;
+        item.holder = player.id;
+        item.available = false;
+        item.returnAt = null;
+        item.at = [x, Math.max(0.02, y - 0.9), z];
+        if (item.kind === 'revive') player.hasReviveArmor = true;
+        if (item.kind === 'frc') {
+            player.hasFrc = true;
+            player.frcCooldownUntil = Math.max(player.frcCooldownUntil, item.cooldownUntil);
+        }
+        if (item.kind === 'eye') player.hasEye = true;
+        if (item.kind === 'stealth') player.hasStealth = true;
+        if (item.kind === 'creation') player.hasCreation = true;
+        player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+        this.broadcastItems();
+        this.broadcastAbility(player, item);
+        this.system(`${player.name} 拾取了${item.name}`, now);
+    }
+
+    private toggleFrc(player: Player, now: number) {
+        const previous = this.interactionTimes.get(player.id) ?? -Infinity;
+        if (now - previous < ITEM_RULES.interactionIntervalMs) return;
+        this.interactionTimes.set(player.id, now);
+        if (player.phase !== 'playing' || !player.alive || !player.hasFrc || now < player.frcCooldownUntil) return;
+        player.frcSelected = !player.frcSelected;
+        this.broadcastAbility(player);
+    }
+
+    private activateStealth(player: Player, now: number) {
+        const previous = this.interactionTimes.get(player.id) ?? -Infinity;
+        if (now - previous < ITEM_RULES.interactionIntervalMs) return;
+        this.interactionTimes.set(player.id, now);
+        if (player.phase !== 'playing' || !player.alive || !player.hasStealth || now < player.stealthCooldownUntil || this.executionFor(player.id)) return;
+        player.stealthUntil = now + ITEM_RULES.stealthDurationMs;
+        player.stealthCooldownUntil = now + ITEM_RULES.stealthCooldownMs;
+        this.broadcastAbility(player);
+    }
+
+    private dropHeldItems(player: Player, now: number) {
+        for (const item of this.items.values()) {
+            if (item.holder !== player.id) continue;
+            if (item.kind === 'revive') continue;
+            item.holder = null;
+            item.available = true;
+            item.at = player.pose ? [player.pose.p[0], 0.02, player.pose.p[2]] : item.at;
+            item.returnAt = now + ITEM_RULES.droppedReturnMs;
+            if (item.kind === 'frc') player.hasFrc = false;
+            if (item.kind === 'eye') player.hasEye = false;
+            if (item.kind === 'stealth') player.hasStealth = false;
+            if (item.kind === 'creation') player.hasCreation = false;
+        }
+        this.broadcastItems();
+        this.broadcastAbility(player);
+    }
+
+    private broadcastItems() {
+        this.out.all({ type: 'items', items: [...this.items.values()] });
+    }
+
+    private broadcastAbility(player: Player, item: WorldItem | null = null) {
+        this.out.all({ type: 'ability', id: player.id, player: summary(player), item });
+    }
+
     /** A player threw inside 纪老师's view (checked on the client against walls); the room checks he is near. */
     private caught(player: Player, now: number) {
+        if (player.phase !== 'playing' || !player.alive || player.spectating) return;
         if (this.executionFor(player.id)) return;
         if (!player.pose) return;
         const teacher = teacherAt(now);
@@ -1200,6 +1560,7 @@ const inBounds = ({ p: [x, y, z] }: PlayerPose) =>
 const summary = ({
     id,
     name,
+    phase,
     accountName,
     colour,
     alive,
@@ -1209,10 +1570,22 @@ const summary = ({
     kills,
     deaths,
     avatarId,
-    avatarVersion
+    avatarVersion,
+    hasReviveArmor,
+    hasFrc,
+    hasEye,
+    hasStealth,
+    hasCreation,
+    coachGift,
+    ammoCapacity,
+    stealthUntil,
+    frcSelected,
+    frcCooldownUntil,
+    creationNextAt
 }: Player): PlayerSummary => ({
     id,
     name,
+    phase,
     account: accountName !== null,
     colour,
     alive,
@@ -1222,5 +1595,16 @@ const summary = ({
     kills,
     deaths,
     avatarId,
-    avatarVersion
+    avatarVersion,
+    hasReviveArmor,
+    hasFrc,
+    hasEye,
+    hasStealth,
+    hasCreation,
+    coachGift,
+    ammoCapacity,
+    stealthUntil,
+    frcSelected,
+    frcCooldownUntil,
+    creationNextAt
 });

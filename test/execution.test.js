@@ -130,7 +130,7 @@ test('server requires a prepared 400 ms hold, freezes every client mutation and 
     room.message('c', { type: 'ping', c: 10 }, 2508);
     assert.equal(room.players.get('c').pose, frozenPose);
     assert.equal(room.players.get('c').throws.size, 0);
-    assert.equal(room.players.get('a').hp, 2);
+    assert.equal(room.players.get('a').hp, 3);
     assert.equal(room.power.pulledAt, null);
     assert.equal(
         messages.get('c').filter((message) => message.type === 'chat' && message.line?.text === 'should be dropped')

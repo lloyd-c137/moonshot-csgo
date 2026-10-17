@@ -1,6 +1,5 @@
-// South gate turnstiles and the waiting plaza (owner brief 2026-10-17): five stainless cabinets across the real
-// opening in the south-lobby glazing, glass flaps that swing open for a player walking in, an indicator on every
-// cabinet (red / green), and the fenced forecourt outside with its own floor. Logic lives in gameplay/gateLobby.ts.
+// South lobby pillar-line turnstiles and the waiting plaza: five stainless cabinets span the interior passage,
+// glass flaps swing open for an approaching player, and indicators show red / green. Logic is in gameplay/gateLobby.ts.
 import type { AppBase, Entity as EntityType, StandardMaterial as StandardMaterialType } from 'playcanvas';
 import { BLEND_NORMAL, Color, Entity, StandardMaterial } from 'playcanvas';
 

@@ -637,19 +637,6 @@ export const createSound = () => {
                 'ui',
                 AUDIO_PRIORITY.action
             ),
-        /**
-         * One footstep. `at` positions other players' steps (omitted for your own); the surface sets the colour of
-         * the noise and `loud` is a sprint step.
-         */
-        footstep: (at: V3 | undefined, surface: 'epoxy' | 'wood' | 'court', loud: boolean) =>
-            play((audio, now) => {
-                const out = at ? output(audio, at) : bus();
-                const band = surface === 'wood' ? [520, 260] : surface === 'court' ? [1400, 900] : [2200, 1300];
-                const level = (loud ? 0.34 : 0.22) * (at ? 1.4 : 0.6);
-                const pitch = 0.92 + Math.random() * 0.16;
-                hiss(audio, out, now, 0.07, level, band[0] * pitch, band[1] * pitch, surface === 'wood' ? 0.9 : 2.2);
-                tone(audio, out, 'sine', 140 * pitch, 70, now, 0.05, level * (surface === 'wood' ? 0.9 : 0.4));
-            }, 'environment'),
         /** You were hit: a thud with a low buzz; the "defeat" clip when it eliminates you. */
         hurt: (eliminated: boolean) =>
             play(

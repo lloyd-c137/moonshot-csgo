@@ -23,8 +23,8 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
 
     const cameraBeforeHit = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
     await page.locator('[data-scenario="body"]').click();
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(1);
-    await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/2）');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
+    await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/3）');
     await expect
         .poll(async () => {
             const current = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
@@ -52,7 +52,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     expect(headCuePlayed, 'the existing selected headshot clip remains active').toBe(true);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp))
-        .toBe(2, {
+        .toBe(3, {
             timeout: 6000
         });
 
@@ -119,7 +119,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await expect(page.locator('.audio-lab')).toBeVisible();
     await page.locator('.audio-lab [data-action="range"]').click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(3);
     // Use the committed derived-world arena center so the throw can be seen in an open area, away from the guard.
     await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.395, 0.92, -2.85));
     const tracerSamples = await page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples);
@@ -225,14 +225,16 @@ test('offline target stays visible after entry, uses selected defaults and respa
         await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(hp);
     };
     await page.waitForTimeout(600);
+    await shoot(0.9, 2);
+    await page.waitForTimeout(550);
     await shoot(0.9, 1);
     await page.waitForTimeout(550);
     await shoot(0.9, 0);
     await expect(tag).toBeHidden();
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(3);
     await expect(tag).toBeVisible();
     await shoot(1.6, 0);
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(3);
     await expect(tag).toBeVisible();
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy))?.position).toEqual(
         initial?.position

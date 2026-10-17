@@ -102,7 +102,6 @@ const MARKUP = `
           <dl class="controls">
             <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
             <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
-            <div><dt><span class="kbd">C</span></dt><dd>按住静步（慢走，没有脚步声）</dd></div>
             <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
             <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
@@ -167,7 +166,6 @@ const MARKUP = `
     <span class="latency" id="latency" data-quality="none">离线</span>
     <div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div>
     <p class="watch-warning" id="watch-warning" hidden><b>纪老师在附近</b>禁止打飞盘</p>
-    <p class="radar" id="radar" hidden>监控画面 · <b id="radar-seconds">30</b> 秒</p>
     <div class="gold-kill" id="gold-kill" hidden>
       <small>金飞盘击杀</small>
       <strong><b id="gold-kill-by"></b><i aria-hidden="true"></i><b id="gold-kill-target"></b></strong>
@@ -195,6 +193,8 @@ const MARKUP = `
     <svg class="kill-burst" id="kill-burst" viewBox="-30 -30 60 60" aria-hidden="true"><circle class="kill-burst-ring" r="15" /><g class="kill-burst-chevrons"><path d="M-21 -11 -11 -11 -11 -21" /><path d="M21 -11 11 -11 11 -21" /><path d="M21 11 11 11 11 21" /><path d="M-21 11 -11 11 -11 21" /></g><circle class="kill-burst-core" r="2.4" /></svg>
     <span class="popup" id="popup" aria-hidden="true"></span>
     <p class="interaction" id="interaction" hidden></p>
+    <div class="ability-status" id="ability-status" hidden><i class="ability-ring"><b></b></i><span id="ability-label"></span></div>
+    <div class="xray-pings" id="xray-pings" aria-hidden="true"></div>
     <div class="chat" id="chat" data-open="false">
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <form class="chat-form" id="chat-form" hidden><span>全服</span><input id="chat-input" type="text" maxlength="120" autocomplete="off" placeholder="输入消息，Enter 发送，Esc 取消" /></form>
@@ -1091,6 +1091,36 @@ export const createUi = () => {
             prompt.hidden = text === null;
             if (text !== null && prompt.textContent !== text) prompt.textContent = text;
         },
+        abilityStatus: (label: string | null, progress = 1) => {
+            const root = $('#ability-status');
+            root.hidden = label === null;
+            if (label === null) return;
+            $('#ability-label').textContent = label;
+            root.style.setProperty('--ability-progress', `${Math.round(Math.max(0, Math.min(1, progress)) * 360)}deg`);
+        },
+        playerPings: (pings: readonly { id: string; name: string; x: number; y: number; distance: number }[]) => {
+            const root = $('#xray-pings');
+            const active = new Set(pings.map((ping) => ping.id));
+            for (const element of [...root.children]) {
+                if (!active.has((element as HTMLElement).dataset.id ?? '')) element.remove();
+            }
+            for (const ping of pings) {
+                let element = root.querySelector<HTMLElement>(`[data-id="${CSS.escape(ping.id)}"]`);
+                if (!element) {
+                    element = document.createElement('div');
+                    element.className = 'xray-ping';
+                    element.dataset.id = ping.id;
+                    const label = document.createElement('b');
+                    const distance = document.createElement('small');
+                    element.append(label, distance);
+                    root.append(element);
+                }
+                element.style.left = `${Math.round(ping.x)}px`;
+                element.style.top = `${Math.round(ping.y)}px`;
+                element.querySelector('b')!.textContent = ping.name;
+                element.querySelector('small')!.textContent = `${Math.round(ping.distance)} 米`;
+            }
+        },
         onExecute: (hold: { begin: () => void; end: () => void }) => {
             executeHold = hold;
         },
@@ -1240,11 +1270,6 @@ export const createUi = () => {
         /** 纪老师's circle: a standing warning while you are inside it. */
         watchWarning: (show: boolean) => {
             $('#watch-warning').hidden = !show;
-        },
-        /** Monitoring room radar: seconds left (null hides). */
-        radar: (seconds: number | null) => {
-            $('#radar').hidden = seconds === null;
-            if (seconds !== null) $('#radar-seconds').textContent = String(Math.ceil(seconds));
         },
         /** The golden disc took someone out: a big gold kill banner. */
         goldKill: (killer: string, victim: string, tone: 'neutral' | 'mine' | 'me') => {

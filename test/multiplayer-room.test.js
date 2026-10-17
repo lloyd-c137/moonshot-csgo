@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Room } from '../server/room.ts';
+import { SOUTH_GATE } from '../src/config/gameplay.ts';
+import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
@@ -29,10 +31,10 @@ const harness = () => {
         24
     );
     room.startAmmo = 9;
-    const join = (id, name, now = 0) => {
+    const join = (id, name, now = 0, phase = 'playing') => {
         inbox.set(id, []);
         room.connect(id);
-        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name }, now);
+        room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name, phase }, now);
         return inbox.get(id);
     };
     const pose = (id, p, now) => room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0 } }, now);
@@ -68,7 +70,7 @@ test('wrong protocol versions and garbage are rejected', () => {
     assert.equal(cleanName('a'.repeat(40)).length, 16);
 });
 
-test('two valid hits eliminate (one per disc), scoring one point for the elimination, then the server respawns at full health', () => {
+test('three body hits eliminate (one per disc), scoring one point for the elimination, then respawn at full health', () => {
     const { room, join, pose, inbox } = harness();
     join('a', 'A');
     join('b', 'B');
@@ -81,7 +83,7 @@ test('two valid hits eliminate (one per disc), scoring one point for the elimina
     throwAndHit(1, 1000);
     assert.ok(inbox.get('b').some((message) => message.type === 'thrown' && message.from === 'a'));
     let struck = inbox.get('b').filter((message) => message.type === 'struck');
-    assert.deepEqual([struck.length, struck[0].hp, struck[0].out, struck[0].scores.a], [1, 1, false, [0, 0, 0]]);
+    assert.deepEqual([struck.length, struck[0].hp, struck[0].out, struck[0].scores.a], [1, 2, false, [0, 0, 0]]);
     assert.equal(struck[0].throwId, 1);
     // The same disc cannot score twice.
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 1600);
@@ -89,18 +91,21 @@ test('two valid hits eliminate (one per disc), scoring one point for the elimina
     assert.ok(inbox.get('a').some((message) => message.type === 'hitRejected' && message.throwId === 1));
     throwAndHit(2, 2000);
     struck = inbox.get('b').filter((message) => message.type === 'struck');
+    assert.deepEqual([struck[1].hp, struck[1].out], [1, false]);
+    throwAndHit(3, 3000);
+    struck = inbox.get('b').filter((message) => message.type === 'struck');
     assert.deepEqual(
-        [struck[1].hp, struck[1].out, struck[1].scores.a, struck[1].scores.b],
+        [struck[2].hp, struck[2].out, struck[2].scores.a, struck[2].scores.b],
         [0, true, [1, 1, 0], [0, 0, 1]]
     );
     // Eliminated players cannot be hit again.
-    throwAndHit(3, 3000);
-    assert.equal(inbox.get('b').filter((message) => message.type === 'struck').length, 2);
-    room.tick(2500 + RESPAWN_SECONDS * 1000 + 10);
+    throwAndHit(4, 4000);
+    assert.equal(inbox.get('b').filter((message) => message.type === 'struck').length, 3);
+    room.tick(3500 + RESPAWN_SECONDS * 1000 + 10);
     const respawn = inbox.get('b').find((message) => message.type === 'respawn');
     assert.equal(respawn.id, 'b');
     assert.ok(respawn.spawn >= 0 && respawn.spawn < 24);
-    room.message('b', { type: 'respawned', pose: { p: [1, 0.9, 1], yaw: 0, pitch: 0 } }, 6000);
+    room.message('b', { type: 'respawned', pose: { p: [1, 0.9, 1], yaw: 0, pitch: 0 } }, 7000);
     assert.deepEqual([room.players.get('b').alive, room.players.get('b').hp], [true, MAX_HP]);
 });
 
@@ -115,10 +120,12 @@ test('a lethal hit during a manual breaker outage sends the target to spectating
         room.message('a', { type: 'hit', throwId: id, target: 'b', at: [8, 1.2, 0] }, at + 500);
     };
     throwAndHit(1, 1000);
-    assert.equal(room.players.get('b').hp, 1);
+    assert.equal(room.players.get('b').hp, MAX_HP - 1);
 
     room.power = { pulledAt: 1800 };
     throwAndHit(2, 2000);
+    assert.equal(room.players.get('b').hp, MAX_HP - 2);
+    throwAndHit(3, 3000);
 
     const target = room.players.get('b');
     const elimination = inbox.get('b').filter((message) => message.type === 'struck').at(-1);
@@ -145,6 +152,148 @@ test('a damaged player heals to full after a quiet spell', () => {
     room.tick(3400 + (HEAL_SECONDS + 1) * 1000);
     assert.equal(room.players.get('b').hp, MAX_HP);
     assert.ok(inbox.get('b').some((message) => message.type === 'healed' && message.id === 'b'));
+});
+
+test('three-point health takes three ordinary body hits while a head hit remains immediately lethal', () => {
+    const { room, join, pose } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    pose('a', [0, 0.9, 0], 0);
+    pose('b', [6, 0.9, 0], 0);
+    assert.equal(room.players.get('b').hp, 3);
+
+    for (const [id, at] of [[1, 3000], [2, 4000]]) {
+        room.message('a', { type: 'throw', throw: { id, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, at);
+        room.message('a', { type: 'hit', throwId: id, target: 'b', at: [6, 1, 0] }, at + 400);
+        assert.equal(room.players.get('b').hp, 3 - id);
+        assert.equal(room.players.get('b').alive, true);
+    }
+
+    room.message('a', { type: 'throw', throw: { id: 3, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 5000);
+    room.message('a', { type: 'hit', throwId: 3, target: 'b', at: [6, 1, 0] }, 5400);
+    assert.equal(room.players.get('b').hp, 0);
+    assert.equal(room.players.get('b').spectating, false, 'ordinary elimination respawns after the delay');
+});
+
+test('item pickups are server-authoritative, bounded to the room point, and the revive armor prevents one lethal hit', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    const revive = ITEM_SPAWNS.find((item) => item.kind === 'revive');
+    pose('a', [revive.at[0] - 8, 0.92, revive.at[2]], 3000);
+    pose('b', [revive.at[0], 0.92, revive.at[2]], 3000);
+    room.message('b', { type: 'interact', target: revive.id }, 3300);
+    assert.equal(room.players.get('b').hasReviveArmor, true);
+    assert.equal(room.items.get(revive.id).available, false);
+    room.players.get('b').hp = 1;
+    // Move both players to a known unobstructed test lane after pickup, then exercise the real hit path.
+    pose('a', [0, 0.9, 0], 5000);
+    pose('b', [8, 0.9, 0], 5000);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, 5000);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 5500);
+    assert.equal(room.players.get('b').alive, true);
+    assert.equal(room.players.get('b').hp, MAX_HP);
+    assert.ok(inbox.get('b').some((message) => message.type === 'revived'));
+});
+
+test('FRC is unlimited, lethal, cooldown follows its dropped pickup, and stealth omits player snapshots', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    join('c', 'C');
+    const frc = ITEM_SPAWNS.find((item) => item.kind === 'frc');
+    pose('a', [frc.at[0], 0.92, frc.at[2]], 1000);
+    room.message('a', { type: 'interact', target: frc.id }, 1300);
+    room.message('a', { type: 'toggleFrc' }, 1600);
+    const player = room.players.get('a');
+    const ammoBefore = player.ammo;
+    room.message('a', { type: 'throw', throw: { id: 1, o: [frc.at[0] + 0.3, 1.5, frc.at[2]], v: [15, 0, 0], tilt: 0, frc: true } }, 2000);
+    assert.equal(player.ammo, ammoBefore);
+    assert.equal(player.frcCooldownUntil, 2000 + ITEM_RULES.frcCooldownMs);
+    assert.equal(room.items.get(frc.id).cooldownUntil, player.frcCooldownUntil);
+    room.disconnect('a', 2500);
+    assert.equal(room.items.get(frc.id).available, true);
+    pose('b', [...room.items.get(frc.id).at.slice(0, 1), 0.92, room.items.get(frc.id).at[2]], 2800);
+    room.message('b', { type: 'interact', target: frc.id }, 3100);
+    assert.equal(room.players.get('b').frcCooldownUntil, 2000 + ITEM_RULES.frcCooldownMs);
+
+    // Pick up the stealth power in another room and confirm its position is absent from another player's snapshot.
+    const stealth = ITEM_SPAWNS.find((item) => item.kind === 'stealth');
+    pose('b', [stealth.at[0], 0.92, stealth.at[2]], 4000);
+    room.message('b', { type: 'interact', target: stealth.id }, 4300);
+    room.message('b', { type: 'activateStealth' }, 4600);
+    room.tick(4700);
+    const snapshot = inbox.get('c').filter((message) => message.type === 'snapshot').at(-1);
+    assert.equal(snapshot.poses.b, undefined);
+});
+
+test('Michael grants five-disc capacity and Mark grants creation power only once per round', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    const michael = NPC_SPAWNS.find((npc) => npc.id === 'coach-michael').at;
+    pose('a', michael, 1000);
+    room.message('a', { type: 'interact', target: 'coach-michael' }, 1300);
+    assert.equal(room.players.get('a').ammoCapacity, 5);
+    assert.equal(room.players.get('a').coachGift, true);
+    const mark = NPC_SPAWNS.find((npc) => npc.id === 'mark').at;
+    pose('a', mark, 2000);
+    room.message('a', { type: 'interact', target: 'mark' }, 2300);
+    assert.equal(room.players.get('a').hasCreation, true);
+    assert.equal(room.items.get('item-creation').holder, 'a');
+    pose('b', mark, 2600);
+    room.message('b', { type: 'interact', target: 'mark' }, 2900);
+    assert.equal(room.players.get('b').hasCreation, false);
+    assert.ok(inbox.get('b').some((message) => message.type === 'interactionDenied' && message.reason.includes('已经交给别人')));
+});
+
+test('eye, stealth, and Mark abilities drop at the holder position and can be picked up again', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    join('anchor', 'Anchor'); // Keep the room alive while holders disconnect and their items are dropped.
+    const eye = ITEM_SPAWNS.find((item) => item.kind === 'eye');
+    pose('a', [eye.at[0], 0.92, eye.at[2]], 1000);
+    room.message('a', { type: 'interact', target: eye.id }, 1300);
+    assert.equal(room.players.get('a').hasEye, true);
+    pose('a', [eye.at[0] + 0.4, 0.92, eye.at[2]], 1600);
+    room.disconnect('a', 1700);
+    assert.equal(room.items.get(eye.id).available, true);
+    assert.deepEqual(room.items.get(eye.id).at, [eye.at[0] + 0.4, 0.02, eye.at[2]]);
+    pose('b', [eye.at[0] + 0.4, 0.92, eye.at[2]], 2000);
+    room.message('b', { type: 'interact', target: eye.id }, 2300);
+    assert.equal(room.players.get('b').hasEye, true);
+
+    const stealth = ITEM_SPAWNS.find((item) => item.kind === 'stealth');
+    pose('b', [stealth.at[0], 0.92, stealth.at[2]], 2700);
+    room.message('b', { type: 'interact', target: stealth.id }, 3000);
+    assert.equal(room.players.get('b').hasStealth, true);
+    pose('b', [stealth.at[0] + 0.3, 0.92, stealth.at[2]], 3400);
+    room.disconnect('b', 3500);
+    assert.equal(room.items.get(stealth.id).available, true);
+    assert.deepEqual(room.items.get(stealth.id).at, [stealth.at[0] + 0.3, 0.02, stealth.at[2]]);
+
+    join('c', 'C', 4000);
+    const mark = NPC_SPAWNS.find((npc) => npc.id === 'mark');
+    pose('c', mark.at, 4500);
+    room.message('c', { type: 'interact', target: mark.id }, 4800);
+    room.disconnect('c', 5000);
+    assert.equal(room.items.get('item-creation').available, true);
+    assert.deepEqual(room.items.get('item-creation').at, [mark.at[0], 0.02, mark.at[2]]);
+    join('d', 'D', 6000);
+    pose('d', [mark.at[0], 0.92, mark.at[2]], 6500);
+    room.message('d', { type: 'interact', target: 'item-creation' }, 6800);
+    assert.equal(room.players.get('d').hasCreation, true);
+    assert.equal(room.items.get('item-creation').holder, 'd');
+    room.disconnect('d', 7000);
+    assert.equal(room.items.get('item-creation').available, true);
+    assert.deepEqual(room.items.get('item-creation').at, [mark.at[0], 0.02, mark.at[2]]);
+    join('e', 'E', 7500);
+    pose('e', [mark.at[0], 0.92, mark.at[2]], 7800);
+    room.message('e', { type: 'interact', target: 'item-creation' }, 8100);
+    assert.equal(room.players.get('e').hasCreation, true);
+    assert.equal(room.items.get('item-creation').holder, 'e');
+    assert.ok(inbox.get('e').some((message) => message.type === 'ability' && message.player.hasCreation));
 });
 
 test('implausible claims are ignored: out of reach, unknown throw, self-hit, cooldown, launch far away', () => {
@@ -180,6 +329,64 @@ test('snapshots carry live players and leaving is broadcast', () => {
     assert.deepEqual(Object.keys(snapshot.poses), ['a']);
     room.disconnect('a');
     assert.ok(inbox.get('b').some((message) => message.type === 'left' && message.id === 'a'));
+});
+
+test('lobby players are visible and can chat, but cannot fight, score or join outside the gate', () => {
+    const { room, join, pose, inbox } = harness();
+    join('lobby', '大厅玩家', 0, 'lobby');
+    join('player', '场内玩家', 0, 'playing');
+    pose('lobby', [SOUTH_GATE.spawn.x, 0.92, SOUTH_GATE.spawn.z], 1000);
+    const lobbyStart = [...room.players.get('lobby').pose.p];
+    pose('lobby', [-20, 0.92, 60], 1050);
+    assert.deepEqual(room.players.get('lobby').pose.p, lobbyStart, 'outdoor plaza and campus interior are rejected');
+    assert.ok(inbox.get('lobby').some((message) => message.type === 'positionCorrected'));
+    pose('lobby', [SOUTH_GATE.spawn.x, 0.92, SOUTH_GATE.spawn.z], 1300);
+    pose('player', [SOUTH_GATE.spawn.x, 0.92, SOUTH_GATE.line + 0.4], 1300);
+    room.tick(1350);
+    assert.equal(inbox.get('player').at(-1).type, 'snapshot');
+    assert.ok('lobby' in inbox.get('player').at(-1).poses, 'lobby pose replicates to other clients');
+
+    room.message('player', { type: 'throw', throw: { id: 9, o: [SOUTH_GATE.spawn.x, 1.5, SOUTH_GATE.line + 0.4], v: [0, 0, 15], tilt: 0 } }, 1400);
+    room.message('player', { type: 'hit', throwId: 9, target: 'lobby', at: [SOUTH_GATE.spawn.x, 1, SOUTH_GATE.spawn.z] }, 1800);
+    assert.equal(room.players.get('lobby').hp, MAX_HP, 'lobby occupants cannot be damaged');
+    assert.ok(inbox.get('player').some((message) => message.type === 'hitRejected' && message.throwId === 9));
+
+    room.message('lobby', { type: 'chat', text: '等待中' }, 1900);
+    assert.ok(inbox.get('player').some((message) => message.type === 'chat' && message.line.text === '等待中'));
+    room.message('lobby', { type: 'throw', throw: { id: 1, o: [0, 1, 0], v: [10, 0, 0], tilt: 0 } }, 2000);
+    assert.equal(room.players.get('lobby').throws.size, 0);
+    assert.equal(room.players.get('lobby').ammo, room.startAmmo);
+    assert.equal(room.roundParticipants.size, 0, 'lobby account is not counted into this round');
+
+    room.message('lobby', { type: 'joinRound' }, 2100);
+    assert.equal(room.players.get('lobby').phase, 'lobby');
+    assert.ok(inbox.get('lobby').some((message) => message.type === 'joinRoundDenied'));
+
+    pose('lobby', [(SOUTH_GATE.x0 + SOUTH_GATE.x1) / 2, 0.92, SOUTH_GATE.line - 0.55], 2600);
+    room.message('lobby', { type: 'joinRound' }, 2700);
+    assert.equal(room.players.get('lobby').phase, 'playing');
+    assert.ok(inbox.get('player').some((message) => message.type === 'phaseChanged' && message.id === 'lobby'));
+});
+
+test('production rooms ignore a client hello claim to start inside; only gate join changes phase', () => {
+    const inbox = new Map();
+    const room = new Room(
+        {
+            to: (id, message) => inbox.get(id)?.push(message),
+            all: (message, except) => {
+                for (const [id, list] of inbox) if (id !== except) list.push(message);
+            },
+            close: () => undefined
+        },
+        24,
+        null,
+        Math.random,
+        true
+    );
+    inbox.set('spoof', []);
+    room.connect('spoof');
+    room.message('spoof', { type: 'hello', version: PROTOCOL_VERSION, name: 'Spoof', phase: 'playing' }, 0);
+    assert.equal(inbox.get('spoof').find((message) => message.type === 'welcome').players[0].phase, 'lobby');
 });
 
 test('players get clearly different colours', () => {
@@ -263,7 +470,7 @@ test('a sniper disc to the head eliminates outright; a slow throw cannot claim t
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [2, 1.2, -3] }, 4900);
     assert.deepEqual(
         struck().map((m) => [m.hp, m.out, m.head, m.sniper]),
-        [[1, false, false, false]]
+        [[MAX_HP - 1, false, false, false]]
     );
     room.players.get('b').hp = MAX_HP;
     // A real sniper throw to the head: out in one from full health.
@@ -366,15 +573,16 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
     room.message('b', { type: 'pose', pose: { p: [ax, 0.92, az - 6], yaw: 0, pitch: 0 } }, 3000);
     for (const [id, at] of [
         [1, 4000],
-        [2, 5000]
+        [2, 5000],
+        [3, 6000]
     ]) {
         room.message('b', { type: 'throw', throw: { id, o: [ax, 1.5, az - 6], v: [0, 0, 15], tilt: 0 } }, at);
         room.message('b', { type: 'hit', throwId: id, target: 'a', at: [ax, 1.0, az] }, at + 300);
     }
     assert.deepEqual(goldEvents().slice(1), [['dropped', null]]);
-    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 5400);
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 6400);
     assert.equal(goldEvents().length, 2, 'not straight away');
-    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 6500);
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 7400);
     assert.deepEqual(goldEvents().at(-1), ['taken', 'b']);
     // Kills score one point each.
     assert.deepEqual(room.summaries().find((p) => p.id === 'b').score, 1);
@@ -552,7 +760,8 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     room.message('c', { type: 'pose', pose: { p: [6, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 11_000);
     for (const [id, at] of [
         [3, blackout + 12_000],
-        [4, blackout + 13_000]
+        [4, blackout + 13_000],
+        [5, blackout + 14_000]
     ]) {
         room.message('a', { type: 'throw', throw: { id, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, at);
         room.message('a', { type: 'hit', throwId: id, target: 'c', at: [6, 1.0, 0] }, at + 300);
@@ -565,8 +774,8 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     assert.equal(ended.round.winner, 'A');
     assert.equal(ended.round.outcome, 'last-survivor');
     // The next round brings everyone back.
-    room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 1);
-    room.tick(blackout + 13_300 + ROUND.intermissionSeconds * 1000 + 100);
+    room.tick(blackout + 14_300 + ROUND.intermissionSeconds * 1000 + 1);
+    room.tick(blackout + 14_300 + ROUND.intermissionSeconds * 1000 + 100);
     assert.ok([...room.players.values()].every((p) => !p.spectating));
     const respawned = inbox
         .get('a')

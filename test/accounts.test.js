@@ -206,7 +206,7 @@ test('only signed-in players may join; they play under their username, keep stat
     assert.deepEqual(
         struck.map((message) => [message.hp, message.out, message.head]),
         [
-            [1, false, false],
+            [2, false, false],
             [0, true, true]
         ]
     );

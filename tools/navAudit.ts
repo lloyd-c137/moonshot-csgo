@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { BARRIER_TOP_Y, PLAYER, SAFE_SPAWN } from '../src/config/gameplay.ts';
 import { JUMP_APEX, scaleWallVertex } from '../src/config/presentation.ts';
 import type { BarrierWall, Triangle } from '../src/physics/boundaryBarriers.ts';
-import { campusBarrierWalls, horizontalTrianglesAt } from '../src/physics/boundaryBarriers.ts';
+import { campusBarrierWalls, horizontalTrianglesAt, southGateBarriers } from '../src/physics/boundaryBarriers.ts';
 import type { Doorway } from '../src/world/doorways.ts';
 import { doorwayContains } from '../src/world/doorways.ts';
 import { parseCampusRooms, pointInRoom } from '../src/world/roomIndex.ts';
@@ -158,6 +158,8 @@ export type AuditOptions = {
     cuts?: Doorway[];
     /** Include colliding derived furniture (default true). */
     furniture?: boolean;
+    /** Start location for an alternate route audit, e.g. the south-gate waiting spawn. */
+    spawn?: [number, number];
 };
 
 export const loadCampusGeometry = () => {
@@ -169,7 +171,7 @@ export const loadCampusGeometry = () => {
     const walls = scaled('Walls');
     const wallTops = scaled('Walls_Top');
     const glazing = scaled('Glazing');
-    const barrierWalls = campusBarrierWalls({ floor, wallTops, glazing }, BARRIER_TOP_Y);
+    const barrierWalls = southGateBarriers(campusBarrierWalls({ floor, wallTops, glazing }, BARRIER_TOP_Y));
     const derived = readDerived();
     return {
         scene,
@@ -208,7 +210,7 @@ const overlaps = (triangle: Triangle, low: number, high: number) => {
  */
 export const auditFloor = (
     geometry: Geometry,
-    { radius = PLAYER.radius, barriers = true, resolution = 0.05, cuts, furniture = true }: AuditOptions = {}
+    { radius = PLAYER.radius, barriers = true, resolution = 0.05, cuts, furniture = true, spawn = [SAFE_SPAWN.x, SAFE_SPAWN.z] }: AuditOptions = {}
 ) => {
     const grid = new Grid(resolution);
     const size = grid.width * grid.height;
@@ -242,9 +244,9 @@ export const auditFloor = (
     const blocked = new Uint8Array(size);
     for (let k = 0; k < size; k++) blocked[k] = solid[k] ? 1 : 0;
     const inflated = grid.inflate(blocked, radius);
-    const spawn = grid.index(SAFE_SPAWN.x, SAFE_SPAWN.z);
+    const spawnIndex = grid.index(spawn[0], spawn[1]);
     // The capsule centre may stand anywhere not within `radius` of a solid; leaving the slab is a fall.
-    const { reached, count } = grid.flood((k) => !inflated[k], spawn);
+    const { reached, count } = grid.flood((k) => !inflated[k], spawnIndex);
     let fallCells = 0;
     for (let k = 0; k < size; k++) if (reached[k] && !floor[k]) fallCells++;
 

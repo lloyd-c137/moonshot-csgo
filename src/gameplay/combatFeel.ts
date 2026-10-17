@@ -1,33 +1,7 @@
-// Pure rules behind combat feel 3.0 (tested in test/combat-feel.test.js): footsteps, aim-target detection,
-// hit-stop and the final-elimination slow motion. GAMEPLAY_AUTHORED tuning values.
+// Pure rules behind combat feel 3.0 (tested in test/combat-feel.test.js): aim-target detection, hit-stop and the
+// final-elimination slow motion. GAMEPLAY_AUTHORED tuning values.
 import { PLAYER_HIT } from './frisbee.ts';
 import type { V3 } from './frisbee.ts';
-
-/**
- * Footsteps: below `silentBelow` m/s (sneaking with the walk key, or easing along) a player makes no sound; at
- * `loudAbove` they are sprinting. Step interval shortens with speed.
- */
-export const FOOTSTEPS = { silentBelow: 2.6, loudAbove: 6.2, minInterval: 0.27, maxInterval: 0.5 } as const;
-/** Holding the walk key moves at this fraction of normal speed: slow enough to be silent. */
-export const SNEAK_SPEED_FACTOR = 0.42;
-
-export const footstepCadence = (speed: number) => {
-    if (!(speed >= FOOTSTEPS.silentBelow)) return null;
-    const t = Math.min(1, (speed - FOOTSTEPS.silentBelow) / (FOOTSTEPS.loudAbove - FOOTSTEPS.silentBelow));
-    return {
-        interval: FOOTSTEPS.maxInterval + (FOOTSTEPS.minInterval - FOOTSTEPS.maxInterval) * t,
-        loud: speed >= FOOTSTEPS.loudAbove
-    };
-};
-
-export type Surface = 'epoxy' | 'wood' | 'court';
-/** Floor finish under a room kind: corridors and service areas are epoxy, the arena is court, rooms are wood. */
-export const surfaceFor = (kind: string | null | undefined): Surface =>
-    !kind || kind === 'public' || kind === 'service' || kind === 'stair' || kind === 'restroom'
-        ? 'epoxy'
-        : kind === 'hall' || kind === 'arena' || kind === 'garden'
-          ? 'court'
-          : 'wood';
 
 /**
  * The enemy the crosshair is on: the nearest capsule (centre `p`) the view ray passes through within `range`.

@@ -4,27 +4,9 @@ import test from 'node:test';
 import {
     aimTarget,
     endsRound,
-    footstepCadence,
-    FOOTSTEPS,
-    HIT_STOP_MS,
-    SNEAK_SPEED_FACTOR,
-    surfaceFor
+    HIT_STOP_MS
 } from '../src/gameplay/combatFeel.ts';
 import { killIcons, streakName } from '../src/ui/killFeed.ts';
-
-test('footsteps: silent when sneaking, faster and louder with speed', () => {
-    assert.equal(footstepCadence(0), null);
-    assert.equal(footstepCadence(FOOTSTEPS.silentBelow - 0.01), null);
-    const walk = footstepCadence(4),
-        sprint = footstepCadence(8);
-    assert.ok(walk && sprint && sprint.interval < walk.interval);
-    assert.equal(walk.loud, false);
-    assert.equal(sprint.loud, true);
-    assert.ok(SNEAK_SPEED_FACTOR * 5 < FOOTSTEPS.silentBelow, 'sneaking at walking pace stays silent');
-    assert.equal(surfaceFor(null), 'epoxy');
-    assert.equal(surfaceFor('classroom'), 'wood');
-    assert.equal(surfaceFor('hall'), 'court');
-});
 
 test('aim target: the nearest body on the view ray, in range, in front', () => {
     const bodies = [

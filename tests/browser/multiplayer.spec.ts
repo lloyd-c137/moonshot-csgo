@@ -30,7 +30,7 @@ const open = async (browser: Browser, audioLab = false, captureSpatialAudio = fa
     }
     const page = await context.newPage();
     const errors = collectErrors(page);
-    await page.goto(`/?server=${encodeURIComponent(SERVER)}${audioLab ? '&audioLab=1' : ''}`);
+    await page.goto(`/?server=${encodeURIComponent(SERVER)}&lobby=1${audioLab ? '&audioLab=1' : ''}`);
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     return { page, errors };
@@ -46,9 +46,40 @@ const enter = async (page: Page, name: string, password: string) => {
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().net), { timeout: 20_000 })
         .toBe('online');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('lobby');
+    await page.keyboard.down('w');
+    await page.waitForTimeout(1_000);
+    await page.keyboard.up('w');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('playing');
+};
+
+const enterLobby = async (page: Page, name: string, password: string) => {
+    await page.locator('#auth-name').fill(name);
+    await page.locator('#auth-password').fill(password);
+    await page.getByRole('button', { name: '进入校园' }).click();
+    await expect(page.locator('#operator')).toHaveAttribute('data-mode', 'signed');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().net), { timeout: 20_000 }).toBe('online');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('lobby');
 };
 
 const state = (page: Page) => page.evaluate(() => window.__MOONSHOT__!.match.state());
+
+test('online lobby players see each other before either enters the round; crossing the gate changes the shared phase', async ({ browser }) => {
+    const a = await open(browser);
+    const b = await open(browser);
+    const stamp = Date.now().toString(36).slice(-6);
+    await enterLobby(a.page, `门厅甲${stamp}`, 'secret-123');
+    await enterLobby(b.page, `门厅乙${stamp}`, 'secret-456');
+    await expect.poll(() => state(a.page).then((value) => value.players.length)).toBe(2);
+    expect((await state(a.page)).players.every((player) => player.phase === 'lobby')).toBe(true);
+
+    await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-8.25, 0.92, 52.9));
+    await expect.poll(() => state(a.page).then((value) => value.phase), { timeout: 10_000 }).toBe('playing');
+    await expect.poll(() => state(b.page).then((value) => value.players.find((player) => player.name.startsWith('门厅甲'))?.phase), { timeout: 10_000 }).toBe('playing');
+    expect((await state(b.page)).phase).toBe('lobby');
+    expect(a.errors).toEqual([]);
+    expect(b.errors).toEqual([]);
+});
 
 test('remote near-miss audio is placed at the swept closest point and plays once', async ({ browser }) => {
     const a = await open(browser);
@@ -105,7 +136,7 @@ test('remote near-miss audio is placed at the swept closest point and plays once
             before
         )
     ).toBe(2);
-    expect((await state(b.page)).hp).toBe(2);
+    expect((await state(b.page)).hp).toBe(3);
     await Promise.all([a.page.context().close(), b.page.context().close()]);
 });
 
@@ -326,7 +357,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
             ],
             { timeout: 5_000 }
         )
-        .toEqual([1, 1, 'Hit_Chest']);
+        .toEqual([2, 1, 'Hit_Chest']);
     await b.page.screenshot({ path: 'test-results/combat-throw-release.png' });
     expect((await state(a.page)).hitsPredicted).toBe(1);
     expect((await state(b.page)).alive).toBe(true);
@@ -337,7 +368,14 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     await a.page.screenshot({ path: 'test-results/combat-body-hit.png' });
     await a.page.evaluate(() => window.__MOONSHOT__!.match.setSimulatedRtt(0));
 
-    // Second hit (after the throw cooldown): eliminated and broadcast to everyone.
+    // Second body hit leaves one health point; the third body hit eliminates.
+    await a.page.waitForTimeout(700);
+    await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
+    await a.page.waitForTimeout(400);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
+    await expect
+        .poll(async () => ({ hp: (await state(b.page)).hp, alive: (await state(b.page)).alive }), { timeout: 5_000 })
+        .toEqual({ hp: 1, alive: true });
     await a.page.waitForTimeout(700);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
     await a.page.waitForTimeout(400);
@@ -359,7 +397,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     const me = await (
         await request.get(`${API}/api/me`, { headers: { ...ORIGIN, authorization: `Bearer ${token}` } })
     ).json();
-    expect(me.account).toMatchObject({ name: nameA, kills: 1, hits: 2 });
+    expect(me.account).toMatchObject({ name: nameA, kills: 1, hits: 3 });
 
     if (!kingBefore) {
         // First elimination on a fresh server: A is crowned 淘汰王, announced in chat and shown on the board.
@@ -378,7 +416,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
 
     // Ordinary throws have lift/drop: use the same verified 6 m passage, not the sniper's 10 m sight line.
     // An actual ordinary head hit must eliminate a full-health player in one hit.
-    expect((await state(b.page)).hp).toBe(2);
+    expect((await state(b.page)).hp).toBe(3);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
     await a.page.waitForTimeout(1_800);
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.75, 39.6))).toBe(true);
@@ -392,7 +430,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
             }),
             { timeout: 5_000 }
         )
-        .toMatchObject({ alive: false, hp: 0, hitsClaimed: 3 });
+        .toMatchObject({ alive: false, hp: 0, hitsClaimed: 4 });
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'kill');
     await expect(a.page.locator('#popup')).toContainText('爆头淘汰');
     await expect(a.page.locator('#popup')).toContainText(/爆头距离 \d+\.\d m/);

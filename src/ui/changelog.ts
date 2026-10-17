@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.17.0',
+        date: '2026.10.18',
+        title: '玩法调整',
+        notes: [
+            '南门闸机移到截图所示的柱间通道；待机出生在入口门与闸机之间，活动范围不包含室外广场，穿过闸机后加入本局。',
+            '新增联机待机大厅、护士站复活甲、创客空间 FRC 飞盘、监控室之眼、自习室静止之力，以及 Michael 教练和 Mark 的能力互动。',
+            '移除本地与其他玩家的脚步音效，取消仅用于静步的 C 键慢走。',
+            '生命值调整为 3 格；当前爆头仍保持直接淘汰。'
+        ]
+    },
+    {
         version: 'v0.16.0',
         date: '2026.10.17',
         title: '南门闸机待机与全新处决动作',

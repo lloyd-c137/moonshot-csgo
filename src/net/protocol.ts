@@ -13,7 +13,7 @@ import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -28,7 +28,7 @@ export const THROW_LIFETIME = 4;
 /** The room accepts hit claims for this long after a throw (slack for slow clients and latency). */
 export const THROW_CLAIM_WINDOW = 8;
 /** Hits a player can take; the last one eliminates. */
-export const MAX_HP = 2;
+export const MAX_HP = 3;
 /** Seconds without being hit before a damaged player is healed to full. */
 export const HEAL_SECONDS = 10;
 /** Points: one per elimination (hits alone score nothing). */
@@ -114,6 +114,8 @@ export type PlayerPose = {
 export type PlayerSummary = {
     id: string;
     name: string;
+    /** Lobby occupants are visible and can chat, but do not take part in the current round. */
+    phase: 'lobby' | 'playing';
     /** Signed in with a registered account (stats are kept). */
     account: boolean;
     colour: number;
@@ -127,6 +129,28 @@ export type PlayerSummary = {
     /** Public, opaque R2 object reference for the mannequin head texture. */
     avatarId?: string | null;
     avatarVersion?: string | null;
+    hasReviveArmor?: boolean;
+    hasFrc?: boolean;
+    hasEye?: boolean;
+    hasStealth?: boolean;
+    hasCreation?: boolean;
+    coachGift?: boolean;
+    ammoCapacity?: number;
+    stealthUntil?: number;
+    frcSelected?: boolean;
+    frcCooldownUntil?: number;
+    creationNextAt?: number;
+};
+
+export type WorldItem = {
+    id: string;
+    kind: 'revive' | 'frc' | 'eye' | 'stealth' | 'creation';
+    name: string;
+    at: Vec3Tuple;
+    holder: string | null;
+    available: boolean;
+    returnAt: number | null;
+    cooldownUntil: number;
 };
 
 /** A pose stamped with the room's receive time (ms, server clock). */
@@ -173,10 +197,15 @@ export type ThrowRecord = {
     tilt: number;
     /** A fully aimed sniper throw (see SNIPER). */
     sniper?: boolean;
+    frc?: boolean;
 };
 
 export type ClientMessage =
-    | { type: 'hello'; version: number; name: string; token?: string }
+    | { type: 'hello'; version: number; name: string; token?: string; phase?: 'lobby' | 'playing' }
+    | { type: 'joinRound' }
+    | { type: 'interact'; target: string }
+    | { type: 'toggleFrc' }
+    | { type: 'activateStealth' }
     | { type: 'chat'; text: string }
     /** `ct`: the sender's own clock (ms) when the pose was sampled, so the room can stamp it without network jitter. */
     /** `tp`: the game itself moved the player (recovery, return, relocation); the room forgets their pose history. */
@@ -219,6 +248,7 @@ export type ServerMessage =
           gold: GoldState;
           ammo: number;
           discs: GroundDisc[];
+          items: WorldItem[];
           /** Room clock now (ms), so the patrol and countdown line up before the first snapshot. */
           t: number;
           /** Match clock excludes any prior global cinematic pauses. */
@@ -226,6 +256,13 @@ export type ServerMessage =
       }
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' | 'auth' }
     | { type: 'joined'; player: PlayerSummary }
+    | { type: 'phaseChanged'; id: string; phase: 'lobby' | 'playing' }
+    | { type: 'joinRoundDenied'; reason: string }
+    | { type: 'interactionDenied'; reason: string }
+    | { type: 'positionCorrected'; pose: PlayerPose }
+    | { type: 'items'; items: WorldItem[] }
+    | { type: 'revived'; id: string; at: Vec3Tuple }
+    | { type: 'ability'; id: string; player: PlayerSummary; item: WorldItem | null }
     | { type: 'left'; id: string }
     | { type: 'snapshot'; t: number; poses: Record<string, StampedPose> }
     | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
@@ -240,11 +277,13 @@ export type ServerMessage =
           head: boolean;
           /** Sniper disc: a head hit with one eliminates outright. */
           sniper: boolean;
+          frc?: boolean;
           /** Thrown by the golden disc's holder. */
           gold: boolean;
           /** Out for the rest of the round (after the lights went out): no respawn, watch instead. */
           final?: boolean;
           execution?: boolean;
+          revived?: boolean;
           /** The disc came off a wall (or furniture) before the hit: a bank shot. */
           bank?: boolean;
           /** Metres the disc flew (along its bounces) before the hit. */
@@ -328,9 +367,17 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'hello':
             return isNumber(value.version) &&
                 typeof value.name === 'string' &&
-                (value.token === undefined || typeof value.token === 'string')
+                (value.token === undefined || typeof value.token === 'string') &&
+                (value.phase === undefined || value.phase === 'lobby' || value.phase === 'playing')
                 ? (value as ClientMessage)
                 : null;
+        case 'joinRound':
+            return value as ClientMessage;
+        case 'toggleFrc':
+        case 'activateStealth':
+            return value as ClientMessage;
+        case 'interact':
+            return typeof value.target === 'string' && value.target.length <= 64 ? (value as ClientMessage) : null;
         case 'chat':
             return typeof value.text === 'string' ? (value as ClientMessage) : null;
         case 'caught':

@@ -30,7 +30,12 @@ declare global {
             };
             match: {
                 state: () => {
-                    players: { id: string; name: string }[];
+                    phase: 'lobby' | 'playing';
+                    players: { id: string; name: string; phase?: 'lobby' | 'playing' }[];
+                    abilities?: Record<string, boolean | number>;
+                    items?: { id: string; available: boolean }[];
+                    stealthUntil?: number;
+                    roomNow?: number;
                     restroomMirror: {
                         activeRoom: string | null;
                         cameraEnabled: boolean;
@@ -59,11 +64,11 @@ export const collectErrors = (page: Page) => {
  * machine's GPU speed (CI renders with software WebGL at about 1 FPS, where wall-clock waits simulate ~0.1 s per
  * second). Rendering itself is covered by the production smoke test.
  */
-export const loadSimulated = async (page: Page) => {
+export const loadSimulated = async (page: Page, url = '/') => {
     // Install before navigation so every animation frame of the game loop is virtual. After install() the virtual
     // clock still follows real time; pauseAt() stops it, after which game time only moves through advance().
     await page.clock.install();
-    await page.goto('/');
+    await page.goto(url);
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     // Pause a little ahead of the page's virtual "now"; retry further ahead if real time overtook the target.

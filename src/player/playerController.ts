@@ -7,9 +7,11 @@ import type { Settings } from '../ui/settings';
 
 export { SAFE_SPAWN };
 
-export const createPlayer = (app: AppBase) => {
+export const createPlayer = (app: AppBase, spawn: { x: number; y: number; z: number } = SAFE_SPAWN) => {
     const player = new Entity('player');
-    player.setPosition(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z);
+    // Set the selected spawn before adding the rigidbody to the running app. A later teleport can
+    // briefly expose the default in-campus spawn while the scene finishes loading.
+    player.setPosition(spawn.x, spawn.y, spawn.z);
     player.addComponent('collision', { type: 'capsule', radius: PLAYER.radius, height: PLAYER.height });
     player.addComponent('rigidbody', {
         type: 'dynamic',

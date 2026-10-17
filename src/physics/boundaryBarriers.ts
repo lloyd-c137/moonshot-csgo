@@ -1,4 +1,5 @@
 // Pure geometry for GAMEPLAY_AUTHORED invisible barriers. Shared by the runtime and the offline navigation audit.
+import { BARRIER_TOP_Y, SOUTH_GATE } from '../config/gameplay.ts';
 
 export type Vec3Tuple = [number, number, number];
 export type Triangle = [Vec3Tuple, Vec3Tuple, Vec3Tuple];
@@ -112,6 +113,30 @@ export const cutBarrierOpening = (
         if (start !== null && start < 1) pieces.push(piece(wall, start, 1));
         return pieces.filter((p) => Math.hypot(p.edge[1][0] - p.edge[0][0], p.edge[1][1] - p.edge[0][1]) > 1e-3);
     });
+
+/**
+ * Close the exterior entrance for lobby containment, add the turnstile boundary beside the screenshot-identified
+ * pillars, and leave only the gate span traversable. Shared by runtime collision generation and navAudit.
+ */
+export const southGateBarriers = (walls: readonly BarrierWall[]): BarrierWall[] => {
+    const { vestibule, line, x0, x1 } = SOUTH_GATE;
+    const vertical = (a: number, b: number): BarrierWall => ({
+        edge: [
+            [a, line],
+            [b, line]
+        ],
+        bottom: 0,
+        top: BARRIER_TOP_Y
+    });
+    const outerBarrier = vertical(SOUTH_GATE.outer.x0, SOUTH_GATE.outer.x1);
+    outerBarrier.edge = [[SOUTH_GATE.outer.x0, SOUTH_GATE.outer.line], [SOUTH_GATE.outer.x1, SOUTH_GATE.outer.line]];
+    return [...walls.filter((wall) => {
+        const [[ax, az], [bx, bz]] = wall.edge;
+        const midpointX = (ax + bx) / 2;
+        const midpointZ = (az + bz) / 2;
+        return !(Math.abs(midpointZ - SOUTH_GATE.outer.line) < 0.65 && midpointX >= SOUTH_GATE.outer.x0 - 0.3 && midpointX <= SOUTH_GATE.outer.x1 + 0.3);
+    }), outerBarrier, vertical(vestibule.x0, x0), vertical(x1, vestibule.x1)];
+};
 
 const piece = (wall: BarrierWall, t0: number, t1: number): BarrierWall => {
     const [[ax, az], [bx, bz]] = wall.edge;

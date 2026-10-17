@@ -77,9 +77,9 @@ test('solo idle and fixed-dummy impact performance sample (opt-in)', async ({ pa
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab')).toBeVisible();
     await page.locator('[data-scenario="body"]').click();
-    await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/2）');
+    await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/3）');
     await page.locator('[data-action="resume"]').click();
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
     await page.screenshot({ path: 'test-results/performance-body-hit.png' });
     const bodyImpact = await sampleFrames(page, 2_000);
 

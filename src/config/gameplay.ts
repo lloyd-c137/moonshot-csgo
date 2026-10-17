@@ -35,14 +35,18 @@ export const BARRIER_TOP_Y = 7;
 export const LABEL_ONLY_TRIGGER_RADIUS = 4;
 
 /**
- * South gate turnstiles and the waiting plaza outside them (owner brief 2026-10-17). The opening is the real gap in
- * the FF-01 south-lobby glazing (x −10.25…−6.25 at z ≈ 57.12); the plaza is the forecourt outside, fenced in.
+ * GAMEPLAY_AUTHORED: the turnstiles sit at the screenshot-identified pillar line in the south lobby (z≈53.46).
+ * The source glazing opening at z≈57.12 remains the exterior entrance to a shared foyer + forecourt waiting zone.
  */
 export const SOUTH_GATE = {
     x0: -10.25,
     x1: -6.25,
-    /** The turnstile line (the glazing line). Inside is z < line. */
-    line: 57.12,
+    /** The turnstile line beside the screenshot-identified pillars. Inside is z < line. */
+    line: 53.46,
+    /** Existing source opening in the outer south-lobby glazing. */
+    outer: { x0: -10.25, x1: -6.25, line: 57.12 },
+    /** Side limits of the narrow vestibule between the pillars and outer entrance. */
+    vestibule: { x0: -11.16, x1: -5.67 },
     /** Cabinets across the opening (centres); lanes run between neighbours. */
     cabinets: [-10.15, -9.2, -8.25, -7.3, -6.35],
     /** How close (m) a player must come for the flaps to react. */
@@ -50,6 +54,6 @@ export const SOUTH_GATE = {
     /** Crossing this far past the line counts as through. */
     through: 0.45,
     plaza: { x0: -29.5, x1: 12.5, z0: 57.3, z1: 62.6 },
-    /** Where a new player waits, facing the gate. */
-    spawn: { x: -8.25, y: 0.92, z: 61 }
+    /** Where a new player waits in the vestibule, facing the gate. */
+    spawn: { x: -8.725, y: 0.92, z: 56.1 }
 } as const;

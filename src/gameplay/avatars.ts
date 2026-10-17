@@ -158,12 +158,17 @@ export const createAvatars = (
         badge.className = 'title';
         badge.textContent = '淘汰王';
         badge.hidden = true;
+        const armorBadge = document.createElement('b');
+        armorBadge.className = 'armor-badge';
+        armorBadge.textContent = '✚';
+        armorBadge.title = '复活甲';
+        armorBadge.hidden = true;
         // Health pips, shown briefly over a player who was just hit (two hits, or one to the head, eliminate).
         const pips = document.createElement('span');
         pips.className = 'hp-pips';
         pips.hidden = true;
         for (let i = 0; i < MAX_HP; i++) pips.append(document.createElement('i'));
-        tag.append(badge, document.createTextNode(name), pips);
+        tag.append(badge, armorBadge, document.createTextNode(name), pips);
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
@@ -353,6 +358,10 @@ export const createAvatars = (
             avatar.throwUntil = now + FRISBEE_THROW_REMAINING * 1000;
         },
         setLeader,
+        setReviveArmor(id: string, active: boolean) {
+            const badge = avatars.get(id)?.tag.querySelector<HTMLElement>('.armor-badge');
+            if (badge) badge.hidden = !active;
+        },
         setGold,
         /** Material used for the golden disc attached to the holder's hand. */
         set goldMaterial(material: StandardMaterial) {

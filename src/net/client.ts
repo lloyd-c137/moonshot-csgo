@@ -17,7 +17,8 @@ import type {
     Scores,
     ServerMessage,
     ThrowRecord,
-    Vec3Tuple
+    Vec3Tuple,
+    WorldItem
 } from './protocol';
 import { POSE_HZ, PROTOCOL_VERSION } from './protocol';
 
@@ -39,10 +40,18 @@ type Handlers = {
             gold: GoldState;
             ammo: number;
             discs: GroundDisc[];
+            items: WorldItem[];
             matchTime: number;
         }
     ) => void;
     joined: (player: PlayerSummary) => void;
+    phaseChanged: (id: string, phase: 'lobby' | 'playing') => void;
+    joinRoundDenied: (reason: string) => void;
+    interactionDenied: (reason: string) => void;
+    positionCorrected: (pose: PlayerPose) => void;
+    items: (items: WorldItem[]) => void;
+    ability: (id: string, player: PlayerSummary, item: WorldItem | null) => void;
+    revived: (id: string, at: Vec3Tuple) => void;
     left: (id: string) => void;
     /** `ageMs`: how long ago (server clock) the throw happened, for latency compensation. */
     thrown: (from: string, record: ThrowRecord, ageMs: number) => void;
@@ -56,6 +65,7 @@ type Handlers = {
         at: Vec3Tuple,
         scores: Scores,
         sniper: boolean,
+        frc: boolean,
         gold: boolean,
         final: boolean,
         execution: boolean,
@@ -95,6 +105,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let retry = 0;
     let wantName = '';
     let wantToken: string | null = null;
+    let wantPhase: 'lobby' | 'playing' = 'playing';
     let lastPoseAt = 0;
     const history = new Map<string, PoseBuffer>();
     const clock = new ServerClock();
@@ -143,6 +154,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     gold: message.gold,
                     ammo: message.ammo,
                     discs: message.discs,
+                    items: message.items,
                     matchTime: message.matchTime
                 });
                 break;
@@ -153,6 +165,27 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'joined':
                 handlers.joined(message.player);
+                break;
+            case 'phaseChanged':
+                handlers.phaseChanged(message.id, message.phase);
+                break;
+            case 'joinRoundDenied':
+                handlers.joinRoundDenied(message.reason);
+                break;
+            case 'interactionDenied':
+                handlers.interactionDenied(message.reason);
+                break;
+            case 'positionCorrected':
+                handlers.positionCorrected(message.pose);
+                break;
+            case 'items':
+                handlers.items(message.items);
+                break;
+            case 'ability':
+                handlers.ability(message.id, message.player, message.item);
+                break;
+            case 'revived':
+                handlers.revived(message.id, message.at);
                 break;
             case 'left':
                 history.delete(message.id);
@@ -191,6 +224,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.at,
                     message.scores,
                     message.sniper === true,
+                    message.frc === true,
                     message.gold === true,
                     message.final === true,
                     message.execution === true,
@@ -290,6 +324,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     type: 'hello',
                     version: PROTOCOL_VERSION,
                     name: wantName,
+                    phase: wantPhase,
                     ...(wantToken ? { token: wantToken } : {})
                 })
             )
@@ -337,9 +372,10 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         get simulatedRtt() {
             return simulatedRtt;
         },
-        connect(name: string, token: string | null = null) {
+        connect(name: string, token: string | null = null, phase: 'lobby' | 'playing' = 'playing') {
             wantName = name;
             wantToken = token;
+            wantPhase = phase;
             if (!socket && state !== 'online') open();
         },
         /** Re-joins with a new identity (after signing in or out). */
@@ -348,6 +384,18 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             wantToken = token;
             if (socket) socket.close();
             else open();
+        },
+        joinRound() {
+            send({ type: 'joinRound' });
+        },
+        interact(target: string) {
+            send({ type: 'interact', target });
+        },
+        toggleFrc() {
+            send({ type: 'toggleFrc' });
+        },
+        activateStealth() {
+            send({ type: 'activateStealth' });
         },
         chat(text: string) {
             send({ type: 'chat', text });

@@ -155,6 +155,13 @@ const createFpsMeter = () => {
 };
 
 const boot = async () => {
+    // Decide the starting phase before creating the player so the first rendered physics frame
+    // already places lobby users on the south side of the turnstile.
+    const query = new URLSearchParams(window.location.search);
+    const useLobby =
+        (import.meta.env.PROD || !query.has('noLobby') || query.has('server')) &&
+        (!navigator.webdriver || query.has('lobby') || import.meta.env.PROD);
+
     // Room data first: the location plate and room tracker need it.
     const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
     // Names and division from the 2026-08-06 model over FF-01 geometry (geometry and dressing keep the FF-01 list).
@@ -220,13 +227,10 @@ const boot = async () => {
     // The campus seen from outside (roof, south gate, street, lawn) for the entry flyover.
     buildExterior(app, campus.root, namedRooms);
     const turnstiles = buildTurnstiles(app, campus.root);
-    const { player, camera } = createPlayer(app);
+    const { player, camera } = createPlayer(app, useLobby ? SOUTH_GATE.spawn : SAFE_SPAWN);
     const intro = createIntro(app, camera, shell);
-    // South gate: new players wait in the plaza outside and join the round in progress by walking through the
-    // turnstiles (owner brief 2026-10-17). Automated browsers and the audio lab start inside, as before.
-    const query = new URLSearchParams(window.location.search);
-    const useLobby =
-        !query.has('noLobby') && query.get('audioLab') !== '1' && (!navigator.webdriver || query.has('lobby'));
+    // South gate: players wait in the indoor vestibule outside the turnstiles, then join by walking through.
+    // Automated browsers can explicitly bypass this with ?noLobby=1 for deterministic in-world fixtures.
     let gateState: GateState = useLobby ? 'lobby' : 'inside';
     /** Set on the first entry; the gate only runs once the player is in the world. */
     let gateLive = false;
@@ -325,7 +329,7 @@ const boot = async () => {
         shell.stuck(false);
         recoverPlayer(player, safeSpot());
         match.teleported();
-        shell.notify(gateState === 'lobby' ? '已脱离卡死，回到南门广场' : '已脱离卡死，回到南入口');
+        shell.notify(gateState === 'lobby' ? '已脱离卡死，回到南门门厅' : '已脱离卡死，回到南入口');
     };
     shell.stuck(false, () => {
         escapeStuck();
@@ -361,11 +365,13 @@ const boot = async () => {
             const gate = stepGate(gateState, position.x, position.z);
             turnstiles.set(gate.open, gate.light);
             if (gate.joined) {
-                gateState = 'inside';
-                match.start('');
-                shell.notify('已通过闸机 · 加入本局');
+                match.joinRound();
+                if (!match.online) {
+                    gateState = 'inside';
+                    shell.notify('已通过闸机 · 加入本局');
+                }
             }
-            gateState = gate.state;
+            if (match.phase === 'playing') gateState = 'inside';
         }
         roomTracker.update([position.x, position.z], deltaTime);
         if (document.pointerLockElement === canvas && match.alive) {
@@ -477,10 +483,11 @@ const boot = async () => {
         if (document.pointerLockElement === canvas) {
             if (!hasEntered) {
                 if (gateState === 'lobby') {
-                    // Wait in the plaza facing the gate; the round is joined at the turnstiles.
+                    // Wait in the vestibule; the multiplayer room tracks lobby poses and chat before round entry.
                     recoverPlayer(player, SOUTH_GATE.spawn);
                     shell.notify('南门待机：穿过闸机即加入正在进行的这一局');
-                } else match.start('');
+                }
+                match.start('', gateState === 'lobby' ? 'lobby' : 'playing');
                 gateLive = true;
                 // First entry: the flyover over the campus and through the south gate, input held until it ends.
                 // Automated browsers skip it (tests drive input at once) unless ?intro=1 asks for it.
@@ -610,7 +617,7 @@ const boot = async () => {
             fov: () => camera.camera!.fov,
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover: () => {
-                recoverPlayer(player);
+                recoverPlayer(player, safeSpot());
                 match.teleported();
             },
             collisionCount: collisions.sourceBodies,
@@ -637,7 +644,7 @@ const boot = async () => {
             raycast: (from: number[], to: number[]) =>
                 rigidbodySystem.raycastFirst(new Vec3(from[0], from[1], from[2]), new Vec3(to[0], to[1], to[2]))?.entity
                     .name ?? null,
-            spawn: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z],
+            spawn: [useLobby ? SOUTH_GATE.spawn.x : SAFE_SPAWN.x, useLobby ? SOUTH_GATE.spawn.y : SAFE_SPAWN.y, useLobby ? SOUTH_GATE.spawn.z : SAFE_SPAWN.z],
             roomId: () => roomTracker.current?.id ?? null,
             match: match.debug,
             sceneTransition: (relocate) => shell.arenaTransition(relocate),

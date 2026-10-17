@@ -7,13 +7,14 @@ import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-contr
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
+import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../config/gameplayItems';
 import { SPAWN_POINTS } from '../config/spawns';
-import { MONITOR_CONSOLE, SPECIAL_LOCATIONS } from '../config/specialLocations';
+import { SPECIAL_LOCATIONS } from '../config/specialLocations';
 import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
-import type { King, PlayerPose, PlayerSummary, RoundState, ThrowRecord } from '../net/protocol';
+import type { King, PlayerPose, PlayerSummary, RoundState, ThrowRecord, WorldItem } from '../net/protocol';
 import {
     colourFor,
     AMMO,
@@ -40,10 +41,7 @@ import {
     aimTarget,
     endsRound,
     FINAL_SLOW_MOTION,
-    footstepCadence,
-    HIT_STOP_MS,
-    SNEAK_SPEED_FACTOR,
-    surfaceFor
+    HIT_STOP_MS
 } from './combatFeel';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
@@ -72,7 +70,6 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
-import { createMonitorView } from './monitorView';
 import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
 import { createRestroomMirrors } from './restroomMirrors';
@@ -129,6 +126,7 @@ export const createMatch = ({
     const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
         auth.avatarUrl(id, version)
     );
+    for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, colourFor(npc.id));
     const roster = new Map<string, PlayerSummary>();
     const stands = createStands(app, characters, stadiumSeats);
     const restroomMirrors = createRestroomMirrors(
@@ -160,7 +158,53 @@ export const createMatch = ({
     let aimHold: number | null = null;
     let lastThrowAt = -Infinity;
     let throwCounter = 0;
+    const localFrcThrows = new Set<number>();
     let started = false;
+    let playerPhase: 'lobby' | 'playing' = 'playing';
+    let worldItems: WorldItem[] = ITEM_SPAWNS.map((spawn) => ({
+        id: spawn.id,
+        kind: spawn.kind,
+        name: spawn.name,
+        at: [...spawn.at],
+        holder: null,
+        available: spawn.kind !== 'creation',
+        returnAt: null,
+        cooldownUntil: 0
+    }));
+    const localAbilities = { revive: false, reviveUsed: false, frc: false, eye: false, stealth: false, creation: false, coach: false };
+    let localMarkGiven = false;
+    let localFrcSelected = false;
+    let localFrcCooldownUntil = 0;
+    let localStealthUntil = 0;
+    let localStealthCooldownUntil = 0;
+    let localAmmoCapacity: number = AMMO.max;
+    let creationNextAt = 0;
+    const pickupMeshes = new Map<string, Entity>();
+    for (const spawn of ITEM_SPAWNS) {
+        const entity = new Entity(`Pickup_${spawn.kind}`);
+        const rgb: [number, number, number] = spawn.kind === 'revive' ? [0.95, 0.28, 0.32] : spawn.kind === 'frc' ? [0.95, 0.12, 0.08] : spawn.kind === 'eye' ? [0.25, 0.8, 0.95] : spawn.kind === 'stealth' ? [0.55, 0.42, 0.95] : [0.25, 0.86, 0.55];
+        const material = new StandardMaterial();
+        material.diffuse = new Color(...rgb);
+        material.emissive = new Color(...rgb);
+        material.emissiveIntensity = 0.6;
+        material.update();
+        entity.addComponent('render', { type: 'sphere', material, castShadows: false });
+        entity.setLocalScale(0.34, 0.34, 0.34);
+        entity.setPosition(...spawn.at);
+        app.root.addChild(entity);
+        pickupMeshes.set(spawn.id, entity);
+    }
+    const applyWorldItems = (next: WorldItem[]) => {
+        worldItems = next;
+        for (const spawn of ITEM_SPAWNS) {
+            const item = worldItems.find((candidate) => candidate.id === spawn.id);
+            const mesh = pickupMeshes.get(spawn.id);
+            if (!item || !mesh) continue;
+            mesh.enabled = item.available;
+            mesh.setPosition(...item.at);
+        }
+    };
+    let lastJoinRoundRequestAt = -Infinity;
     let throws = 0;
     let hitsClaimed = 0;
     let hitsPredicted = 0;
@@ -225,7 +269,7 @@ export const createMatch = ({
     let labExecution: Execution | null = null;
     let labGolden = false;
     let labUi: AudioLabUi | undefined;
-    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void = () =>
+    let simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution' | 'frc') => void = () =>
         undefined;
     const setRoundTestClock = async (remainingSeconds: number) => {
         const base = import.meta.env.DEV ? apiBase(url) : null;
@@ -324,11 +368,8 @@ export const createMatch = ({
     // Disc ammunition (online): discs in hand; thrown ones lie where they land until someone picks them up.
     const ground = createGroundDiscs(app, discs.mesh);
     let ammo: number = AMMO.start;
-    /** The monitoring room's radar: every player's position on the maps until this time (performance.now ms). */
-    let radarUntil = 0;
-    let radarShown = false;
     let inWatch = false;
-    const hasDisc = () => net.state !== 'online' || holdingGold() || ammo > 0;
+    const hasDisc = () => net.state !== 'online' || holdingGold() || localFrcSelected || ammo > 0;
     /** performance.now() when the local player may move again after being caught by 纪老师. */
     let detainedUntil = 0;
     let detentionShown = false;
@@ -340,7 +381,6 @@ export const createMatch = ({
     let lastGoldMine = false;
     const guard = createGuard(app, camera, ui.nameTagLayer(), characters);
     const breakerView = createBreakerView(app);
-    const monitorView = createMonitorView(app);
     let power: PowerState = { pulledAt: null };
     let wasPowerOut = false;
     let teacherGraceUntil = 0;
@@ -410,15 +450,11 @@ export const createMatch = ({
     const streaks = new Map<string, { count: number; at: number }>();
     // Feel: FOV punch on release, damped local camera impulses, in-hand disc that winds up and snaps forward.
     let punch = 0;
-    /** Combat feel 3.0: presentation-only hit-stop, final-kill slow motion, elimination marks, footsteps. */
+    /** Combat feel 3.0: presentation-only hit-stop, final-kill slow motion and elimination marks. */
     let hitStopUntil = 0;
     let feelMotion: CameraMotion = 'low';
     const killMarks: { at: V3; until: number }[] = [];
     let slowMotionUntil = 0;
-    let stepClock = 0;
-    const remoteSteps = new Map<string, { last: V3; clock: number }>();
-    let currentSurface: ReturnType<typeof surfaceFor> = 'epoxy';
-    let sneaking = false;
     let chargeFullPlayed = false;
     let aimCheckAt = 0;
     const eyeOffset = camera.getLocalPosition().clone();
@@ -498,7 +534,8 @@ export const createMatch = ({
         const head = scenario === 'head';
         const golden = scenario === 'golden' || labGolden;
         const execution = scenario === 'execution';
-        const out = head || execution || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
+        const frc = scenario === 'frc';
+        const out = head || execution || frc || scenario === 'elimination' || scenario === 'golden' || labHp <= 1;
         labHp = out ? 0 : labHp - 1;
         const now = performance.now();
         const at: V3 = [labTargetPose.p[0], labTargetPose.p[1] + (head ? 1.55 : 0.9), labTargetPose.p[2]];
@@ -515,7 +552,9 @@ export const createMatch = ({
         cameraImpulses.trigger(out ? 0.4 : 0.16);
         ui.hitMarker(out ? 'kill' : head ? 'head' : 'hit');
         ui.popup(
-            out && golden
+            frc
+                ? '人偶 · FRC 飞盘淘汰'
+                : out && golden
                 ? '人偶 · 金飞盘击杀'
                 : head
                   ? '人偶 · 爆头淘汰'
@@ -523,7 +562,7 @@ export const createMatch = ({
                     ? execution
                         ? '人偶 · 处决淘汰'
                         : '人偶 · 击杀'
-                    : '人偶 · 身体命中（1/2）',
+                    : `人偶 · 身体命中（${MAX_HP - labHp}/${MAX_HP}）`,
             out ? 'kill' : head ? 'head' : 'hit'
         );
         labUi?.hit(head, out, golden);
@@ -689,7 +728,6 @@ export const createMatch = ({
         matchPausedAt = null;
         detainedUntil += delta;
         teacherGraceUntil += delta;
-        radarUntil += delta;
         if (Number.isFinite(lastThrowAt)) lastThrowAt += delta;
         if (deadUntil > 0) deadUntil += delta;
         if (goldCooldownUntil > 0) goldCooldownUntil += delta;
@@ -746,6 +784,16 @@ export const createMatch = ({
                 executionView.start(globalExecution(extra.globalFinisher), true);
             }
             power = extra.power;
+            applyWorldItems(extra.items);
+            Object.assign(localAbilities, {
+                revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
+                stealth: me.hasStealth === true, creation: me.hasCreation === true, coach: me.coachGift === true
+            });
+            localAmmoCapacity = me.ammoCapacity ?? AMMO.max;
+            localFrcSelected = me.frcSelected === true;
+            localFrcCooldownUntil = me.frcCooldownUntil ?? 0;
+            localStealthUntil = me.stealthUntil ?? 0;
+            creationNextAt = me.creationNextAt ?? 0;
             roster.clear();
             if (me.spectating) {
                 setAlive(false);
@@ -764,13 +812,16 @@ export const createMatch = ({
             }
             roundState = extra.round;
             ammo = extra.ammo;
-            ui.ammo(ammo, AMMO.max);
+            ui.ammo(ammo, localAmmoCapacity);
             ground.set(extra.discs);
             goldView.set(extra.gold);
             avatars.setGold(extra.gold.holder);
             for (const each of players) {
                 roster.set(each.id, each);
-                if (each.id !== me.id) avatars.add(each.id, each.name, each.colour, each.avatarId, each.avatarVersion);
+                if (each.id !== me.id) {
+                    avatars.add(each.id, each.name, each.colour, each.avatarId, each.avatarVersion);
+                    avatars.setReviveArmor(each.id, each.hasReviveArmor === true);
+                }
             }
             const ownSummary = players.find((each) => each.id === me.id);
             if (ownSummary) restroomMirrors.setColour(ownSummary.colour);
@@ -782,9 +833,66 @@ export const createMatch = ({
         joined: (summary) => {
             roster.set(summary.id, summary);
             avatars.add(summary.id, summary.name, summary.colour, summary.avatarId, summary.avatarVersion);
+            avatars.setReviveArmor(summary.id, summary.hasReviveArmor === true);
             refreshCount();
             ui.notify(`${summary.name} 进入了校园`);
             sound.join();
+        },
+        phaseChanged: (id, phase) => {
+            const entry = roster.get(id);
+            if (entry) entry.phase = phase;
+            if (id === selfId()) {
+                playerPhase = phase;
+                if (phase === 'playing') ui.notify('已通过闸机 · 加入本局');
+            }
+        },
+        joinRoundDenied: (reason) => {
+            playerPhase = 'lobby';
+            ui.notify(reason);
+        },
+        interactionDenied: (reason) => ui.notify(reason),
+        positionCorrected: (next) => {
+            player.rigidbody!.teleport(...next.p, 0, next.yaw, 0);
+            player.rigidbody!.linearVelocity = Vec3.ZERO;
+            player.rigidbody!.angularVelocity = Vec3.ZERO;
+            setLook(player, next.pitch, next.yaw);
+            teleportPending = true;
+        },
+        items: applyWorldItems,
+        ability: (id, next, item) => {
+            roster.set(id, next);
+            avatars.setReviveArmor(id, next.hasReviveArmor === true);
+            if (id === selfId()) {
+                localAbilities.revive = next.hasReviveArmor === true;
+                localAbilities.frc = next.hasFrc === true;
+                localAbilities.eye = next.hasEye === true;
+                localAbilities.stealth = next.hasStealth === true;
+                localAbilities.creation = next.hasCreation === true;
+                localAbilities.coach = next.coachGift === true;
+                localAmmoCapacity = next.ammoCapacity ?? AMMO.max;
+                localFrcSelected = next.frcSelected === true;
+                localFrcCooldownUntil = next.frcCooldownUntil ?? item?.cooldownUntil ?? localFrcCooldownUntil;
+                localStealthUntil = next.stealthUntil ?? 0;
+                creationNextAt = next.creationNextAt ?? creationNextAt;
+            }
+            refreshBoard();
+        },
+        revived: (id, at) => {
+            if (id === selfId()) {
+                hp = MAX_HP;
+                alive = true;
+                setAlive(true);
+                ui.eliminated(null);
+                ui.popup('复活甲生效', 'gold');
+                ui.feed('复活甲生效 · 满血复活，短暂无敌', 'mine');
+                sound.respawn();
+                effects.ring(at, [0.3, 0.95, 0.85], 0.3, 1.5, 1.3);
+                localAbilities.revive = false;
+                localAbilities.reviveUsed = true;
+            }
+            const entry = roster.get(id);
+            if (entry) Object.assign(entry, { hp: MAX_HP, alive: true, spectating: false, hasReviveArmor: false });
+            avatars.setReviveArmor(id, false);
         },
         left: (id) => {
             const name = nameOf(id);
@@ -822,11 +930,12 @@ export const createMatch = ({
                 normal: launchNormal(record.v, record.tilt),
                 local: false,
                 sniper: record.sniper === true,
-                gold: from === goldHolder()
+                gold: from === goldHolder(),
+                frc: record.frc === true
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
-        struck: (throwId, target, by, targetHp, out, head, at, scores, sniper, golden, final, execution, shot) => {
+        struck: (throwId, target, by, targetHp, out, head, at, scores, sniper, frc, golden, final, execution, shot) => {
             const goldKill = golden && out;
             const feedbackKind =
                 target === selfId()
@@ -957,6 +1066,7 @@ export const createMatch = ({
                 const icons = killIcons({
                     head,
                     sniper,
+                    frc,
                     gold: golden,
                     execution,
                     guard: by === 'guard',
@@ -1131,7 +1241,7 @@ export const createMatch = ({
                 ui.feed(`捡起飞盘 · ${next}/${AMMO.max}`, 'mine');
             }
             ammo = next;
-            ui.ammo(ammo, AMMO.max);
+            ui.ammo(ammo, localAmmoCapacity);
         },
         discs: (list, added) => {
             ground.set(list);
@@ -1161,7 +1271,7 @@ export const createMatch = ({
     const right = new Vec3();
     const origin = new Vec3();
     const throwDisc = (speed: number, sniper = false) => {
-        if (globalFinisher || executionView.hasActor(selfId())) return false;
+        if (playerPhase === 'lobby' || globalFinisher || executionView.hasActor(selfId())) return false;
         const now = performance.now();
         if (!alive || now - lastThrowAt < THROW_COOLDOWN * 1000) return false;
         // The golden disc: a short cooldown after every burst of throws.
@@ -1176,14 +1286,18 @@ export const createMatch = ({
                 ui.feed(`金飞盘已连投 ${ROUND.goldBurst} 次 · 冷却 ${ROUND.goldCooldown} 秒`, 'me');
             }
         }
-        if (!hasDisc()) {
+        const usingFrc = !holdingGold() && localFrcSelected && roomNow() >= localFrcCooldownUntil;
+        if (!hasDisc() && !usingFrc) {
             ui.notify('没有飞盘了：去捡回扔出去的飞盘，或到体育组办公室领取');
             return false;
         }
         const golden = holdingGold();
-        if (net.state === 'online' && !golden) {
+        if (net.state === 'online' && !golden && !usingFrc) {
             ammo = Math.max(0, ammo - 1);
-            ui.ammo(ammo, AMMO.max);
+            ui.ammo(ammo, localAmmoCapacity);
+        } else if (usingFrc && net.state !== 'online') {
+            localFrcSelected = false;
+            localFrcCooldownUntil = roomNow() + ITEM_RULES.frcCooldownMs;
         }
         lastThrowAt = now;
         const eye = camera.getPosition();
@@ -1217,8 +1331,14 @@ export const createMatch = ({
             o: [round(origin.x), round(origin.y), round(origin.z)],
             v: velocity.map(round) as V3,
             tilt: 0,
+            ...(usingFrc ? { frc: true } : {}),
             ...(sniper ? { sniper: true } : {})
         };
+        if (usingFrc) {
+            localFrcThrows.add(record.id);
+            // Missed practice shots must not grow this lookup indefinitely.
+            while (localFrcThrows.size > 128) localFrcThrows.delete(localFrcThrows.values().next().value!);
+        }
         discs.launch({
             owner: selfId(),
             throwId: record.id,
@@ -1228,7 +1348,8 @@ export const createMatch = ({
             normal: launchNormal(record.v, record.tilt),
             local: true,
             sniper,
-            gold: holdingGold()
+            gold: holdingGold(),
+            frc: usingFrc
         });
         if (sniper) {
             sound.sniperThrow();
@@ -1262,38 +1383,70 @@ export const createMatch = ({
         aimReadyPlayed = false;
         ui.charge(null);
     };
-    const lookingAtMonitor = () => {
-        const eye = camera.getPosition();
-        const dx = MONITOR_CONSOLE.x - eye.x;
-        const dy = MONITOR_CONSOLE.y - eye.y;
-        const dz = MONITOR_CONSOLE.z - eye.z;
-        const distance = Math.hypot(dx, dy, dz);
-        if (distance > 3 || distance < 0.1) return false;
-        const forward = camera.forward;
-        return (dx * forward.x + dy * forward.y + dz * forward.z) / distance > 0.94;
+    const nearestInteraction = () => {
+        const p = player.getPosition();
+        const candidates = [
+            ...worldItems.filter((item) => item.available).map((item) => ({ id: item.id, name: item.name, at: item.at })),
+            ...NPC_SPAWNS.map((npc) => ({ id: npc.id, name: npc.name, at: npc.at }))
+        ];
+        let closest: { id: string; name: string; distance: number } | null = null;
+        for (const candidate of candidates) {
+            const distance = Math.hypot(p.x - candidate.at[0], p.y - candidate.at[1], p.z - candidate.at[2]);
+            if (distance <= ITEM_RULES.pickupRadius && (!closest || distance < closest.distance))
+                closest = { id: candidate.id, name: candidate.name, distance };
+        }
+        return closest;
     };
-    const activateMonitor = () => {
-        if (
-            globalFinisher ||
-            !started ||
-            !alive ||
-            spectating ||
-            inputPaused ||
-            performance.now() < detainedUntil ||
-            !lookingAtMonitor()
-        )
-            return false;
-        radarUntil = performance.now() + RADAR_SECONDS * 1000;
-        sound.scopeReady();
-        ui.popup('监控画面已开启', 'gold');
-        ui.feed(`监控画面 · ${RADAR_SECONDS} 秒内地图显示其他玩家位置`, 'mine');
-        return true;
+    const interactNearby = () => {
+        if (globalFinisher || !started || playerPhase === 'lobby' || !alive || spectating || inputPaused || performance.now() < detainedUntil) return;
+        const target = nearestInteraction();
+        if (!target) return;
+        if (net.state === 'online') {
+            net.interact(target.id);
+            return;
+        }
+        if (target.id === 'coach-michael') {
+            if (localAbilities.coach) return ui.notify('Michael 教练：飞盘天赋已经学会了');
+            localAbilities.coach = true;
+            localAmmoCapacity = 5;
+            ammo = Math.min(localAmmoCapacity, ammo + 2);
+            ui.ammo(ammo, localAmmoCapacity);
+            ui.popup('飞盘天赋 · 携带上限提升至 5', 'gold');
+            return;
+        }
+        if (target.id === 'mark') {
+            if (localMarkGiven || localAbilities.creation) return ui.notify('Mark：创造之力已经交给别人了');
+            localMarkGiven = true;
+            localAbilities.creation = true;
+            creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
+            const power = worldItems.find((item) => item.id === 'item-creation');
+            if (power) {
+                power.available = false;
+                power.holder = selfId();
+                const local = pose().p;
+                power.at = [local[0], Math.max(0.02, local[1] - 0.9), local[2]];
+                applyWorldItems(worldItems);
+            }
+            ui.popup('获得创造之力 · 每 30 秒补充一张飞盘', 'gold');
+            return;
+        }
+        const item = worldItems.find((entry) => entry.id === target.id);
+        if (!item) return;
+        if (item.kind === 'revive' && (localAbilities.revive || localAbilities.reviveUsed)) return;
+        if (item.kind === 'frc' && localAbilities.frc) return;
+        if (item.kind === 'eye' && localAbilities.eye) return;
+        if (item.kind === 'stealth' && localAbilities.stealth) return;
+        if (item.kind === 'creation' && localAbilities.creation) return;
+        localAbilities[item.kind] = true;
+        item.available = false;
+        applyWorldItems(worldItems);
+        ui.popup(`拾取${item.name}`, 'gold');
+        sound.pickup();
     };
     window.addEventListener('mousedown', (event) => {
         // Right button while charging or aiming: stand down without throwing.
         if (event.button === 2 && chargingSince !== null) return cancelCharge();
         if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
-        if (activateMonitor()) return;
         if (performance.now() < detainedUntil) return; // standing still for 纪老师
         if (!hasDisc()) {
             ui.notify('没有飞盘了：去捡回扔出去的飞盘，或到体育组办公室领取');
@@ -1482,11 +1635,27 @@ export const createMatch = ({
             if (event.code !== 'Escape') event.preventDefault();
             return;
         }
-        // Hold C to sneak: slower, and silent (no footsteps).
-        if (event.code === 'KeyC' && locked()) sneaking = true;
         if (event.code === 'KeyV' && !event.repeat && locked()) {
             event.preventDefault();
             beginFinisherHold();
+        }
+        if (event.code === 'KeyE' && !event.repeat && locked()) interactNearby();
+        if (event.code === 'KeyZ' && !event.repeat && locked() && alive && localAbilities.frc) {
+            if (roomNow() < localFrcCooldownUntil) ui.notify('FRC 飞盘仍在冷却');
+            else if (net.state === 'online') net.toggleFrc();
+            else {
+                localFrcSelected = !localFrcSelected;
+                ui.notify(localFrcSelected ? '已切换到 FRC 飞盘' : '已切回普通飞盘');
+            }
+        }
+        if (event.code === 'KeyX' && !event.repeat && locked() && alive && localAbilities.stealth) {
+            if (roomNow() < localStealthCooldownUntil) ui.notify('静止之力仍在冷却');
+            else if (net.state === 'online') net.activateStealth();
+            else {
+                localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
+                localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
+                ui.popup('静止之力 · 隐身 3 秒', 'gold');
+            }
         }
         if (
             event.code === 'KeyE' &&
@@ -1525,15 +1694,13 @@ export const createMatch = ({
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
         if (event.code === 'KeyV' && finisherHoldStartedAt !== null) completeFinisherHold();
-        if (event.code === 'KeyC') sneaking = false;
     });
     window.addEventListener('blur', () => {
         cancelFinisherHold();
-        sneaking = false;
     });
 
-    /** Combat feel 3.0, per frame: aim state, footsteps, elimination marks and the final-kill slow motion. */
-    const updateCombatFeel = (deltaTime: number, now: number) => {
+    /** Combat feel 3.0, per frame: aim state, elimination marks and the final-kill slow motion. */
+    const updateCombatFeel = (now: number) => {
         app.timeScale = now < slowMotionUntil ? FINAL_SLOW_MOTION.scale : 1;
         // Crosshair over a visible enemy within throwing range (checked ~15 times a second).
         if (now >= aimCheckAt) {
@@ -1558,34 +1725,6 @@ export const createMatch = ({
             }
             ui.crosshairTarget(on);
         }
-        // Your own footsteps (silent while sneaking or barely moving).
-        const velocity = player.rigidbody?.linearVelocity;
-        if (velocity && alive && !spectating && Math.abs(velocity.y) < 1.5) {
-            const cadence = footstepCadence(Math.hypot(velocity.x, velocity.z));
-            stepClock = cadence ? stepClock + deltaTime : 0;
-            if (cadence && stepClock >= cadence.interval) {
-                stepClock = 0;
-                sound.footstep(undefined, currentSurface, cadence.loud);
-            }
-        }
-        // Other players' footsteps, positioned, from their drawn movement.
-        for (const [id, pose] of poses) {
-            if (id === selfId()) continue;
-            const p = pose.p;
-            const state = remoteSteps.get(id) ?? { last: [...p] as V3, clock: 0 };
-            const speed = deltaTime > 0 ? Math.hypot(p[0] - state.last[0], p[2] - state.last[2]) / deltaTime : 0;
-            // No steps in the air (jumps) or across teleports.
-            const grounded = Math.abs(p[1] - state.last[1]) < 0.05 && speed < 15;
-            state.last = [...p] as V3;
-            const cadence = grounded ? footstepCadence(speed) : null;
-            state.clock = cadence ? state.clock + deltaTime : 0;
-            if (cadence && state.clock >= cadence.interval) {
-                state.clock = 0;
-                sound.footstep([p[0], p[1] - 0.9, p[2]], 'epoxy', cadence.loud);
-            }
-            remoteSteps.set(id, state);
-        }
-        for (const id of remoteSteps.keys()) if (!poses.has(id)) remoteSteps.delete(id);
         // Elimination marks, projected to the screen and fading over their last second.
         const cam = camera.camera!;
         const marks: { x: number; y: number; alpha: number }[] = [];
@@ -1635,8 +1774,7 @@ export const createMatch = ({
             script.speedGround =
                 walkSpeed *
                 (1 - (1 - SCOPE.moveScale) * aim) *
-                (holdingGold() ? ROUND.goldSpeedFactor : 1) *
-                (sneaking ? SNEAK_SPEED_FACTOR : 1);
+                (holdingGold() ? ROUND.goldSpeedFactor : 1);
         }
         ui.scope(aim, ready);
         const [impulseX, impulseY] = cameraImpulses.update(deltaTime);
@@ -1731,6 +1869,13 @@ export const createMatch = ({
     /** Per frame: 纪老师, the golden disc, detention, the round clock and the on-screen gold marker. */
     const updateRound = (now: number) => {
         if (warming) return;
+        for (const item of worldItems) {
+            const mesh = pickupMeshes.get(item.id);
+            if (!mesh || !item.available) continue;
+            const phase = ITEM_SPAWNS.findIndex((spawn) => spawn.id === item.id) * 1.7;
+            mesh.setPosition(item.at[0], item.at[1] + 0.34 + Math.sin(now * 0.002 + phase) * 0.07, item.at[2]);
+            mesh.setEulerAngles(0, (now * 0.045 + phase * 57.3) % 360, 0);
+        }
         teacher.update(roomNow(), now, 0);
         // Offline practice: a golden disc of your own to find.
         if (started && net.state !== 'online' && !goldView.state) {
@@ -1771,7 +1916,7 @@ export const createMatch = ({
         // 纪老师's circle: stepping into it means standing still for a few seconds, frisbee or not. Once released you
         // get a few seconds to walk out before he can stop you again.
         const watched =
-            started && alive && !spectating && !executionView.hasActor(selfId()) && teacher.sees(player.getPosition());
+            started && playerPhase === 'playing' && alive && !spectating && !executionView.hasActor(selfId()) && teacher.sees(player.getPosition());
         if (watched !== inWatch) {
             inWatch = watched;
             ui.watchWarning(watched);
@@ -1794,7 +1939,6 @@ export const createMatch = ({
             (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
         breakerView.update(outage);
-        monitorView.setActive(performance.now() < radarUntil);
         if (outage !== wasPowerOut) {
             wasPowerOut = outage;
             if (outage) {
@@ -1805,18 +1949,22 @@ export const createMatch = ({
                 sound.pickup();
             }
         }
+        const near = started && playerPhase !== 'lobby' && alive && !spectating ? nearestInteraction() : null;
         ui.interaction(
-            started && alive && !spectating && lookingAtMonitor()
-                ? '点击电脑查看其他玩家位置（30 秒）'
-                : started && alive && !spectating && nearBreaker(pose().p)
-                  ? activePower.pulledAt === null
-                      ? nightActive
-                          ? '终局夜晚 · 无法拉闸'
-                          : 'E 拉闸 · 全服每局限一次'
-                      : outage
-                        ? '全校断电 · 保安正在恢复供电'
-                        : '本局已拉闸 · 无法再次使用'
-                  : null
+            near
+                  ? (() => {
+                        const talk = near.id.startsWith('coach-') || near.id === 'mark';
+                        return `E ${talk ? '交谈' : '拾取'} ${near.name}`;
+                    })()
+                  : started && alive && !spectating && nearBreaker(pose().p)
+                    ? activePower.pulledAt === null
+                        ? nightActive
+                            ? '终局夜晚 · 无法拉闸'
+                            : 'E 拉闸 · 全服每局限一次'
+                        : outage
+                          ? '全校断电 · 保安正在恢复供电'
+                          : '本局已拉闸 · 无法再次使用'
+                    : null
         );
         dark = nightActive || outage;
         if (nightActive && !wasNight) {
@@ -1825,7 +1973,7 @@ export const createMatch = ({
             ui.feed('从现在起被淘汰就不能复活，只剩最后一人时直接获胜', 'me');
         }
         wasNight = nightActive;
-        if (nightActive && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
+        if (nightActive && playerPhase === 'playing' && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
             spottedSent = true;
             ui.popup('被保安的手电筒照到了！', 'me');
             net.spotted();
@@ -1923,17 +2071,53 @@ export const createMatch = ({
                 body.linearVelocity = new Vec3(v.x * k, v.y, v.z * k);
             }
         }
-        // Monitoring room radar countdown.
-        if (now < radarUntil) {
-            radarShown = true;
-            ui.radar((radarUntil - now) / 1000);
-        } else if (radarShown) {
-            radarShown = false;
-            ui.radar(null);
-            ui.feed('监控画面已关闭', 'neutral');
-        }
         const holderPosition = holder && !mine ? (positionOf(holder) ?? null) : null;
         goldView.update(now, holderPosition, mine);
+
+        const eyeEnabled = localAbilities.eye && started && alive && !spectating;
+        ui.playerPings(
+            eyeEnabled
+                ? [...poses]
+                      .filter(([id]) => id !== selfId())
+                      .flatMap(([id, each]) => {
+                          const summary = roster.get(id);
+                          if (summary?.phase !== 'playing' || summary.alive === false || (summary.stealthUntil ?? 0) > roomNow()) return [];
+                          markerWorld.set(each.p[0], each.p[1] + 1.45, each.p[2]);
+                          camera.camera!.worldToScreen(markerWorld, markerScreen);
+                          return markerScreen.z > 0
+                              ? [{
+                                    id,
+                                    name: summary.name,
+                                    x: markerScreen.x,
+                                    y: markerScreen.y,
+                                    distance: Math.hypot(each.p[0] - player.getPosition().x, each.p[2] - player.getPosition().z)
+                                }]
+                              : [];
+                      })
+                : []
+        );
+        const clockNow = roomNow();
+        const abilityLabels: string[] = [];
+        const abilityProgress: number[] = [];
+        if (localAbilities.frc) {
+            const remaining = Math.max(0, localFrcCooldownUntil - clockNow);
+            abilityLabels.push(remaining ? `FRC 冷却 ${Math.ceil(remaining / 1000)} 秒` : `Z ${localFrcSelected ? '切回普通盘' : '切换 FRC'}`);
+            abilityProgress.push(1 - remaining / ITEM_RULES.frcCooldownMs);
+        }
+        if (localAbilities.stealth) {
+            const remaining = Math.max(0, localStealthCooldownUntil - clockNow);
+            const active = localStealthUntil > clockNow;
+            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `X 静止之力${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
+            abilityProgress.push(remaining ? 1 - remaining / ITEM_RULES.stealthCooldownMs : 1);
+        }
+        if (localAbilities.revive) abilityLabels.push('复活甲 · 可抵挡一次淘汰');
+        if (localAbilities.eye) abilityLabels.push('监控室之眼 · 全场位置已标记');
+        if (localAbilities.creation) {
+            const remaining = Math.max(0, creationNextAt - clockNow);
+            abilityLabels.push(`创造之力 · 下次补充 ${Math.ceil(remaining / 1000)} 秒`);
+            abilityProgress.push(1 - remaining / ITEM_RULES.creationRefillMs);
+        }
+        ui.abilityStatus(abilityLabels.length ? abilityLabels.join('　·　') : null, abilityProgress.length ? Math.min(...abilityProgress) : 1);
 
         // Detention: frozen in place (looking around is allowed) until the time is up.
         const script = controller() as unknown as { speedGround: number; speedAir: number; jumpForce: number } | null;
@@ -2039,11 +2223,11 @@ export const createMatch = ({
         });
     };
 
-    /** Everyone else's position, while the monitoring room's radar is on. */
+    /** Other in-round players, visible on the map only while carrying the monitoring-room eye. */
     const radarPlayers = () => {
-        if (performance.now() >= radarUntil) return [];
+        if (!localAbilities.eye) return [];
         return [...poses]
-            .filter(([id]) => id !== selfId())
+            .filter(([id]) => id !== selfId() && roster.get(id)?.phase === 'playing' && roster.get(id)?.alive !== false && !roster.get(id)?.stealthUntil)
             .map(([id, each]) => ({ x: each.p[0], z: each.p[2], colour: roster.get(id)?.colour ?? 0 }));
     };
     const mapMarkers = () => {
@@ -2053,7 +2237,23 @@ export const createMatch = ({
             gold: at ? { x: at[0], z: at[2], held: goldHolder() !== null } : null,
             teacher: { x: teacherPose.x, z: teacherPose.z, yaw: teacherPose.yaw, range: TEACHER.range },
             players: radarPlayers(),
-            specialLocations: SPECIAL_LOCATIONS
+            specialLocations: [
+                ...SPECIAL_LOCATIONS.map((location) =>
+                    location.id === 'medical' && worldItems.find((item) => item.id === 'item-revive')?.available
+                        ? { ...location, colour: '#f7e86a' }
+                        : location
+                ),
+                ...worldItems
+                    .filter((item) => item.available)
+                    .map((item) => ({
+                        id: item.id,
+                        short: item.kind === 'revive' ? '甲' : item.kind === 'frc' ? 'F' : item.kind === 'eye' ? '眼' : item.kind === 'stealth' ? '隐' : '创',
+                        name: item.name,
+                        x: item.at[0],
+                        z: item.at[2],
+                        colour: item.kind === 'revive' ? '#ff9f9a' : item.kind === 'frc' ? '#ff5b4d' : item.kind === 'eye' ? '#65d8e8' : item.kind === 'stealth' ? '#b49aff' : '#b8d879'
+                    }))
+            ]
         };
     };
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -2134,19 +2334,40 @@ export const createMatch = ({
             warming = false;
         },
         /** Joins the shared world (first entry only). */
-        start(name: string) {
+        start(name: string, phase: 'lobby' | 'playing' = 'playing') {
             if (started) return;
             started = true;
+            playerPhase = phase;
             nickname = name;
             sound.unlock();
             viewmodel.enabled = true;
             refreshBoard();
-            net.connect(name, auth.token);
+            net.connect(name, auth.token, phase);
             refreshCount();
+        },
+        /** Client-side phase changes on the gate crossing; the room independently validates its latest pose. */
+        joinRound() {
+            if (playerPhase !== 'lobby') return;
+            if (net.state === 'online') {
+                const now = performance.now();
+                if (now - lastJoinRoundRequestAt < 500) return;
+                lastJoinRoundRequestAt = now;
+                // Preserve WebSocket order: the room validates the exact gate-crossing pose first.
+                net.pose(pose(), true);
+                net.joinRound();
+            }
+            else playerPhase = 'playing';
         },
         update(deltaTime: number) {
             const now = performance.now();
+            if (net.state !== 'online' && localAbilities.creation && ammo < localAmmoCapacity && roomNow() >= creationNextAt) {
+                ammo++;
+                creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
+                ui.ammo(ammo, localAmmoCapacity);
+                ui.feed('创造之力 · 自动补充一张飞盘', 'mine');
+            }
             poses = net.poses();
+            for (const npc of NPC_SPAWNS) poses.set(npc.id, { p: npc.at, yaw: 180, pitch: 0 });
             const finishPracticeFinisher = () => {
                 if (labExecution && realRoomNow() >= labExecution.endsAt) {
                     const record = labExecution;
@@ -2197,7 +2418,7 @@ export const createMatch = ({
                 }
             } else if (chargingSince !== null) ui.charge(null);
             if (chargingSince === null) chargeFullPlayed = false;
-            updateCombatFeel(deltaTime, now);
+            updateCombatFeel(now);
             stands.update(
                 [...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
                 (id) => roster.get(id)?.colour ?? 0,
@@ -2247,7 +2468,8 @@ export const createMatch = ({
                     const { at } = contact;
                     if (audioLab && target === labTargetId) {
                         const head = isHeadHit(at[1], labTargetPose.p[1]);
-                        simulateDummyHit(head ? 'head' : 'body');
+                        const frcHit = localFrcThrows.delete(throwId);
+                        simulateDummyHit(head ? 'head' : frcHit ? 'frc' : 'body');
                         return;
                     }
                     // Immediate local prediction is visually distinct; the room alone confirms a hit.
@@ -2317,15 +2539,18 @@ export const createMatch = ({
         get dark() {
             return dark;
         },
-        /** Entering the room does not reveal player positions; those require clicking the console. */
-        enteredRoom(_id: string | null, kind: string | null = null) {
-            // Entering the room does not grant access to the camera feed; it does set the floor your steps sound on.
-            currentSurface = surfaceFor(kind);
+        /** Room entry remains passive; the monitoring-room eye is required to reveal live player locations. */
+        enteredRoom(_id: string | null, _kind?: string | null) {
+            void _id;
+            void _kind;
         },
         /** The golden disc and 纪老师 for the maps. */
         markers: mapMarkers,
         get online() {
             return net.state === 'online';
+        },
+        get phase() {
+            return playerPhase;
         },
         /** The player's normal field of view and mouse sensitivity (the sniper scope scales from these). */
         setView(fov: number, lookSensitivity: number) {
@@ -2372,10 +2597,11 @@ export const createMatch = ({
         debug: {
             setSimulatedRtt: (milliseconds: number) => net.setSimulatedRtt(milliseconds),
             markers: mapMarkers,
-            monitorFocused: lookingAtMonitor,
+            monitorFocused: () => false,
             cameraPosition: () => camera.getPosition().toArray(),
             state: () => ({
                 net: net.state,
+                phase: playerPhase,
                 simulatedRtt: net.simulatedRtt,
                 id: net.id,
                 alive,
@@ -2383,6 +2609,15 @@ export const createMatch = ({
                 executions: executionView.debug(realRoomNow(), selfId()),
                 globalFinisher: globalFinisher ? { ...globalFinisher } : null,
                 hp,
+                items: worldItems.map((item) => ({ ...item })),
+                abilities: {
+                    ...localAbilities,
+                    frcSelected: localFrcSelected,
+                    frcCooldownUntil: localFrcCooldownUntil,
+                    stealthUntil: localStealthUntil,
+                    stealthCooldownUntil: localStealthCooldownUntil,
+                    ammoCapacity: localAmmoCapacity
+                },
                 players: [...roster.values()].map((entry) => ({ ...entry })),
                 discs: discs.count,
                 throws,
@@ -2443,7 +2678,6 @@ export const createMatch = ({
 };
 
 /** Duration of the player-activated monitoring console feed. */
-const RADAR_SECONDS = 30;
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
 /** The crosshair turns red over a visible enemy within this distance (m), about a full-strength throw. */

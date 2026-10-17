@@ -1,5 +1,6 @@
 // Development-only local audition panel. User video/derived clips stay outside public/ and Git.
 import type { Sound, TestSoundCue } from '../gameplay/sound';
+import { MAX_HP } from '../net/protocol';
 
 import './audioLab.css';
 
@@ -82,7 +83,7 @@ export const mountAudioLab = async ({
         <footer><button data-action="stop" type="button">停止试听</button><button data-action="reset" type="button">全部恢复原声</button><button data-action="reset-tuning" type="button">恢复调节默认</button><button data-action="range" type="button">去试音靶场并进入游戏</button><button data-action="resume" type="button">继续游戏</button></footer>
         <p class="audio-lab-note">固定人偶：身体两次命中淘汰，爆头一次淘汰；从背后靠近后按 V 或点处决按钮，双方播放处决动作，完成后 2.5 秒原地复活，不记录战绩。新候选保留视频中的背景混音，未做声源分离，可调起止点；仅供本地评估。生产默认的 10／12／16 不受候选库精简影响。</p>
       </dialog>
-      <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 2/2 · 死亡后原地复活</span></div>`;
+      <div class="audio-lab-dummy" aria-label="测试人偶状态"><strong>固定测试人偶</strong><span data-dummy-state>生命 ${MAX_HP}/${MAX_HP} · 死亡后原地复活</span></div>`;
     document.body.append(host);
     const dialog = host.querySelector('dialog')!;
     const status = host.querySelector<HTMLElement>('[role="status"]')!;
@@ -386,7 +387,9 @@ export const mountAudioLab = async ({
         },
         dummy(hp: number, respawnSeconds: number) {
             const text =
-                hp > 0 ? `生命 ${hp}/2 · 死亡后原地复活` : `已淘汰 · ${respawnSeconds.toFixed(1)} 秒后原地复活`;
+                hp > 0
+                    ? `生命 ${hp}/${MAX_HP} · 死亡后原地复活`
+                    : `已淘汰 · ${respawnSeconds.toFixed(1)} 秒后原地复活`;
             if (dummyState.textContent !== text) dummyState.textContent = text;
             if (dummyHud.dataset.hp !== String(hp)) dummyHud.dataset.hp = String(hp);
         }

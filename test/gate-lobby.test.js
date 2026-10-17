@@ -30,10 +30,14 @@ test('passing the line joins the round once; then the gate stays shut and red', 
     assert.equal(leave.open, false);
 });
 
-test('the waiting plaza is outside the gate and holds the spawn', () => {
+test('the lobby is confined to the indoor south-door vestibule', () => {
     assert.ok(inPlaza(SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.z));
+    assert.ok(inPlaza(mid, SOUTH_GATE.outer.line - 0.4), 'the foyer is part of the waiting zone');
+    assert.ok(!inPlaza(mid, SOUTH_GATE.outer.line + 0.3), 'the exterior plaza is outside the lobby');
     assert.ok(!inPlaza(mid, SOUTH_GATE.line - 1));
     assert.ok(SOUTH_GATE.spawn.x >= SOUTH_GATE.x0 && SOUTH_GATE.spawn.x <= SOUTH_GATE.x1, 'spawn faces the opening');
+    assert.ok(Math.abs(SOUTH_GATE.line - 53.46) < 0.01, 'gate is at the screenshot-identified pillar line');
+    assert.equal(SOUTH_GATE.outer.line, 57.12, 'the source south entrance remains open');
     const lanes = SOUTH_GATE.cabinets.slice(1).map((x, i) => x - SOUTH_GATE.cabinets[i] - 0.2);
     assert.ok(
         lanes.every((width) => width >= 0.7),

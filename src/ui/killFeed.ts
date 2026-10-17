@@ -1,11 +1,12 @@
 // Kill feed and kill banner content (pure; tested in test/kill-feed.test.js). Every icon has one fixed meaning.
 import { LONG_SHOT_METRES } from '../config/bounce.ts';
 
-export type KillIcon = 'disc' | 'head' | 'sniper' | 'execution' | 'gold' | 'guard' | 'bank' | 'long';
+export type KillIcon = 'disc' | 'head' | 'sniper' | 'frc' | 'execution' | 'gold' | 'guard' | 'bank' | 'long';
 
 export type KillFacts = {
     head: boolean;
     sniper: boolean;
+    frc?: boolean;
     gold: boolean;
     execution: boolean;
     /** Eliminated by the night guard's flashlight. */
@@ -18,6 +19,7 @@ export const KILL_ICON_LABEL: Record<KillIcon, string> = {
     disc: '飞盘淘汰',
     head: '爆头',
     sniper: '狙击',
+    frc: 'FRC 飞盘',
     execution: '处决',
     gold: '金飞盘',
     guard: '保安手电',
@@ -29,7 +31,7 @@ export const KILL_ICON_LABEL: Record<KillIcon, string> = {
 export const killIcons = (facts: KillFacts): KillIcon[] => {
     if (facts.guard) return ['guard'];
     if (facts.execution) return ['execution'];
-    const icons: KillIcon[] = [facts.gold ? 'gold' : facts.sniper ? 'sniper' : 'disc'];
+    const icons: KillIcon[] = [facts.gold ? 'gold' : facts.frc ? 'frc' : facts.sniper ? 'sniper' : 'disc'];
     if (facts.head) icons.push('head');
     if (facts.bank) icons.push('bank');
     if (facts.range !== null && facts.range >= LONG_SHOT_METRES) icons.push('long');
@@ -47,6 +49,7 @@ export const KILL_ICON_SVG: Record<KillIcon, string> = {
     disc: '<ellipse cx="8" cy="8" rx="6.5" ry="3.2"/><ellipse cx="8" cy="7.4" rx="3" ry="1.2"/>',
     head: '<circle cx="8" cy="8" r="5.6"/><path d="M8 0.8v4M8 11.2v4M0.8 8h4M11.2 8h4"/>',
     sniper: '<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><path d="M8 2v3M8 11v3M2 8h3M11 8h3"/>',
+    frc: '<path d="M2 8h12M8 2v12"/><circle cx="8" cy="8" r="5.5"/>',
     execution: '<path d="M3 13 13 3M9.5 3H13v3.5M3 9.5V13h3.5"/>',
     gold: '<ellipse cx="8" cy="8" rx="6.5" ry="3.2" fill="currentColor"/><path d="M8 1.5v2M3 2.8l1.2 1.4M13 2.8l-1.2 1.4"/>',
     guard: '<path d="M2 6h5l6-3v10l-6-3H2z"/>',

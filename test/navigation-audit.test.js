@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { PLAYER } from '../src/config/gameplay.ts';
+import { ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
+import { pointInRoom } from '../src/world/roomIndex.ts';
 import { auditFloor, auditTopSeats, loadCampusGeometry } from '../tools/navAudit.ts';
 
 const geometry = loadCampusGeometry();
@@ -55,4 +57,16 @@ test('the top seat row is above the walls, and barriers stop it reaching any wal
     assert.ok(open.wallTopArea > 100, 'without barriers the stand connects to wall tops');
     const closed = auditTopSeats(geometry, { barriers: true });
     assert.equal(closed.wallTopArea, 0);
+});
+
+test('all GAMEPLAY_AUTHORED item and NPC positions are walkable inside their named source room', () => {
+    const audit = auditFloor(geometry, { barriers: true, resolution: 0.05 });
+    for (const spawn of [...ITEM_SPAWNS, ...NPC_SPAWNS]) {
+        const room = geometry.rooms.find((candidate) => candidate.id === spawn.room);
+        assert.ok(room?.hasRegion, `${spawn.id} room ${spawn.room} needs an imported region`);
+        assert.ok(pointInRoom([spawn.at[0], spawn.at[2]], room), `${spawn.id} lies inside ${spawn.room}`);
+        const cell = audit.grid.index(spawn.at[0], spawn.at[2]);
+        assert.ok(cell >= 0 && audit.floor[cell] && !audit.inflated[cell], `${spawn.id} has floor and capsule clearance`);
+        assert.ok(audit.reached[cell], `${spawn.id} is reachable from the campus spawn`);
+    }
 });

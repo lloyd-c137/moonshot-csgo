@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "audit:nav": "node tools/navAuditCli.ts",
-        "build": "vite build",
+        "build": "vite build && wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir dist --output-routes-path dist/_routes.json && mv dist/index.js dist/_worker.js",
         "derive:world": "node tools/deriveWorldCli.ts",
         "dev": "vite",
         "fmt": "prettier --check .",

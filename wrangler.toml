@@ -9,6 +9,10 @@ NODE_VERSION = "24.16.0"
 [env.production.vars]
 NODE_VERSION = "24.16.0"
 
-[[services]]
+[[env.production.services]]
+binding = "GAME_API"
+service = "moonshot-csgo-multiplayer"
+
+[[env.preview.services]]
 binding = "GAME_API"
 service = "moonshot-csgo-multiplayer"

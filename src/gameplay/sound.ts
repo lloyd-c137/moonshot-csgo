@@ -11,12 +11,14 @@ import { AudioVoicePool } from './feedback/AudioVoicePool';
 type V3 = [number, number, number];
 export type TestSoundCue = 'hit' | 'head' | 'kill' | 'bounce' | 'goldKill' | 'throw';
 type SoundBus = 'combat' | 'confirmation' | 'environment' | 'ui';
+const AUDIO_PRIORITY = { ambient: 0, action: 1, hit: 2, elimination: 4, critical: 5 } as const;
 
 export const createSound = () => {
     let ctx: AudioContext | null = null;
     let master: GainNode | null = null;
     let buses: Record<SoundBus, GainNode> | null = null;
     let activeBus: SoundBus = 'combat';
+    let activePriority: number = AUDIO_PRIORITY.ambient;
     let mix = { master: 0.8, combat: 0.8, confirmation: 1 };
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
@@ -27,7 +29,7 @@ export const createSound = () => {
     const testCache = new Map<string, AudioBuffer>();
     const voices = new AudioVoicePool<SoundBus>({ combat: 24, confirmation: 16, environment: 8, ui: 8 });
     const trackVoice = (source: AudioScheduledSourceNode, cleanup: () => void) => {
-        voices.track(activeBus, source, cleanup);
+        voices.track(activeBus, source, cleanup, activePriority);
     };
 
     const loadClip = async (audio: AudioContext, name: string, url: string) => {
@@ -192,11 +194,17 @@ export const createSound = () => {
         });
     };
 
-    const play = (build: (audio: AudioContext, now: number) => void, group: SoundBus = 'combat') => {
+    const play = (
+        build: (audio: AudioContext, now: number) => void,
+        group: SoundBus = 'combat',
+        priority: number = AUDIO_PRIORITY.ambient
+    ) => {
         const audio = ensure();
         if (!audio) return;
         const previous = activeBus;
+        const previousPriority = activePriority;
         activeBus = group;
+        activePriority = priority;
         try {
             build(audio, audio.currentTime);
             if (group === 'confirmation' && buses) {
@@ -211,6 +219,7 @@ export const createSound = () => {
             }
         } finally {
             activeBus = previous;
+            activePriority = previousPriority;
         }
     };
 
@@ -357,41 +366,57 @@ export const createSound = () => {
             }),
         /** Sniper or golden elimination: use the selected head/kill clip, with the original synthesis as fallback. */
         snipeConfirm: (head = true, golden = false) =>
-            play((audio, now) => {
-                if (golden && (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill'))) return;
-                const cue = head ? 'head' : 'kill';
-                if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
-                tone(audio, bus(), 'sine', 120, 40, now, 0.5, 0.7);
-                tone(audio, bus(), 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
-                tone(audio, bus(), 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
-                hiss(audio, bus(), now, 0.12, 0.3, 6000, 2000, 0.7);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    if (golden && (playTestClip(audio, 'goldKill') || playCombatClip(audio, 'goldKill'))) return;
+                    const cue = head ? 'head' : 'kill';
+                    if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
+                    tone(audio, bus(), 'sine', 120, 40, now, 0.5, 0.7);
+                    tone(audio, bus(), 'triangle', 1760, 1700, now + 0.02, 0.5, 0.3);
+                    tone(audio, bus(), 'triangle', 2640, 2600, now + 0.1, 0.6, 0.22);
+                    hiss(audio, bus(), now, 0.12, 0.3, 6000, 2000, 0.7);
+                },
+                'confirmation',
+                golden ? AUDIO_PRIORITY.critical : AUDIO_PRIORITY.elimination
+            ),
         /** The golden disc appears (or is dropped): a shimmering rising chime. */
         goldChime: (at?: V3) =>
-            play((audio, now) => {
-                const out = output(audio, at);
-                [1046, 1318, 1568, 2093].forEach((f, i) =>
-                    tone(audio, out, 'triangle', f, f, now + i * 0.07, 0.6, 0.12)
-                );
-                hiss(audio, out, now, 0.9, 0.06, 5000, 9000, 3);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    const out = output(audio, at);
+                    [1046, 1318, 1568, 2093].forEach((f, i) =>
+                        tone(audio, out, 'triangle', f, f, now + i * 0.07, 0.6, 0.12)
+                    );
+                    hiss(audio, out, now, 0.9, 0.06, 5000, 9000, 3);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.action
+            ),
         /** You took the golden disc: a short brass-like fanfare over a shimmer. */
         goldTaken: () =>
-            play((audio, now) => {
-                const out = bus();
-                [523, 659, 784, 1046].forEach((f, i) => {
-                    tone(audio, out, 'sawtooth', f, f, now + i * 0.09, 0.22, 0.09);
-                    tone(audio, out, 'triangle', f * 2, f * 2, now + i * 0.09, 0.3, 0.06);
-                });
-                tone(audio, out, 'sawtooth', 1046, 1046, now + 0.36, 0.7, 0.1);
-                hiss(audio, out, now + 0.3, 1, 0.07, 6000, 10000, 3);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    [523, 659, 784, 1046].forEach((f, i) => {
+                        tone(audio, out, 'sawtooth', f, f, now + i * 0.09, 0.22, 0.09);
+                        tone(audio, out, 'triangle', f * 2, f * 2, now + i * 0.09, 0.3, 0.06);
+                    });
+                    tone(audio, out, 'sawtooth', 1046, 1046, now + 0.36, 0.7, 0.1);
+                    hiss(audio, out, now + 0.3, 1, 0.07, 6000, 10000, 3);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.elimination
+            ),
         /** Someone else took the golden disc: a low warning swell. */
         goldLost: () =>
-            play((audio, now) => {
-                tone(audio, bus(), 'sawtooth', 220, 165, now, 0.5, 0.12);
-                tone(audio, bus(), 'sawtooth', 277, 207, now + 0.05, 0.5, 0.08);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    tone(audio, bus(), 'sawtooth', 220, 165, now, 0.5, 0.12);
+                    tone(audio, bus(), 'sawtooth', 277, 207, now + 0.05, 0.5, 0.08);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.action
+            ),
         /** Golden disc inspect: a rising shimmer while it spins, then the bright catch. */
         goldInspect: (seconds: number, tossAt: number, catchAt: number) =>
             play((audio, now) => {
@@ -406,12 +431,16 @@ export const createSound = () => {
             }),
         /** Shared cue for the three-minute blackout and a player-triggered breaker outage. */
         blackout: () =>
-            play((audio, now) => {
-                if (playClip(audio, 'power-down', POWER_DOWN_AUDIO.gain)) return;
-                tone(audio, bus(), 'sine', 90, 30, now, 1.4, 0.8);
-                tone(audio, bus(), 'sawtooth', 120, 40, now, 1.6, 0.12);
-                hiss(audio, bus(), now, 0.3, 0.2, 2000, 300, 1);
-            }, 'environment'),
+            play(
+                (audio, now) => {
+                    if (playClip(audio, 'power-down', POWER_DOWN_AUDIO.gain)) return;
+                    tone(audio, bus(), 'sine', 90, 30, now, 1.4, 0.8);
+                    tone(audio, bus(), 'sawtooth', 120, 40, now, 1.6, 0.12);
+                    hiss(audio, bus(), now, 0.3, 0.2, 2000, 300, 1);
+                },
+                'environment',
+                AUDIO_PRIORITY.critical
+            ),
         /** 纪老师's whistle: two sharp blasts. */
         whistle: () =>
             play((audio, now) => {
@@ -423,25 +452,33 @@ export const createSound = () => {
             }, 'environment'),
         /** Round over: a triumphant chord if you won, a falling one otherwise. */
         roundEnd: (won: boolean, outcome: 'golden-disc' | 'last-survivor' | 'draw') =>
-            play((audio, now) => {
-                const notes =
-                    outcome === 'draw'
-                        ? [392, 370, 349]
-                        : won
-                          ? outcome === 'golden-disc'
-                              ? [523, 659, 784, 1046, 1318]
-                              : [440, 554, 659, 880, 1175]
-                          : outcome === 'golden-disc'
-                            ? [392, 349, 311, 262]
-                            : [349, 330, 294, 220];
-                notes.forEach((f, i) => tone(audio, bus(), 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    const notes =
+                        outcome === 'draw'
+                            ? [392, 370, 349]
+                            : won
+                              ? outcome === 'golden-disc'
+                                  ? [523, 659, 784, 1046, 1318]
+                                  : [440, 554, 659, 880, 1175]
+                              : outcome === 'golden-disc'
+                                ? [392, 349, 311, 262]
+                                : [349, 330, 294, 220];
+                    notes.forEach((f, i) => tone(audio, bus(), 'triangle', f, f, now + i * 0.12, 0.9, 0.14));
+                },
+                'confirmation',
+                AUDIO_PRIORITY.critical
+            ),
         /** A new round starts. */
         roundStart: () =>
-            play((audio, now) => {
-                [0, 0.5, 1].forEach((t) => tone(audio, bus(), 'square', 880, 880, now + t, 0.12, 0.06));
-                tone(audio, bus(), 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    [0, 0.5, 1].forEach((t) => tone(audio, bus(), 'square', 880, 880, now + t, 0.12, 0.06));
+                    tone(audio, bus(), 'square', 1760, 1760, now + 1.5, 0.4, 0.08);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.elimination
+            ),
         /** Picked a disc up: a quick bright double click. */
         pickup: () =>
             play((audio, now) => {
@@ -473,28 +510,36 @@ export const createSound = () => {
             }),
         /** Your disc hit someone: head takes precedence over kill, then a nonlethal body hit. */
         hitConfirm: (eliminated: boolean, head = false) =>
-            play((audio, now) => {
-                const cue = head ? 'head' : eliminated ? 'kill' : 'hit';
-                if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
-                tone(audio, bus(), 'sine', 1320, 1250, now, 0.09, 0.32);
-                tone(audio, bus(), 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
-                // Head hits ring higher and longer.
-                if (head) tone(audio, bus(), 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
-                if (eliminated && !playClip(audio, 'legacy-kill', 1.1)) {
-                    tone(audio, bus(), 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
-                    tone(audio, bus(), 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
-                }
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    const cue = head ? 'head' : eliminated ? 'kill' : 'hit';
+                    if (playTestClip(audio, cue) || playCombatClip(audio, cue)) return;
+                    tone(audio, bus(), 'sine', 1320, 1250, now, 0.09, 0.32);
+                    tone(audio, bus(), 'sine', 1980, 1900, now + 0.03, 0.12, 0.2);
+                    // Head hits ring higher and longer.
+                    if (head) tone(audio, bus(), 'triangle', 2640, 2600, now + 0.06, 0.22, 0.22);
+                    if (eliminated && !playClip(audio, 'legacy-kill', 1.1)) {
+                        tone(audio, bus(), 'triangle', 660, 660, now + 0.12, 0.16, 0.28);
+                        tone(audio, bus(), 'triangle', 990, 990, now + 0.24, 0.26, 0.28);
+                    }
+                },
+                'confirmation',
+                eliminated ? AUDIO_PRIORITY.critical : AUDIO_PRIORITY.hit
+            ),
         /** You were hit: a thud with a low buzz; the "defeat" clip when it eliminates you. */
         hurt: (eliminated: boolean) =>
-            play((audio, now) => {
-                tone(audio, bus(), 'sine', 160, 55, now, 0.28, 0.75);
-                hiss(audio, bus(), now, 0.18, 0.4, 600, 200, 0.8);
-                if (eliminated) {
-                    defeatVoice = playClip(audio, 'defeat', 0.9);
-                    if (!defeatVoice) tone(audio, bus(), 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
-                }
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    tone(audio, bus(), 'sine', 160, 55, now, 0.28, 0.75);
+                    hiss(audio, bus(), now, 0.18, 0.4, 600, 200, 0.8);
+                    if (eliminated) {
+                        defeatVoice = playClip(audio, 'defeat', 0.9);
+                        if (!defeatVoice) tone(audio, bus(), 'sawtooth', 440, 110, now + 0.1, 0.7, 0.18);
+                    }
+                },
+                'confirmation',
+                eliminated ? AUDIO_PRIORITY.critical : AUDIO_PRIORITY.action
+            ),
         /** Fades out the defeat clip (on respawn). */
         endDefeat: () => {
             if (!ctx || !defeatVoice) return;
@@ -511,10 +556,14 @@ export const createSound = () => {
             }),
         /** Elimination announcement for other players' eliminations. */
         announce: () =>
-            play((audio, now) => {
-                tone(audio, bus(), 'triangle', 520, 520, now, 0.12, 0.12);
-                tone(audio, bus(), 'triangle', 390, 390, now + 0.12, 0.18, 0.12);
-            }, 'confirmation'),
+            play(
+                (audio, now) => {
+                    tone(audio, bus(), 'triangle', 520, 520, now, 0.12, 0.12);
+                    tone(audio, bus(), 'triangle', 390, 390, now + 0.12, 0.18, 0.12);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.action
+            ),
         respawn: () =>
             play((audio, now) => {
                 for (const [k, f] of [523, 659, 784].entries())

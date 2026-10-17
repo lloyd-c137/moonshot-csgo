@@ -3,33 +3,49 @@ export type AudioVoice = {
     addEventListener(type: 'ended', listener: () => void, options?: AddEventListenerOptions): void;
 };
 
-/** Bounded FIFO voice sets for each audio bus; ended voices always release their slot. */
+/** Bounded priority queues per audio bus; ties evict the oldest voice and ended voices release their slot. */
 export class AudioVoicePool<Group extends string> {
-    private readonly voices: Record<Group, Set<AudioVoice>>;
+    private readonly voices: Record<Group, Map<AudioVoice, number>>;
     private readonly limits: Record<Group, number>;
 
     constructor(limits: Record<Group, number>) {
         this.limits = limits;
-        this.voices = Object.fromEntries(Object.keys(limits).map((group) => [group, new Set()])) as Record<
+        this.voices = Object.fromEntries(Object.keys(limits).map((group) => [group, new Map()])) as Record<
             Group,
-            Set<AudioVoice>
+            Map<AudioVoice, number>
         >;
     }
 
-    track(group: Group, voice: AudioVoice, cleanup: () => void) {
+    track(group: Group, voice: AudioVoice, cleanup: () => void, priority = 0) {
         const active = this.voices[group];
         if (active.size >= this.limits[group]) {
-            const oldest = active.values().next().value;
-            if (oldest) {
-                active.delete(oldest);
+            let victim: AudioVoice | undefined;
+            let victimPriority = Infinity;
+            for (const [candidate, candidatePriority] of active) {
+                if (candidatePriority < victimPriority) {
+                    victim = candidate;
+                    victimPriority = candidatePriority;
+                }
+            }
+            if (victimPriority > priority) {
                 try {
-                    oldest.stop();
+                    voice.stop();
+                } catch {
+                    // The source may have ended before it was admitted to the pool.
+                }
+                cleanup();
+                return false;
+            }
+            if (victim) {
+                active.delete(victim);
+                try {
+                    victim.stop();
                 } catch {
                     // The source may have ended between checking the cap and stopping it.
                 }
             }
         }
-        active.add(voice);
+        active.set(voice, priority);
         voice.addEventListener(
             'ended',
             () => {
@@ -38,9 +54,13 @@ export class AudioVoicePool<Group extends string> {
             },
             { once: true }
         );
+        return true;
     }
 
     count() {
-        return (Object.values(this.voices) as Set<AudioVoice>[]).reduce((total, active) => total + active.size, 0);
+        return (Object.values(this.voices) as Map<AudioVoice, number>[]).reduce(
+            (total, active) => total + active.size,
+            0
+        );
     }
 }

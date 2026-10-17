@@ -52,3 +52,44 @@ test('ended voices release exactly one slot and run their resource cleanup', () 
     assert.equal(pool.count(), 0);
     assert.equal(cleanups, 1);
 });
+
+test('low-priority voices cannot evict elimination confirmations from a full bus', () => {
+    const pool = new AudioVoicePool({ confirmation: 2 });
+    const bodyHit = new FakeVoice();
+    const elimination = new FakeVoice();
+    const headHit = new FakeVoice();
+    const anotherBodyHit = new FakeVoice();
+    let rejectedCleanup = 0;
+
+    pool.track('confirmation', bodyHit, () => undefined, 1);
+    pool.track('confirmation', elimination, () => undefined, 5);
+    pool.track('confirmation', headHit, () => undefined, 2);
+    assert.equal(bodyHit.stopCount, 1, 'the oldest lowest-priority voice is evicted first');
+    assert.equal(elimination.stopCount, 0);
+    assert.equal(headHit.stopCount, 0);
+
+    const accepted = pool.track('confirmation', anotherBodyHit, () => rejectedCleanup++, 1);
+    assert.equal(accepted, false, 'a low-priority arrival is dropped when all active voices outrank it');
+    assert.equal(anotherBodyHit.stopCount, 1);
+    assert.equal(rejectedCleanup, 1);
+    assert.equal(elimination.stopCount, 0);
+    assert.equal(headHit.stopCount, 0);
+    assert.equal(pool.count(), 2);
+});
+
+test('an incoming critical cue can evict the lowest-priority active voice', () => {
+    const pool = new AudioVoicePool({ confirmation: 2 });
+    const bodyHit = new FakeVoice();
+    const elimination = new FakeVoice();
+    const roundResult = new FakeVoice();
+    pool.track('confirmation', bodyHit, () => undefined, 2);
+    pool.track('confirmation', elimination, () => undefined, 4);
+
+    assert.equal(
+        pool.track('confirmation', roundResult, () => undefined, 5),
+        true
+    );
+    assert.equal(bodyHit.stopCount, 1);
+    assert.equal(elimination.stopCount, 0);
+    assert.equal(pool.count(), 2);
+});

@@ -47,7 +47,6 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         ['kill-v12.wav', 0.74299],
         ['headshot-v16.wav', 1.05299],
         ['gold-kill-06-01.wav', 0.93],
-        ['throw-whoosh-05.wav', 1.26],
         ['buzzer.mp3', 1.1755]
     ] as const) {
         await expect.poll(() => assets[`/assets/audio/${file}`]).toBe(200);

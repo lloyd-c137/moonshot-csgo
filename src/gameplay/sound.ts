@@ -56,8 +56,9 @@ export const createSound = () => {
         });
         return { source, gain };
     };
-    const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO, at?: V3) => {
-        const clip = COMBAT_AUDIO[cue];
+    const playCombatClip = (audio: AudioContext, cue: keyof typeof COMBAT_AUDIO | 'throw', at?: V3) => {
+        const clip = COMBAT_AUDIO[cue as keyof typeof COMBAT_AUDIO];
+        if (!clip) return null;
         return playClip(audio, cue, clip.gain, clip.start, clip.end, at);
     };
 

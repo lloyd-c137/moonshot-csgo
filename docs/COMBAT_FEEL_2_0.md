@@ -18,13 +18,13 @@ The protocol is version 10: version 9 added authoritative hit acknowledgement/re
 
 ## Owner-selected combat audio
 
-These production selections are retained without replacement:
+The production combat audio uses these selected clips, while frisbee release has been restored to its earlier sound:
 
 - Body hit: `body-hit-v10.wav`
 - Kill: `kill-v12.wav`
 - Headshot: `headshot-v16.wav`
 - Golden kill: `gold-kill-06-01.wav`
-- Throw: `throw-whoosh-05.wav`
+- Throw: restored to the original synthesized airy whoosh. The extracted `whoosh-05` remains a candidate in the audio lab but is no longer the production throw sound.
 
 The original selections and clip ranges remain governed by `docs/VIDEO_AUDIO_LAB.md`. No additional sample library was downloaded or published for this work.
 

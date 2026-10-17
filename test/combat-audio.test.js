@@ -11,7 +11,7 @@ test('production combat clips match the approved selection, duration, gain and s
     assert.equal(manifest.publication.status, 'OWNER_CONFIRMED_AUTHORIZED');
     assert.deepEqual(
         manifest.clips.map((clip) => clip.sourceClip),
-        ['v10', 'v12', 'v16', 'gold06-01', 'whoosh-05']
+        ['v10', 'v12', 'v16', 'gold06-01']
     );
     for (const clip of manifest.clips) {
         const config = COMBAT_AUDIO[clip.cue];
@@ -24,4 +24,6 @@ test('production combat clips match the approved selection, duration, gain and s
         assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
         assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
     }
+    assert.equal(COMBAT_AUDIO.throw, undefined, 'ordinary and sniper throws use the original synthesized whoosh');
+    assert.equal(manifest.candidates.find((clip) => clip.sourceClip === 'whoosh-05')?.cue, 'throw');
 });

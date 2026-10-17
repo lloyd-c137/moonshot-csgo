@@ -51,7 +51,9 @@
             "duration": 0.93,
             "gain": 0.35,
             "sha256": "33b4e6e20bdacf1a49294a4ab025decf1cd69b47197dd4d9c73f93c48226d7c1"
-        },
+        }
+    ],
+    "candidates": [
         {
             "cue": "throw",
             "sourceClip": "whoosh-05",

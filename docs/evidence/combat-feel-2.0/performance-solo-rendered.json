@@ -43,9 +43,19 @@
       "maxDrawCalls": 141
     }
   },
+  "twoClientRoomSample": {
+    "scenario": "one rendered viewer with one authenticated, nonrendering network peer and one server-confirmed body hit",
+    "durationMs": 2510,
+    "frames": 146,
+    "medianFrameMs": 16.7,
+    "p95FrameMs": 16.8,
+    "medianDrawCalls": 175,
+    "p95DrawCalls": 199,
+    "maxDrawCalls": 200
+  },
   "limitations": [
-    "Opt-in Playwright sample on one local client; this is not a repeated benchmark distribution.",
-    "No remote clients, movement, extended audio burst, or 2-32 player load was included.",
+    "Opt-in Playwright samples on a single rendered local client; the two-client room sample keeps a second authenticated network peer connected but disables rendering on that peer. These are not repeated benchmark distributions.",
+    "No 2-32 rendered-player load, movement profile, extended audio burst, memory-growth profile, or browser release-build performance run was included.",
     "Headless Chromium frame cadence is capped by the renderer and does not establish desktop release performance."
   ]
 }

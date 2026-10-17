@@ -47,7 +47,8 @@ Baseline HEAD at task start: `3a191d68cb4b2e6bebd6aeed77fa5fc85b7f9a3c` (`origin
 | Targeted audio-lab + multiplayer browser specs | Fixed dummy hit/death/respawn, execution camera, selected audio, leaderboard, account and networked combat | PASS, 5/5 |
 | `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` after throw animation | Throw track and remote-avatar test changes included; 84/84 unit tests | PASS; existing bundle-size warning remains |
 | Targeted multiplayer combat browser test after throw animation | Two authenticated local clients; `thrown` event enters `Frisbee_Throw`, remote `upperarm_r` quaternion changes from its pre-throw value, then one confirmed body-hit reaction follows | PASS, 1/1 |
-| Full development browser suite, serial | 14/15 passed; east-entry S308/S309 test used a 10 s virtual movement step and could tunnel. Test now walks in 250 ms steps. The corrected route spec passes independently, but the full suite was not rerun after this test-only correction. | PARTIAL; no final suite-wide PASS |
+| Full development browser suite, one worker | 15/15 passed in 2.5 min, including all 14 bidirectional doorway crossings, S308/S309 route, control flow, multiplayer hit/elimination, paired execution, and power-switch scenarios | PASS |
+| E2E determinism fixes | Serial Playwright workers avoid full-scene virtual-clock/software-WebGL contention; route/control tests grant temporary developer-only teacher grace except where detention is directly tested; route wall-stop tolerance matches measured capsule stop | PASS, full suite above |
 | Live rendered training-dummy capture | Separate Chromium window against local Vite; idle, confirmed body reaction, death reaction, fixed-position respawn; zero page errors | PASS for the observed sequence |
 | Baseline `typecheck` and `lint` | Ran after smoke correction | PASS |
 
@@ -91,4 +92,4 @@ Captured in an independent Chromium window with real rendering enabled at 1440×
 
 ## Outstanding acceptance
 
-The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, blackout/final-showdown presentation audit, audio/FX performance measurements, complete final E2E rerun after the route-test repair, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.
+The overall mission remains incomplete. A full visual review of frisbee release timing and hand/disc alignment, the full visual combat route, blackout/final-showdown presentation audit, audio/FX performance measurements, and subjective playtest remain open. Never infer audio quality, animation smoothness or frame rate from build/test success.

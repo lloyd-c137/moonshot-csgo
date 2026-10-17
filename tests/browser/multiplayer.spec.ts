@@ -121,18 +121,15 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
         b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, -90))
     ]);
     await a.page.waitForTimeout(1_800);
-    // Keep the game render active for one visual capture of the remote throw overlay.
-    await Promise.all([
-        a.page.evaluate(() => window.__MOONSHOT__!.setRendering(true)),
-        b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true))
-    ]);
+    // Keep only the observing client rendered so the remote arm animation advances without doubling scene load.
+    await b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true));
 
     // First body hit: damaged, not out.
     const armBeforeThrow = await b.page.evaluate(
         (id) => window.__MOONSHOT__!.match.avatarJointRotation(id, 'upperarm_r'),
         idA
     );
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.2, 39.6))).toBe(true);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 0.65, 39.6))).toBe(true);
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idA), { timeout: 1_000 })
         .toBe('Frisbee_Throw');

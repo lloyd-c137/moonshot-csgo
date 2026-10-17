@@ -1760,6 +1760,10 @@ export const createMatch = ({ app, player, camera, canvas, ui, url, auth, arenaC
             avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,
+            /** Browser tests isolate traversal from patrol timing while teacher behavior is tested separately. */
+            setTeacherGrace: (milliseconds: number) => {
+                teacherGraceUntil = performance.now() + Math.max(0, milliseconds);
+            },
             inspect: startInspect,
             holdInspect: (u: number | null) => (inspectHold = u),
             holdAim: (value: number | null) => (aimHold = value),

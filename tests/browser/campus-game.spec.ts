@@ -23,6 +23,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect(initial.position[2]).toBeCloseTo(46.3, 1);
 
     await enterAtSpawn(page);
+    await page.evaluate(() => window.__MOONSHOT__!.match.setTeacherGrace(60_000));
     await advance(page, 500);
     await expect(page.locator('#location-code')).toContainText('南入口门厅');
     await expect(page.locator('#location-name')).toHaveText('ENTRANCE-SOUTH');
@@ -61,6 +62,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state())).throws).toBe(throwsBefore);
 
     // 纪老师: just stepping into his circle means standing still for 4 s, with a warning (no throw needed).
+    await page.evaluate(() => window.__MOONSHOT__!.match.setTeacherGrace(0));
     const teacher = await page.evaluate(() => window.__MOONSHOT__!.match.teacher());
     const facing = (teacher.yaw * Math.PI) / 180;
     await page.evaluate(
@@ -82,6 +84,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await expect(page.locator('#unstuck')).toBeHidden();
     await advance(page, 2900);
     await expect(page.locator('#detention')).toBeHidden();
+    await page.evaluate(() => window.__MOONSHOT__!.match.setTeacherGrace(60_000));
     await hold(page, ['KeyW'], 600);
     expect(horizontal(await position(page), caughtAt)).toBeGreaterThan(0.5);
     await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.7, 0.92, 46.3));
@@ -134,9 +137,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
     await page.locator('#reduced-flashes').check();
     await page.locator('#master-volume').fill('0.45');
     await expect
-        .poll(() =>
-            page.evaluate(() => JSON.parse(localStorage.getItem('moonshot-open-world.settings.v1') ?? '{}'))
-        )
+        .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('moonshot-open-world.settings.v1') ?? '{}')))
         .toMatchObject({ cameraMotion: 'off', effectsQuality: 'low', reducedFlashes: true, masterVolume: 0.45 });
     await enterCampus(page);
 

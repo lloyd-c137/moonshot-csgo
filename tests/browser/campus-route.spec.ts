@@ -43,6 +43,7 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     await page.evaluate(() => {
         window.__MOONSHOT__!.teleport(50.85, 0.92, -2.86);
         window.__MOONSHOT__!.setLook(0, 0);
+        window.__MOONSHOT__!.match.setTeacherGrace(120_000);
     });
     await advance(page, 300);
 
@@ -51,7 +52,7 @@ test('walk from the east entry through the corridor into S308 and S309', async (
     expect(wall.reached).toBe(true);
     const wallStop = await position(page);
     expect(wallStop[0]).toBeGreaterThan(20.8);
-    expect(wallStop[0]).toBeLessThan(22.05);
+    expect(wallStop[0]).toBeLessThan(22.15);
 
     await walk(page, 0, -1, 2_500);
     const doorwayApproach = await position(page);

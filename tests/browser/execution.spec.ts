@@ -40,13 +40,21 @@ test('two networked players share the paired execution camera and the target spe
         expect(a.role).toBe('attacker');
         expect(b.role).toBe('target');
         expect(a.id).toBe(b.id);
-        expect(a.camera).toBe(true);
-        expect(b.camera).toBe(true);
-        expect(a.actorsVisible).toBe(true);
-        expect(b.actorsVisible).toBe(true);
-        expect(Math.abs(a.progress - b.progress)).toBeLessThan(0.1);
-        expect(a.renderedParts).toBeGreaterThan(0);
-        expect(b.renderedParts).toBeGreaterThan(0);
+        await expect
+            .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]?.camera))
+            .toBe(true);
+        await expect
+            .poll(() => second.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]?.camera))
+            .toBe(true);
+        const renderedA = await page.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]);
+        const renderedB = await second.evaluate(() => window.__MOONSHOT__!.match.state().executions[0]);
+        expect(renderedA.camera).toBe(true);
+        expect(renderedB.camera).toBe(true);
+        expect(renderedA.actorsVisible).toBe(true);
+        expect(renderedB.actorsVisible).toBe(true);
+        expect(Math.abs(renderedA.progress - renderedB.progress)).toBeLessThan(0.1);
+        expect(renderedA.renderedParts).toBeGreaterThan(0);
+        expect(renderedB.renderedParts).toBeGreaterThan(0);
         await page.waitForTimeout(850);
         await Promise.all([
             page.screenshot({ path: 'test-results/execution-attacker.png' }),

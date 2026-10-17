@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
     testDir: './tests/browser',
+    // These full-scene tests share a virtual clock and contend for software WebGL; serialize for repeatable routes.
+    workers: 1,
     // The production smoke test runs against the production preview (playwright.production.config.ts).
     testIgnore: 'production-smoke.spec.ts',
     timeout: 120_000,

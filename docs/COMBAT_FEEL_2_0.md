@@ -28,7 +28,7 @@ The production combat audio uses these selected clips, while frisbee release has
 
 The original selections and clip ranges remain governed by `docs/VIDEO_AUDIO_LAB.md`. No additional sample library was downloaded or published for this work.
 
-The owner-selected `opening-theme.mp3` loops during active play until campus lights go out. At that transition it fades out as the separately selected `blackout-theme.mp3` fades in; the latter continues only while the campus is dark and fades out when lighting returns. `buzzer.mp3` remains the one-shot power-down cue for the automatic four-minute blackout and manual breaker outage. The owner confirmed public game-release authorization for these audio sources on 2026-10-16; original creator/license was not independently identified. Provenance and SHA-256 are recorded in matching JSON files under `public/assets/audio/`.
+The owner-selected `opening-theme.mp3` loops during active play until campus lights go out. At that transition it fades out as `blackout-theme.mp3` fades in. When the final one-minute arena showdown begins, the blackout theme fades out and `final-showdown-theme.mp3` fades in and loops; it fades out when the final phase ends. Each handoff uses a two-second fade. `buzzer.mp3` remains the one-shot power-down cue for the automatic four-minute blackout and manual breaker outage. The owner confirmed public game-release authorization for these audio sources on 2026-10-16; original creator/license was not independently identified. Provenance and SHA-256 are recorded in matching JSON files under `public/assets/audio/`.
 
 ## Baseline and checks
 

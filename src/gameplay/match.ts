@@ -1426,7 +1426,6 @@ export const createMatch = ({
             wasPowerOut = outage;
             if (outage) {
                 sound.blackout();
-                sound.blackoutMusic(true);
                 ui.broadcastText('总闸被拉下！全校断电 · 保安前往配电室');
             } else if (activePower.pulledAt !== null) {
                 ui.broadcastText(nightActive ? '保安已合闸 · 终局夜晚继续' : '保安已恢复供电，正在返回原位');
@@ -1447,10 +1446,6 @@ export const createMatch = ({
                   : null
         );
         dark = nightActive || outage;
-        sound.openingMusic(
-            started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark
-        );
-        sound.blackoutMusic(dark);
         if (nightActive && !wasNight) {
             if (!outage) sound.blackout();
             ui.broadcastText('终局夜晚开始 · 被保安手电筒照到即出局');
@@ -1471,6 +1466,9 @@ export const createMatch = ({
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
         const finalNow = (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
+        sound.openingMusic(started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !finalNow);
+        sound.blackoutMusic(dark && !finalNow);
+        sound.finalShowdownMusic(started && finalNow);
         if (finalNow !== finalShown) {
             finalShown = finalNow;
             floodlightFrom = floodlights[0].light!.intensity;

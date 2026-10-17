@@ -5,6 +5,15 @@ import './support';
 test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({
     page
 }) => {
+    await page.addInitScript(() => {
+        const durations: number[] = [];
+        Object.assign(window, { __loopingMusicDurations: durations });
+        const start = AudioBufferSourceNode.prototype.start;
+        AudioBufferSourceNode.prototype.start = function (when = 0, offset = 0, duration?: number) {
+            if (this.loop) durations.push(this.buffer?.duration ?? 0);
+            start.call(this, when, offset, duration);
+        };
+    });
     await page.goto('/?audioLab=1&offline=1');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.keyboard.press('p');
@@ -107,6 +116,17 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await page.locator('[data-phase="final"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('本机触发最终球场对决');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(true);
+    await expect
+        .poll(
+            () =>
+                page.evaluate(() =>
+                    (window as unknown as { __loopingMusicDurations: number[] }).__loopingMusicDurations.some(
+                        (duration) => Math.abs(duration - 234.292245) < 0.1
+                    )
+                ),
+            { timeout: 30_000 }
+        )
+        .toBe(true);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalRelocationResult))
         .toBe('relocated');

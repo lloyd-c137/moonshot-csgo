@@ -5,6 +5,7 @@
 
 import { BLACKOUT_THEME_AUDIO } from '../config/blackoutThemeAudio';
 import { COMBAT_AUDIO } from '../config/combatAudio';
+import { FINAL_SHOWDOWN_THEME_AUDIO } from '../config/finalShowdownThemeAudio';
 import { OPENING_THEME_AUDIO } from '../config/openingThemeAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
@@ -153,6 +154,7 @@ export const createSound = () => {
     };
     const setBlackoutMusic = createLoopingMusic('blackout-theme', BLACKOUT_THEME_AUDIO);
     const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
+    const setFinalShowdownMusic = createLoopingMusic('final-showdown-theme', FINAL_SHOWDOWN_THEME_AUDIO);
 
     // Browsers only let audio start (or restart after the tab was hidden, the device changed or Safari
     // "interrupted" it) inside a user gesture. Resume on every gesture and when the page comes back, so sounds
@@ -320,6 +322,8 @@ export const createSound = () => {
         blackoutMusic: setBlackoutMusic,
         /** Loop the opening theme during active play, handing off to the blackout theme when lights go out. */
         openingMusic: setOpeningMusic,
+        /** Loop the owner-selected theme only during the final-arena showdown. */
+        finalShowdownMusic: setFinalShowdownMusic,
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;

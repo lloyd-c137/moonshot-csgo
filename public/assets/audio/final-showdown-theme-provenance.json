@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-16",
+    "basis": "Owner confirmed public game-release authorization on 2026-10-16. Original creator/license was not independently identified."
+  },
+  "sourceFile": "ODESZA - A Moment Apart.mp3",
+  "runtimeFile": "final-showdown-theme.mp3",
+  "durationSecondsEstimated": 234.292245,
+  "sizeBytes": 9407479,
+  "sha256": "7ee3b32fa077c83aa2e93d7b896c900ea5457c17073c724be8d5419da38bb5ae",
+  "event": "final one-minute arena showdown; loops with a two-second fade-in and fades out when the final phase ends"
+}

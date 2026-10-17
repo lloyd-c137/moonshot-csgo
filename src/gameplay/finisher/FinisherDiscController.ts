@@ -36,6 +36,9 @@ export class FinisherDiscController {
         this.material.useMetalness = true;
         this.material.metalness = gold ? 0.66 : 0.25;
         this.material.gloss = 0.7;
+        // A faint glow so the disc reads against any background while it flies its pattern.
+        this.material.emissive = new Color(...(gold ? [0.9, 0.55, 0.08] : [0.35, 0.6, 0.85]));
+        this.material.emissiveIntensity = 0.6;
         this.material.update();
         this.entity.addComponent('render', { meshInstances: [new MeshInstance(mesh, this.material)] });
         this.entity.enabled = false;
@@ -45,8 +48,17 @@ export class FinisherDiscController {
         parent.addChild(this.entity);
     }
 
+    /** Hand bones, looked up once per actor (a tree search every frame showed up as hitches). */
+    private readonly hands = new Map<ActorHand, Entity | null>();
+
+    /** Where the disc is now (for the trail). */
+    get position() {
+        return this.entity.getPosition();
+    }
+
     private hand(actor: ActorHand) {
-        const hand = actor.character.root.findByName('hand_r');
+        if (!this.hands.has(actor)) this.hands.set(actor, actor.character.root.findByName('hand_r') as Entity | null);
+        const hand = this.hands.get(actor);
         return (
             hand?.getPosition().clone() ??
             actor.root

@@ -271,10 +271,12 @@ test('offline target stays visible after entry, uses selected defaults and respa
 test('practice dummy can be executed from behind and respawns at its fixed position', async ({ page }) => {
     await page.goto('/?audioLab=1&offline=1');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    const button = page.locator('#execute-button');
+    // The prompt only appears in reach of a target (not at the spawn, four metres away).
+    await expect(button).toBeHidden();
     await page.keyboard.press('p');
     await page.locator('[data-action="range"]').click();
 
-    const button = page.locator('#execute-button');
     await expect(button).toBeVisible();
     await expect(button).toContainText('固定测试人偶');
     await expect(button).toHaveAttribute('data-state', 'ready');
@@ -305,6 +307,10 @@ test('practice dummy can be executed from behind and respawns at its fixed posit
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy))?.position).toEqual(
         initial?.position
     );
+    // The move releases its lock: the dummy is back in reach, so the prompt returns and nothing is left running.
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().executions.length)).toBe(0);
+    await expect(button).toBeVisible();
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-finisher', 'inactive');
 });
 
 test('gold-kill and whoosh candidates preview and follow real practice throws', async ({ page }) => {

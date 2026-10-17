@@ -1310,7 +1310,7 @@ legend {
     position: absolute;
     bottom: 28%;
     left: 50%;
-    display: none;
+    display: flex;
     align-items: center;
     gap: 12px;
     translate: -50% 0;
@@ -1327,6 +1327,28 @@ legend {
     transition:
         scale 120ms ease-out,
         box-shadow 160ms ease-out;
+}
+
+/* The `display` above would otherwise override the hidden attribute (the prompt then never went away). */
+.execute-button[hidden] {
+    display: none;
+}
+
+/* A move is available: the prompt pops in and keeps a slow gold pulse, so it reads as a chance to show off. */
+.execute-button:not([hidden]) {
+    animation: execute-appear 220ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.execute-button[data-state='ready'] {
+    border-color: rgb(255 194 26 / 0.55);
+    box-shadow: 0 0 22px rgb(255 194 26 / 0.25);
+}
+
+@keyframes execute-appear {
+    from {
+        opacity: 0;
+        scale: 0.6;
+    }
 }
 
 .execute-copy {
@@ -1488,9 +1510,94 @@ legend {
 #app-ui[data-finisher='active'] .execution-banner > i > i {
     background: var(--gold, #ffc21a);
 }
+
+/* Cinematic letterbox while the whole room watches a finisher. */
+.finisher-bars {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 25;
+}
+
+.finisher-bars > i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 11vh;
+    background: #000;
+    transition: transform 380ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.finisher-bars > i:first-child {
+    top: 0;
+    transform: translateY(-100%);
+}
+
+.finisher-bars > i:last-child {
+    bottom: 0;
+    transform: translateY(100%);
+}
+
+#app-ui[data-finisher='active'] .finisher-bars > i {
+    transform: none;
+}
+
+/* The title card sits on the lower bar and slams in. */
+#app-ui[data-finisher='active'] .execution-banner {
+    top: auto;
+    bottom: 2.2vh;
+    z-index: 26;
+    animation: finisher-slam 420ms cubic-bezier(0.15, 1.4, 0.35, 1) both;
+}
+
+#app-ui[data-finisher='active'] .execution-banner strong {
+    font-size: clamp(18px, 2.4vw, 28px);
+    letter-spacing: 0.08em;
+}
+
+#app-ui[data-finisher='active'] .execution-banner.struck {
+    animation: finisher-struck 380ms ease-out;
+}
+
+@keyframes finisher-slam {
+    from {
+        opacity: 0;
+        scale: 1.6;
+        letter-spacing: 0.4em;
+    }
+}
+
+@keyframes finisher-struck {
+    20% {
+        scale: 1.08;
+        box-shadow: 0 0 40px rgb(255 194 26 / 0.7);
+    }
+}
+
+/* Strike flash: white, very short. */
+.finisher-flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 27;
+}
+
+.finisher-flash.show {
+    animation: finisher-flash 260ms ease-out;
+}
+
+@keyframes finisher-flash {
+    from {
+        opacity: 0.55;
+    }
+}
 @media (prefers-reduced-motion: reduce) {
     .execute-button,
     .execution-banner,
+    .finisher-flash.show,
+    #app-ui[data-finisher='active'] .execution-banner,
     .round-end {
         animation: none;
         transition: none;
@@ -3354,4 +3461,8 @@ legend {
         background: #ffc21a;
         box-shadow: 0 0 6px #ffc21a;
     }
+}
+
+#app-ui[data-reduced-flashes='true'] .finisher-flash.show {
+    animation: none;
 }

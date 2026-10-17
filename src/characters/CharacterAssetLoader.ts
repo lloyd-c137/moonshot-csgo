@@ -60,8 +60,7 @@ export class CharacterAssetLoader {
             asset.once('error', (error: string) => reject(new Error(`Character GLB failed: ${error}`)));
             asset.once('load', () => {
                 const resource = asset.resource as
-                    | (ContainerResource & { animations: { resource?: AnimTrack }[] })
-                    | null;
+                    (ContainerResource & { animations: { resource?: AnimTrack }[] }) | null;
                 if (!resource?.instantiateRenderEntity || !resource.animations?.length) {
                     reject(new Error('Character container is missing its render hierarchy or animation clips'));
                     return;
@@ -248,7 +247,11 @@ export class CharacterAssetLoader {
                     material.update();
                 }
             },
-            playAt(name: string, seconds: number, blend = 0.045) {
+            /**
+             * Seeks `name` to `seconds`. With the default tolerance the clip plays on and is only re-seeked on real
+             * drift (for noisy clocks); `tolerance` 0 seeks every call (for a smooth, locally driven timeline).
+             */
+            playAt(name: string, seconds: number, blend = 0.045, tolerance = PLAY_AT_TOLERANCE) {
                 const layer = modelRoot.anim!.baseLayer!;
                 if (!tracks.has(name) || disposed) return false;
                 if (layer.activeState !== name) layer.transition(name, blend, Math.max(0, seconds));
@@ -258,8 +261,7 @@ export class CharacterAssetLoader {
                 const time = Math.min(Math.max(0, seconds), Math.max(0, duration - 1 / 60));
                 // Let the clip play on its own and only re-seek on real drift: the estimated server clock is eased
                 // snapshot by snapshot, and seeking on every 1/60 s wobble made the finisher visibly stutter.
-                if (Math.abs(layer.activeStateCurrentTime - time) > PLAY_AT_TOLERANCE)
-                    layer.activeStateCurrentTime = time;
+                if (Math.abs(layer.activeStateCurrentTime - time) > tolerance) layer.activeStateCurrentTime = time;
                 return true;
             },
             playThrow() {

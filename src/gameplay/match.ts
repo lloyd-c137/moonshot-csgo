@@ -177,21 +177,40 @@ export const createMatch = ({
     let finisherHoldTarget: string | null = null;
     let finisherHoldStartedAt: number | null = null;
     let finisherCommitSent = false;
-    const executionView = createExecutionView(app, camera, characters, discs.mesh, (active) => {
-        executionFrozen = active;
-        const script = controller();
-        if (script) script.enabled = alive && !inputPaused && !spectating && !active;
-        if (!globalFinisher) {
-            player.rigidbody!.linearVelocity = Vec3.ZERO;
-            player.rigidbody!.angularVelocity = Vec3.ZERO;
+    const executionView = createExecutionView(
+        app,
+        camera,
+        characters,
+        discs.mesh,
+        (active) => {
+            executionFrozen = active;
+            const script = controller();
+            if (script) script.enabled = alive && !inputPaused && !spectating && !active;
+            if (!globalFinisher) {
+                player.rigidbody!.linearVelocity = Vec3.ZERO;
+                player.rigidbody!.angularVelocity = Vec3.ZERO;
+            }
+            player.rigidbody!.enabled = !spectating && (!active || !!globalFinisher);
+            rigidbody.timeScale = active ? 0 : document.pointerLockElement === canvas ? 1 : 0;
+            if (active) {
+                cancelCharge();
+                inspectSince = null;
+            }
+        },
+        {
+            // The strike: a full elimination burst, a wide shock ring, the impact boom and the screen flash.
+            impact: (at, record) => {
+                const gold = record.variant === 'THE_BOOMERANG_GOLD';
+                effects.burst(at, gold ? 45 : record.attacker.colour, 'out');
+                effects.ring(at, gold ? GOLD_COLOUR : [1, 1, 1], 0.25, 0.55, 3.2);
+                sound.impact(at);
+                sound.hitConfirm(true, true);
+                ui.finisherImpact();
+            },
+            // The disc's glowing trail through its pattern.
+            trail: (at, gold) => effects.tracer(at, gold ? -1 : 200, 20)
         }
-        player.rigidbody!.enabled = !spectating && (!active || !!globalFinisher);
-        rigidbody.timeScale = active ? 0 : document.pointerLockElement === canvas ? 1 : 0;
-        if (active) {
-            cancelCharge();
-            inspectSince = null;
-        }
-    });
+    );
     // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     let labNightOverride = false;
@@ -1445,6 +1464,7 @@ export const createMatch = ({
                 startsAt: record.startsAt,
                 endsAt: record.endsAt
             };
+            ui.finisherMode(true);
         } else net.commitExecution(finisherRequestId);
         finisherCommitSent = true;
         finisherHoldStartedAt = null;
@@ -2127,6 +2147,24 @@ export const createMatch = ({
         update(deltaTime: number) {
             const now = performance.now();
             poses = net.poses();
+            const finishPracticeFinisher = () => {
+                if (labExecution && realRoomNow() >= labExecution.endsAt) {
+                    const record = labExecution;
+                    labExecution = null;
+                    executionView.stop(record.id);
+                    // Release the practice lock like a completed online finisher (it used to stay set, freezing the
+                    // player and hiding the execute prompt for good).
+                    if (globalFinisher?.id === record.id) globalFinisher = null;
+                    finisherRequestId = null;
+                    finisherHoldTarget = null;
+                    finisherCommitSent = false;
+                    ui.executionState(null, 0);
+                    ui.finisherMode(false);
+                    simulateDummyHit('execution');
+                }
+            };
+            // The practice finisher also runs as a global finisher, so its end must be checked before the early return.
+            finishPracticeFinisher();
             if (globalFinisher) {
                 avatars.update(poses, now, executionView.hiddenIds());
                 executionView.update(realRoomNow(), selfId());
@@ -2251,12 +2289,6 @@ export const createMatch = ({
             }
             ground.update(now);
             executionView.update(realRoomNow(), selfId());
-            if (labExecution && realRoomNow() >= labExecution.endsAt) {
-                const record = labExecution;
-                labExecution = null;
-                executionView.stop(record.id);
-                simulateDummyHit('execution');
-            }
             const local = executionView.localRecord(selfId());
             ui.executionState(
                 local

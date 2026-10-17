@@ -13,6 +13,7 @@ import { hueColour } from './discs';
 import { executionProgress } from './execution';
 import type { Execution } from './execution';
 import { FinisherDiscController } from './finisher/FinisherDiscController';
+import { FINISHER_STRIKE, finisherCamera, finisherPunch, finisherWarp } from './finisher/finisherTiming';
 
 type Actor = ReturnType<CharacterAssetLoader['create']> & {
     character: ReturnType<CharacterAssetLoader['create']>;
@@ -26,7 +27,12 @@ export const createExecutionView = (
     camera: Entity,
     characters: CharacterAssetLoader,
     discMesh: Mesh,
-    onLocalChange: (active: boolean) => void
+    onLocalChange: (active: boolean) => void,
+    /** Presentation hooks: the strike (once per move) and the disc trail (a few times per frame interval). */
+    hooks: {
+        impact?: (at: [number, number, number], record: Execution) => void;
+        trail?: (at: [number, number, number], gold: boolean) => void;
+    } = {}
 ) => {
     const system = app.systems.rigidbody as RigidBodyComponentSystem;
     const pool: Actor[] = [];
@@ -93,8 +99,14 @@ export const createExecutionView = (
             target: Actor;
             disc: FinisherDiscController | null;
             global: boolean;
+            /** performance.now() at the move's start: the film runs on this smooth local clock. */
+            localStart: number | null;
+            impacted: boolean;
+            trailAt: number;
         }
     >();
+    /** Real seconds since the last update (camera smoothing). */
+    let lastUpdate = performance.now();
     let shot: {
         id: string;
         look: Vec3;
@@ -102,6 +114,8 @@ export const createExecutionView = (
         forward: Vec3;
         radius: number;
         global: boolean;
+        /** Smoothed camera distance after wall collision (pulls in at once, eases back out). */
+        reach: number;
     } | null = null;
     const useCinematicCamera = () => {
         if (!cinematicCamera.enabled) captureBlend();
@@ -134,7 +148,15 @@ export const createExecutionView = (
             target.root.setPosition(at[0] + 0.8, at[1] - 0.9, at[2]);
             attacker.character.playAt('Finisher_Boomerang_Attacker', 1.15);
             target.character.playAt('Finisher_Boomerang_Victim', 1.15);
+            // Both disc finishes too, so their glowing material's shader is compiled before the first real move.
+            const discs = [false, true].map((gold) => {
+                const disc = new FinisherDiscController(discMesh, attacker, target, gold);
+                disc.attach(app.root);
+                disc.update(0.3);
+                return disc;
+            });
             return () => {
+                for (const disc of discs) disc.destroy();
                 release(attacker);
                 release(target);
             };
@@ -152,7 +174,10 @@ export const createExecutionView = (
                 attacker,
                 target,
                 disc,
-                global
+                global,
+                localStart: null,
+                impacted: false,
+                trailAt: 0
             });
             if (global) {
                 useCinematicCamera();
@@ -172,9 +197,20 @@ export const createExecutionView = (
             return shot !== null;
         },
         update(now: number, self: string) {
+            const real = performance.now();
+            const dt = Math.min(0.1, (real - lastUpdate) / 1000);
+            lastUpdate = real;
             for (const scene of scenes.values()) {
                 const { record, attacker, target } = scene;
-                const progress = executionProgress(record, now);
+                // The estimated server clock is corrected packet by packet; driving clips from it made them jump.
+                // Anchor once to the local monotonic clock and only re-anchor on a large disagreement.
+                const duration = record.endsAt - record.startsAt;
+                const expected = real - (now - record.startsAt);
+                if (scene.localStart === null || Math.abs(scene.localStart - expected) > 250)
+                    scene.localStart = expected;
+                const progress = Math.max(0, Math.min(1, (real - scene.localStart) / duration));
+                // Film time: bullet time on the strike, same 2.6 s overall (finisherTiming.ts).
+                const film = finisherWarp(progress);
                 const dx = record.target.pose.p[0] - record.attacker.pose.p[0],
                     dz = record.target.pose.p[2] - record.attacker.pose.p[2],
                     distance = Math.hypot(dx, dz);
@@ -185,16 +221,30 @@ export const createExecutionView = (
                     record.attacker.pose.p[2]
                 );
                 attacker.root.setEulerAngles(0, (Math.atan2(-dx, -dz) * 180) / Math.PI, 0);
-                const actionTime = progress * 2.6;
-                attacker.character.playAt('Finisher_Boomerang_Attacker', actionTime);
-                target.character.playAt('Finisher_Boomerang_Victim', actionTime);
+                const actionTime = film * 2.6;
+                // Seek every frame on the smooth local clock: immune to slow motion and hit-stop on app.timeScale.
+                attacker.character.playAt('Finisher_Boomerang_Attacker', actionTime, 0.045, 0);
+                target.character.playAt('Finisher_Boomerang_Victim', actionTime, 0.045, 0);
                 target.root.setPosition(
                     record.target.pose.p[0],
                     record.target.pose.p[1] - 0.9,
                     record.target.pose.p[2]
                 );
                 target.root.setEulerAngles(0, (Math.atan2(dx, dz) * 180) / Math.PI, 0);
-                scene.disc?.update(progress);
+                scene.disc?.update(film);
+                if (scene.disc && hooks.trail && film > 0.02 && film < 0.97 && real >= scene.trailAt) {
+                    scene.trailAt = real + 28;
+                    const at = scene.disc.position;
+                    hooks.trail([at.x, at.y, at.z], record.variant === 'THE_BOOMERANG_GOLD');
+                }
+                if (!scene.impacted && film >= FINISHER_STRIKE) {
+                    scene.impacted = true;
+                    hooks.impact?.(
+                        [record.target.pose.p[0], record.target.pose.p[1] + 0.45, record.target.pose.p[2]],
+                        record
+                    );
+                }
+                const punch = finisherPunch(film);
                 if (!scene.global && record.attacker.id !== self && record.target.id !== self) continue;
                 if (!shot) {
                     const look = new Vec3(
@@ -205,39 +255,32 @@ export const createExecutionView = (
                     const forward = new Vec3(dx / distance, 0, dz / distance),
                         right = new Vec3(-forward.z, 0, forward.x);
                     const radius = record.cameraPlanId === 'OPEN' ? 4.1 : record.cameraPlanId === 'TIGHT' ? 2 : 3;
-                    shot = { id: record.id, look, right, forward, radius, global: scene.global };
+                    shot = { id: record.id, look, right, forward, radius, global: scene.global, reach: radius };
                     useCinematicCamera();
                     if (!scene.global) onLocalChange(true);
                 }
                 if (scene.global) {
-                    const keyframes = [
-                        [0, -0.55, 62],
-                        [0.18, -0.18, 58],
-                        [0.44, 0.43, 52],
-                        [0.63, 0.12, 56],
-                        [0.83, -0.32, 56],
-                        [1, 0.06, 60]
-                    ];
-                    let index = 0;
-                    while (index < keyframes.length - 2 && progress > keyframes[index + 1][0]) index++;
-                    const left = keyframes[index];
-                    const rightKey = keyframes[index + 1];
-                    const raw = Math.max(0, Math.min(1, (progress - left[0]) / (rightKey[0] - left[0])));
-                    const eased = raw * raw * (3 - 2 * raw);
-                    const angle = left[1] + (rightKey[1] - left[1]) * eased;
-                    const fov = left[2] + (rightKey[2] - left[2]) * eased;
+                    // One continuous orbit (Catmull-Rom through the keys), pushed in and shaken on the strike.
+                    const { angle, fov } = finisherCamera(film);
                     const direction = shot.right
                         .clone()
                         .mulScalar(Math.cos(angle))
                         .add(shot.forward.clone().mulScalar(Math.sin(angle)));
-                    const desired = shot.look.clone().add(direction.mulScalar(shot.radius));
-                    desired.y += 0.85;
-                    const hit = system.raycastFirst(shot.look, desired);
-                    const distance = shot.look.distance(desired);
-                    const eye = hit
-                        ? shot.look.clone().lerp(shot.look, hit.point, Math.max(0.15, 1 - 0.28 / distance))
-                        : desired;
-                    place(eye, shot.look, fov);
+                    const wanted = shot.radius * (1 - 0.22 * punch);
+                    const probe = shot.look.clone().add(direction.clone().mulScalar(wanted));
+                    probe.y += 0.85;
+                    const hit = system.raycastFirst(shot.look, probe);
+                    const free = hit ? Math.max(0.6, shot.look.distance(hit.point) - 0.28) : wanted;
+                    // Walls pull the camera in at once; it eases back out instead of popping.
+                    shot.reach = free < shot.reach ? free : Math.min(free, shot.reach + dt * 2.5);
+                    const scale = Math.min(1, shot.reach / Math.max(0.01, wanted));
+                    const eye = shot.look.clone().add(direction.mulScalar(shot.reach));
+                    eye.y += 0.85 * scale;
+                    const shake = 0.07 * punch;
+                    eye.x += Math.sin(real * 0.09) * shake;
+                    eye.y += Math.sin(real * 0.113 + 1) * shake;
+                    eye.z += Math.cos(real * 0.071) * shake;
+                    place(eye, shot.look, fov - 6 * punch);
                 } else {
                     const eye = shot.look.clone().add(shot.right.clone().mulScalar(4.2));
                     eye.y += 0.9;

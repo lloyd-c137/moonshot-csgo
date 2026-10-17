@@ -41,6 +41,8 @@ type Actions = {
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
   <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
+  <div class="finisher-bars" aria-hidden="true"><i></i><i></i></div>
+  <div id="finisher-flash" class="finisher-flash" aria-hidden="true"></div>
   <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>GLOBAL FINISHER · THE BOOMERANG</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
     <div class="plan" aria-hidden="true"></div>
@@ -1126,6 +1128,11 @@ export const createUi = () => {
             $('#execution-banner').hidden = text === null;
             if (text !== null && $('#execution-label').textContent !== text) $('#execution-label').textContent = text;
             $('#execution-progress').style.transform = `scaleX(${Math.max(0, Math.min(1, progress))})`;
+        },
+        /** The finisher's strike: white flash and a punch on the title card. */
+        finisherImpact: () => {
+            replay($('#finisher-flash'), 'show');
+            replay($('#execution-banner'), 'struck');
         },
         finisherMode: (active: boolean) => {
             root.dataset.finisher = active ? 'active' : 'inactive';

@@ -8,8 +8,10 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
     await enterCampus(page);
 
     const pickup = async (x: number, z: number, ability: string) => {
-        await page.evaluate(([px, pz]) => window.__MOONSHOT__!.teleport(px, 0.92, pz), [x, z]);
-        await page.keyboard.press('e');
+        await page.evaluate(([px, pz]) => {
+            window.__MOONSHOT__!.teleport(px, 0.92, pz);
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }));
+        }, [x, z]);
         await advance(page, 100);
         await expect.poll(() => page.evaluate((key) => window.__MOONSHOT__!.match.state().abilities?.[key], ability)).toBe(true);
     };
@@ -22,6 +24,8 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
     })).toEqual([false, true, true]);
     await page.keyboard.press('z');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().abilities?.frcSelected)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().viewmodelSkin)).toBe('frc');
+    await expect(page.locator('#popup')).toContainText('FRC 飞盘启动');
     await pickup(-42.92, 10.58, 'eye');
     await expect.poll(() => page.evaluate(() => {
         const state = window.__MOONSHOT__!.match.state();
@@ -30,15 +34,17 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
     await pickup(-8.39, 23.48, 'stealth');
     await page.keyboard.press('x');
     await advance(page, 100);
+    await expect(page.locator('#popup')).toContainText('静止之力发动');
     await expect.poll(() => page.evaluate(() => {
         const state = window.__MOONSHOT__!.match.state();
         return Number(state.abilities?.stealthUntil) > state.roomNow!;
     })).toBe(true);
     await expect(page.locator('#ability-status')).toContainText('隐身');
     // Interact synchronously after teleport so 纪老师's first watch-tick at S308 does not start detention first.
-    await page.evaluate(() => window.__MOONSHOT__!.teleport(18.03, 0.92, -12.29));
-    await page.keyboard.press('e');
-    await advance(page, 100);
+    await page.evaluate(() => {
+        window.__MOONSHOT__!.teleport(18.03, 0.92, -12.29);
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }));
+    });
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().abilities?.ammoCapacity)).toBe(5);
     await pickup(-35.59, 51.76, 'creation');
     await expect.poll(() => page.evaluate(() => {

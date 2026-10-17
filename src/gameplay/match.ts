@@ -29,7 +29,7 @@ import {
     THROW_COOLDOWN
 } from '../net/protocol';
 import { setLook } from '../player/playerController';
-import { box, place } from '../render/shapes';
+import { box, merge, place, torus } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
 import { killIcons } from '../ui/killFeed';
 import type { Ui } from '../ui/shell';
@@ -371,7 +371,7 @@ export const createMatch = ({
     /** Whether the current inspect is the golden disc's (it has its own, longer routine). */
     let goldInspect = false;
     let goldSparkAt = 0;
-    let lastGoldMine = false;
+    let viewmodelSkin: 'normal' | 'frc' | 'gold' = 'normal';
     const guard = createGuard(app, camera, ui.nameTagLayer(), characters);
     const breakerView = createBreakerView(app);
     let power: PowerState = { pulledAt: null };
@@ -478,6 +478,33 @@ export const createMatch = ({
         castShadows: false
     });
     viewmodel.addChild(stripe);
+    const frcAuraShape = merge([
+        place(torus(DISC.radius * 1.3, 0.006, 28, 6), { y: 0.024 }),
+        ...Array.from({ length: 4 }, (_, index) => {
+            const angle = index * Math.PI / 2;
+            return place(box(0.075, 0.008, 0.014), {
+                x: Math.cos(angle) * DISC.radius * 1.08,
+                y: 0.025,
+                z: Math.sin(angle) * DISC.radius * 1.08,
+                yaw: -angle
+            });
+        })
+    ]);
+    const frcAuraMesh = new Mesh(app.graphicsDevice);
+    frcAuraMesh.setPositions(frcAuraShape.positions);
+    frcAuraMesh.setNormals(frcAuraShape.normals);
+    frcAuraMesh.setIndices(frcAuraShape.indices);
+    frcAuraMesh.update();
+    const frcAuraMaterial = new StandardMaterial();
+    frcAuraMaterial.useLighting = false;
+    frcAuraMaterial.diffuse = new Color(0.08, 0.82, 1);
+    frcAuraMaterial.emissive = new Color(0.08, 0.82, 1);
+    frcAuraMaterial.emissiveIntensity = 1.5;
+    frcAuraMaterial.update();
+    const frcAura = new Entity('viewmodel-frc-aura');
+    frcAura.addComponent('render', { meshInstances: [new MeshInstance(frcAuraMesh, frcAuraMaterial)], castShadows: false });
+    frcAura.enabled = false;
+    viewmodel.addChild(frcAura);
     // Afterimages trailing the disc while it is airborne during an inspect.
     const ghosts = [0.42, 0.26, 0.14].map((opacity) => {
         const material = new StandardMaterial();
@@ -515,6 +542,42 @@ export const createMatch = ({
     const viewmodelWorld = (): V3 => {
         const p = viewmodel.getPosition();
         return [p.x, p.y, p.z];
+    };
+    const setViewmodelSkin = (skin: 'normal' | 'frc' | 'gold', force = false) => {
+        if (skin === viewmodelSkin && !force) return;
+        viewmodelSkin = skin;
+        if (skin === 'gold') {
+            viewmodel.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
+            stripeMaterial.diffuse.set(0.95, 0.96, 0.97);
+            stripeMaterial.emissive.set(0, 0, 0);
+            stripeMaterial.emissiveIntensity = 0;
+            stripeMaterial.update();
+            tintGhostsGold();
+            return;
+        }
+        const hue = skin === 'frc' ? 0 : viewmodelHue < 0 ? colourFor('local') : viewmodelHue;
+        viewmodel.render!.meshInstances = discs.meshInstances(hue);
+        if (skin === 'frc') {
+            stripeMaterial.diffuse.set(0.18, 0.9, 1);
+            stripeMaterial.emissive.set(0.05, 0.65, 1);
+            stripeMaterial.emissiveIntensity = 1.2;
+        } else {
+            stripeMaterial.diffuse.set(0.95, 0.96, 0.97);
+            stripeMaterial.emissive.set(0, 0, 0);
+            stripeMaterial.emissiveIntensity = 0;
+        }
+        stripeMaterial.update();
+        tintGhosts(hue);
+    };
+    const skillActivationFeedback = (label: string, colour: [number, number, number]) => {
+        ui.popup(label, 'gold');
+        const p = player.getPosition();
+        const at: V3 = [p.x, p.y - PLAYER.height * 0.45, p.z];
+        effects.ring(at, colour, 0.24, 0.5, 2.2);
+        for (let i = 0; i < 12; i++) {
+            const angle = i * Math.PI / 6;
+            effects.mote(at, colour, [Math.cos(angle) * 1.2, 0.7 + (i % 3) * 0.25, Math.sin(angle) * 1.2], 0.025, 0.42);
+        }
     };
     /** Whether the catch kick of the current inspect has fired. */
     let caught = false;
@@ -586,8 +649,7 @@ export const createMatch = ({
         const myHue = roster.get(me)?.colour ?? colourFor('local');
         if (myHue !== viewmodelHue) {
             viewmodelHue = myHue;
-            viewmodel.render!.meshInstances = discs.meshInstances(myHue);
-            tintGhosts(myHue);
+            if (viewmodelSkin === 'normal') setViewmodelSkin('normal', true);
         }
     };
     const refreshCount = refreshBoard;
@@ -858,6 +920,8 @@ export const createMatch = ({
             roster.set(id, next);
             avatars.setReviveArmor(id, next.hasReviveArmor === true);
             if (id === selfId()) {
+                const wasFrcSelected = localFrcSelected;
+                const previousStealthUntil = localStealthUntil;
                 localAbilities.revive = next.hasReviveArmor === true;
                 localAbilities.reviveTaken = next.reviveTaken === true;
                 localAbilities.reviveUsed = next.reviveTaken === true;
@@ -871,6 +935,15 @@ export const createMatch = ({
                 localFrcCooldownUntil = next.frcCooldownUntil ?? item?.cooldownUntil ?? localFrcCooldownUntil;
                 localStealthUntil = next.stealthUntil ?? 0;
                 creationNextAt = next.creationNextAt ?? creationNextAt;
+                if (!wasFrcSelected && localFrcSelected) {
+                    setViewmodelSkin(holdingGold() ? 'gold' : 'frc');
+                    skillActivationFeedback('FRC 飞盘启动 · 红色科技盘', [1, 0.2, 0.12]);
+                } else if (wasFrcSelected && !localFrcSelected && next.hasFrc) {
+                    setViewmodelSkin(holdingGold() ? 'gold' : 'normal');
+                    ui.notify('已切回普通飞盘');
+                }
+                if (localStealthUntil > previousStealthUntil && localStealthUntil > roomNow())
+                    skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
             }
             refreshBoard();
         },
@@ -1515,7 +1588,7 @@ export const createMatch = ({
             tintGhostsGold();
             sound.goldInspect(GOLD_INSPECT_SECONDS, GOLD_TOSS_AT, GOLD_CATCH_AT);
         } else {
-            tintGhosts(viewmodelHue < 0 ? colourFor('local') : viewmodelHue);
+            tintGhosts(localFrcSelected ? 0 : viewmodelHue < 0 ? colourFor('local') : viewmodelHue);
             sound.inspect(INSPECT_SECONDS, TOSS_AT, CATCH_AT);
         }
         return true;
@@ -1678,7 +1751,9 @@ export const createMatch = ({
             else if (net.state === 'online') net.toggleFrc();
             else {
                 localFrcSelected = !localFrcSelected;
-                ui.notify(localFrcSelected ? '已切换到 FRC 飞盘' : '已切回普通飞盘');
+                setViewmodelSkin(holdingGold() ? 'gold' : localFrcSelected ? 'frc' : 'normal');
+                if (localFrcSelected) skillActivationFeedback('FRC 飞盘启动 · 红色科技盘', [1, 0.2, 0.12]);
+                else ui.notify('已切回普通飞盘');
             }
         }
         if (event.code === 'KeyX' && !event.repeat && locked() && alive && localAbilities.stealth) {
@@ -1687,7 +1762,7 @@ export const createMatch = ({
             else {
                 localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
                 localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
-                ui.popup('静止之力 · 隐身 3 秒', 'gold');
+                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
             }
         }
         if (
@@ -1818,6 +1893,10 @@ export const createMatch = ({
         const charge = chargingSince === null ? 0 : Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds);
         // No disc in hand (all thrown, none picked up yet): nothing to hold.
         viewmodel.enabled = started && alive && hasDisc();
+        frcAura.enabled = viewmodel.enabled && localFrcSelected && !holdingGold();
+        const frcPulse = 1 + Math.sin(now * 0.012) * 0.06;
+        frcAura.setLocalScale(frcPulse, frcPulse, frcPulse);
+        frcAura.setLocalEulerAngles(0, (now * 0.08) % 360, 0);
         if (!alive) inspectSince = null;
         const inspecting = inspectSince !== null || inspectHold !== null;
         const routine = goldInspect
@@ -1944,13 +2023,8 @@ export const createMatch = ({
         }
         const holder = goldHolder();
         const mine = holder !== null && holder === me;
-        // Equip: the in-hand disc becomes the golden one (and back when it is lost).
-        if (mine !== lastGoldMine) {
-            lastGoldMine = mine;
-            viewmodel.render!.meshInstances = mine
-                ? [new MeshInstance(discs.mesh, goldView.material)]
-                : discs.meshInstances(viewmodelHue < 0 ? colourFor('local') : viewmodelHue);
-        }
+        // Gold takes visual priority; otherwise the selected FRC disc replaces the normal hand disc.
+        setViewmodelSkin(mine ? 'gold' : localFrcSelected ? 'frc' : 'normal');
         if (mine && viewmodel.enabled && inspectSince === null && now - goldSparkAt > 90) {
             goldSparkAt = now;
             const [x, y, z] = viewmodelWorld();
@@ -2657,6 +2731,7 @@ export const createMatch = ({
                 spectating,
                 executions: executionView.debug(realRoomNow(), selfId()),
                 globalFinisher: globalFinisher ? { ...globalFinisher } : null,
+                viewmodelSkin,
                 hp,
                 items: worldItems.map((item) => ({ ...item })),
                 abilities: {

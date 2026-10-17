@@ -27,6 +27,7 @@ import { CharacterAssetLoader } from './characters/CharacterAssetLoader';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
+import { ROOM_NAMING } from './config/roomNaming';
 import { createMatch } from './gameplay/match';
 import { StuckDetector } from './gameplay/stuck';
 import { apiBase, createAuth } from './net/auth';
@@ -50,7 +51,6 @@ import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressin
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
-import { ROOM_NAMING } from './config/roomNaming';
 import { applyRoomNaming } from './world/roomNaming';
 import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
 import { buildSigns } from './world/signage';

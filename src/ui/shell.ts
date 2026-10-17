@@ -2,6 +2,8 @@ import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 
 import { changelogHtml } from './changelog';
+import type { KillIcon } from './killFeed';
+import { KILL_ICON_LABEL, KILL_ICON_SVG, streakName } from './killFeed';
 import { formatWinRate } from './formatStats';
 import { KIND_FALLBACK_LABEL, KIND_STRIPE } from './kinds';
 import { createMapRenderer } from './minimap';
@@ -98,6 +100,7 @@ const MARKUP = `
           <dl class="controls">
             <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
             <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
+            <div><dt><span class="kbd">C</span></dt><dd>按住静步（慢走，没有脚步声）</dd></div>
             <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
             <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
             <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
@@ -186,6 +189,7 @@ const MARKUP = `
     <span class="crosshair" aria-hidden="true"></span>
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
     <span class="hitmarker" id="hitmarker" aria-hidden="true"></span>
+    <span class="hit-ring" id="hit-ring" aria-hidden="true"></span>
     <span class="popup" id="popup" aria-hidden="true"></span>
     <p class="interaction" id="interaction" hidden></p>
     <div class="chat" id="chat" data-open="false">
@@ -200,7 +204,10 @@ const MARKUP = `
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
     <div class="health" id="health" aria-label="生命"></div>
     <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd">G</span>好像卡住了？脱离卡死</button>
+    <ol class="killfeed" id="killfeed" aria-live="polite"></ol>
     <ol class="feed" id="feed" aria-live="polite"></ol>
+    <div class="kill-banner" id="kill-banner" hidden><div class="kill-pips" id="kill-pips"></div><strong id="kill-banner-title"></strong><span id="kill-banner-detail"></span></div>
+    <div class="kill-marks" id="kill-marks" aria-hidden="true"></div>
     <div class="scoreboard" id="scoreboard" hidden>
       <table><thead><tr><th>玩家</th><th>淘汰数</th><th>被淘汰</th></tr></thead><tbody id="scoreboard-rows"></tbody></table>
     </div>
@@ -455,6 +462,7 @@ export const createUi = () => {
     // ---------- HUD: world chat ----------
     const chatLog = $<HTMLOListElement>('#chat-log');
     let combatHudDurationScale = 1;
+    let killBannerTimer = 0;
     const appendChat = (line: { name: string; colour: number; text: string; system?: true; dead?: true }) => {
         const item = document.createElement('li');
         if (line.system) item.dataset.system = 'true';
@@ -988,6 +996,88 @@ export const createUi = () => {
             delete marker.dataset.prediction;
             marker.dataset.kind = kind;
             replay(marker, 'show');
+            // Head and kill tiers add an expanding ring around the crosshair.
+            if (kind !== 'hit') {
+                const ring = $('#hit-ring');
+                ring.dataset.kind = kind;
+                replay(ring, 'show');
+            }
+        },
+        /** Crosshair over a visible enemy within throwing range. */
+        crosshairTarget: (on: boolean) => {
+            const crosshair = $('.crosshair');
+            if ((crosshair.dataset.target === 'true') !== on) crosshair.dataset.target = String(on);
+        },
+        /** Top-right kill feed: killer [icons] victim, own lines outlined, five at most, five seconds each. */
+        killFeed: (
+            killer: string,
+            victim: string,
+            icons: readonly KillIcon[],
+            range: number | null,
+            tone: 'neutral' | 'mine' | 'me'
+        ) => {
+            const list = $('#killfeed');
+            const item = document.createElement('li');
+            item.dataset.tone = tone;
+            const who = (name: string, side: string) => {
+                const span = document.createElement('span');
+                span.className = side;
+                span.textContent = name;
+                return span;
+            };
+            const glyphs = document.createElement('span');
+            glyphs.className = 'kill-icons';
+            for (const icon of icons) {
+                const glyph = document.createElement('i');
+                glyph.dataset.icon = icon;
+                glyph.title = KILL_ICON_LABEL[icon];
+                glyph.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${KILL_ICON_SVG[icon]}</svg>`;
+                glyphs.append(glyph);
+                if (icon === 'long' && range !== null) {
+                    const metres = document.createElement('small');
+                    metres.textContent = `${Math.round(range)}m`;
+                    glyphs.append(metres);
+                }
+            }
+            glyphs.setAttribute('aria-label', icons.map((icon) => KILL_ICON_LABEL[icon]).join('、'));
+            item.append(who(killer, 'killer'), glyphs, who(victim, 'victim'));
+            list.prepend(item);
+            while (list.children.length > 5) list.lastElementChild!.remove();
+            window.setTimeout(() => item.classList.add('fade'), 4400 * combatHudDurationScale);
+            window.setTimeout(() => item.remove(), 5000 * combatHudDurationScale);
+        },
+        /** Bottom-right banner for your own eliminations: one pip per kill in the streak. */
+        killBanner: (count: number, victim: string, icons: readonly KillIcon[]) => {
+            const banner = $('#kill-banner');
+            const pips = $('#kill-pips');
+            pips.replaceChildren(
+                ...Array.from({ length: Math.min(5, count) }, (_, index) => {
+                    const pip = document.createElement('i');
+                    if (index === Math.min(5, count) - 1) pip.dataset.fresh = 'true';
+                    return pip;
+                })
+            );
+            $('#kill-banner-title').textContent = streakName(count);
+            $('#kill-banner-detail').textContent =
+                `${victim} · ${icons.map((icon) => KILL_ICON_LABEL[icon]).join(' · ')}`;
+            banner.dataset.streak = String(Math.min(5, count));
+            banner.hidden = false;
+            replay(banner, 'show');
+            window.clearTimeout(killBannerTimer);
+            killBannerTimer = window.setTimeout(() => (banner.hidden = true), 2200 * combatHudDurationScale);
+        },
+        /** Screen positions of recent elimination marks (x, y in CSS px; alpha 0–1). */
+        killMarks: (marks: readonly { x: number; y: number; alpha: number }[]) => {
+            const layer = $('#kill-marks');
+            while (layer.children.length < marks.length) layer.append(document.createElement('i'));
+            [...layer.children].forEach((child, index) => {
+                const element = child as HTMLElement;
+                const mark = marks[index];
+                element.hidden = !mark;
+                if (!mark) return;
+                element.style.transform = `translate(${Math.round(mark.x)}px, ${Math.round(mark.y)}px)`;
+                element.style.opacity = String(mark.alpha);
+            });
         },
         interaction: (text: string | null) => {
             const prompt = $('#interaction');
@@ -1155,7 +1245,11 @@ export const createUi = () => {
         charge: (fraction: number | null) => {
             const charge = $('#charge');
             charge.hidden = fraction === null;
-            if (fraction !== null) charge.style.setProperty('--charge', String(fraction));
+            if (fraction === null) return;
+            charge.style.setProperty('--charge', String(fraction));
+            // Three readable stages: flick, building, full (the full stage flashes once).
+            const stage = fraction >= 1 ? 'full' : fraction >= 0.5 ? 'mid' : 'low';
+            if (charge.dataset.stage !== stage) charge.dataset.stage = stage;
         },
         feed: (text: string, tone: 'neutral' | 'mine' | 'me' = 'neutral') => {
             const list = $('#feed');

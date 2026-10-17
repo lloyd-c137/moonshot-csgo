@@ -128,9 +128,7 @@ export const createSound = () => {
                 voice.gain.gain.linearRampToValueAtTime(config.gain, now + config.fadeSeconds);
                 return;
             }
-            loading ??= clips.get(name)
-                ? Promise.resolve(clips.get(name)!)
-                : loadClip(audio, name, config.url);
+            loading ??= clips.get(name) ? Promise.resolve(clips.get(name)!) : loadClip(audio, name, config.url);
             void loading.then((decoded) => {
                 loading = null;
                 if (!decoded || !wanted || ctx !== audio || !buses || voice) return;
@@ -601,6 +599,43 @@ export const createSound = () => {
                 'confirmation',
                 eliminated ? AUDIO_PRIORITY.critical : AUDIO_PRIORITY.hit
             ),
+        /** Your own elimination streak: a rising two-note sting, one step higher per kill (1–5). */
+        streak: (count: number) =>
+            play(
+                (audio, now) => {
+                    const step = Math.min(5, Math.max(1, count)) - 1;
+                    const base = 520 * Math.pow(2, (step * 2) / 12);
+                    tone(audio, bus(), 'triangle', base, base, now + 0.05, 0.12, 0.2);
+                    tone(audio, bus(), 'triangle', base * 1.5, base * 1.5, now + 0.13, 0.18 + step * 0.03, 0.2);
+                    // A low body under the eliminations that land the blow.
+                    tone(audio, bus(), 'sine', 110, 48, now, 0.22, 0.45);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.elimination
+            ),
+        /** The throw is fully charged: one short, bright ding. */
+        chargeFull: () =>
+            play(
+                (audio, now) => {
+                    tone(audio, bus(), 'sine', 2093, 2093, now, 0.09, 0.12);
+                    tone(audio, bus(), 'sine', 3136, 3136, now + 0.015, 0.07, 0.06);
+                },
+                'ui',
+                AUDIO_PRIORITY.action
+            ),
+        /**
+         * One footstep. `at` positions other players' steps (omitted for your own); the surface sets the colour of
+         * the noise and `loud` is a sprint step.
+         */
+        footstep: (at: V3 | undefined, surface: 'epoxy' | 'wood' | 'court', loud: boolean) =>
+            play((audio, now) => {
+                const out = at ? output(audio, at) : bus();
+                const band = surface === 'wood' ? [520, 260] : surface === 'court' ? [1400, 900] : [2200, 1300];
+                const level = (loud ? 0.34 : 0.22) * (at ? 1.4 : 0.6);
+                const pitch = 0.92 + Math.random() * 0.16;
+                hiss(audio, out, now, 0.07, level, band[0] * pitch, band[1] * pitch, surface === 'wood' ? 0.9 : 2.2);
+                tone(audio, out, 'sine', 140 * pitch, 70, now, 0.05, level * (surface === 'wood' ? 0.9 : 0.4));
+            }, 'environment'),
         /** You were hit: a thud with a low buzz; the "defeat" clip when it eliminates you. */
         hurt: (eliminated: boolean) =>
             play(

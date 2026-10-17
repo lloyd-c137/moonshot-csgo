@@ -243,6 +243,10 @@ export type ServerMessage =
           /** Out for the rest of the round (after the lights went out): no respawn, watch instead. */
           final?: boolean;
           execution?: boolean;
+          /** The disc came off a wall (or furniture) before the hit: a bank shot. */
+          bank?: boolean;
+          /** Metres the disc flew (along its bounces) before the hit. */
+          range?: number;
           at: Vec3Tuple;
           scores: Scores;
       }
@@ -334,13 +338,17 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'pullBreaker':
             return value as ClientMessage;
         case 'executionPrepare':
-            return typeof value.requestId === 'string' && value.requestId.length <= 80 &&
-                typeof value.target === 'string' && value.target.length <= 64
+            return typeof value.requestId === 'string' &&
+                value.requestId.length <= 80 &&
+                typeof value.target === 'string' &&
+                value.target.length <= 64
                 ? (value as ClientMessage)
                 : null;
         case 'executionCommit':
         case 'executionCancel':
-            return typeof value.requestId === 'string' && value.requestId.length <= 80 ? (value as ClientMessage) : null;
+            return typeof value.requestId === 'string' && value.requestId.length <= 80
+                ? (value as ClientMessage)
+                : null;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':

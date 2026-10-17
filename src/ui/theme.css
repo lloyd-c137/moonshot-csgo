@@ -2860,3 +2860,398 @@ legend {
     margin-right: 4px;
     color: #fff;
 }
+
+/* ---------- combat feedback 3.0 (2026-10-17): hit tiers, kill feed, kill banner, kill marks, aim state ---------- */
+
+/* Hit tiers: body = brief thin white X; head = heavier gold X with a ring; kill = red X that turns 45° and grows. */
+.hitmarker[data-kind='hit'].show {
+    animation: hitmarker-body calc(0.12s * var(--combat-hud-duration-scale, 1)) ease-out;
+}
+
+.hitmarker[data-kind='head'] {
+    background:
+        linear-gradient(45deg, transparent 42%, currentcolor 42%, currentcolor 58%, transparent 58%) center / 100% 100%,
+        linear-gradient(-45deg, transparent 42%, currentcolor 42%, currentcolor 58%, transparent 58%) center / 100% 100%;
+    color: #ffc21a;
+    filter: drop-shadow(0 0 4px rgb(255 194 26 / 0.8));
+}
+
+.hitmarker[data-kind='head'].show {
+    animation: hitmarker-head calc(0.22s * var(--combat-hud-duration-scale, 1)) ease-out;
+}
+
+.hitmarker[data-kind='kill'] {
+    background:
+        linear-gradient(45deg, transparent 40%, currentcolor 40%, currentcolor 60%, transparent 60%) center / 100% 100%,
+        linear-gradient(-45deg, transparent 40%, currentcolor 40%, currentcolor 60%, transparent 60%) center / 100% 100%;
+    color: #ff3b3b;
+    filter: drop-shadow(0 0 6px rgb(255 59 59 / 0.85));
+}
+
+.hitmarker[data-kind='kill'].show {
+    animation: hitmarker-kill calc(0.35s * var(--combat-hud-duration-scale, 1)) cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes hitmarker-body {
+    0% {
+        opacity: 0.95;
+        scale: 1.15;
+    }
+    100% {
+        opacity: 0;
+        scale: 1;
+    }
+}
+
+@keyframes hitmarker-head {
+    0% {
+        opacity: 1;
+        scale: 1.6;
+    }
+    35% {
+        opacity: 1;
+        scale: 1;
+    }
+    100% {
+        opacity: 0;
+        scale: 1.05;
+    }
+}
+
+@keyframes hitmarker-kill {
+    0% {
+        opacity: 1;
+        rotate: 0deg;
+        scale: 0.8;
+    }
+    30% {
+        opacity: 1;
+        rotate: 45deg;
+        scale: 1.5;
+    }
+    100% {
+        opacity: 0;
+        rotate: 45deg;
+        scale: 1.2;
+    }
+}
+
+.hit-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    border: 2px solid #ffc21a;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+    translate: -50% -50%;
+}
+
+.hit-ring[data-kind='kill'] {
+    border-color: #ff3b3b;
+}
+
+.hit-ring[data-kind='snipe'] {
+    border-color: #ffd970;
+}
+
+.hit-ring.show {
+    animation: hit-ring calc(0.3s * var(--combat-hud-duration-scale, 1)) ease-out;
+}
+
+@keyframes hit-ring {
+    0% {
+        opacity: 0.9;
+        scale: 0.6;
+    }
+    100% {
+        opacity: 0;
+        scale: 2.4;
+    }
+}
+
+/* Aim state: over a visible enemy in range the crosshair turns red and tightens. */
+.crosshair {
+    transition:
+        background 80ms linear,
+        scale 80ms ease-out;
+}
+
+.crosshair[data-target='true'] {
+    background: #ff3b3b;
+    box-shadow:
+        0 0 0 1.5px rgb(27 42 58 / 0.7),
+        0 0 0 7px rgb(255 59 59 / 0),
+        0 0 0 8px rgb(255 59 59 / 0.75);
+}
+
+/* Charge ring: three stages, the full stage flashes white once. */
+.charge[data-stage='mid'] {
+    background: conic-gradient(#ffd25a calc(var(--charge, 0) * 360deg), rgb(238 242 244 / 0.18) 0);
+}
+
+.charge[data-stage='full'] {
+    background: conic-gradient(#ffffff 360deg, transparent 0);
+    filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.9));
+    animation: charge-full 0.22s ease-out;
+}
+
+@keyframes charge-full {
+    0% {
+        scale: 1.35;
+    }
+    100% {
+        scale: 1;
+    }
+}
+
+/* Kill feed (top right, under the map). */
+.killfeed {
+    position: absolute;
+    top: calc(var(--gutter) + 196px);
+    right: var(--gutter);
+    display: grid;
+    justify-items: end;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--step-0);
+}
+
+.killfeed ~ .feed {
+    top: calc(var(--gutter) + 196px + 5 * 30px);
+}
+
+.killfeed li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    background: rgb(10 16 24 / 0.72);
+    color: var(--paper);
+    transition: opacity 0.6s ease-out;
+    animation: killfeed-in 0.18s ease-out;
+}
+
+.killfeed li.fade {
+    opacity: 0;
+}
+
+.killfeed li[data-tone='mine'] {
+    box-shadow: inset 0 0 0 1.5px #ffc21a;
+}
+
+.killfeed li[data-tone='me'] {
+    box-shadow: inset 0 0 0 1.5px #ff3b3b;
+}
+
+.killfeed .killer {
+    font-weight: 700;
+}
+
+.killfeed .victim {
+    opacity: 0.85;
+}
+
+.kill-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.kill-icons i {
+    display: inline-grid;
+    width: 16px;
+    height: 16px;
+}
+
+.kill-icons svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+}
+
+.kill-icons i[data-icon='head'],
+.kill-icons i[data-icon='gold'] {
+    color: #ffc21a;
+}
+
+.kill-icons i[data-icon='execution'],
+.kill-icons i[data-icon='guard'] {
+    color: #ff6a5a;
+}
+
+.kill-icons i[data-icon='bank'] {
+    color: #6fd3ff;
+}
+
+.kill-icons small {
+    color: #6fd3ff;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes killfeed-in {
+    from {
+        opacity: 0;
+        translate: 16px 0;
+    }
+}
+
+/* Kill banner (bottom right): streak pips, escalating with the streak. */
+.kill-banner {
+    position: absolute;
+    right: calc(var(--gutter) + 8px);
+    bottom: 22%;
+    display: grid;
+    justify-items: end;
+    gap: 4px;
+    color: var(--paper);
+    text-align: right;
+    pointer-events: none;
+}
+
+.kill-banner strong {
+    color: #ff3b3b;
+    font-size: calc(var(--step-1) * 1.4);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 12px rgb(255 59 59 / 0.6);
+}
+
+.kill-banner[data-streak='3'] strong,
+.kill-banner[data-streak='4'] strong,
+.kill-banner[data-streak='5'] strong {
+    color: #ffc21a;
+    text-shadow: 0 0 16px rgb(255 194 26 / 0.7);
+}
+
+.kill-banner span {
+    font-size: var(--step-0);
+    opacity: 0.85;
+}
+
+.kill-pips {
+    display: flex;
+    gap: 6px;
+}
+
+.kill-pips i {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #ff3b3b;
+    rotate: 45deg;
+    background: rgb(255 59 59 / 0.85);
+}
+
+.kill-pips i[data-fresh='true'] {
+    animation: kill-pip 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.kill-banner.show {
+    animation: kill-banner 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes kill-pip {
+    0% {
+        scale: 2.2;
+        opacity: 0;
+    }
+    100% {
+        scale: 1;
+        opacity: 1;
+    }
+}
+
+@keyframes kill-banner {
+    0% {
+        opacity: 0;
+        translate: 24px 0;
+    }
+    100% {
+        opacity: 1;
+        translate: 0 0;
+    }
+}
+
+/* Elimination marks: a red X over where someone fell, projected each frame. */
+.kill-marks {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.kill-marks i {
+    position: absolute;
+    top: -11px;
+    left: -11px;
+    width: 22px;
+    height: 22px;
+    background:
+        linear-gradient(45deg, transparent 40%, #ff3b3b 40%, #ff3b3b 60%, transparent 60%),
+        linear-gradient(-45deg, transparent 40%, #ff3b3b 40%, #ff3b3b 60%, transparent 60%);
+    filter: drop-shadow(0 0 4px rgb(0 0 0 / 0.8));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hitmarker.show,
+    .hit-ring.show,
+    .kill-banner.show,
+    .kill-pips i[data-fresh='true'],
+    .killfeed li,
+    .charge[data-stage='full'] {
+        animation-duration: 1ms;
+    }
+}
+
+/* Health pips over a player who was just hit. */
+.hp-pips {
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    margin-top: 3px;
+}
+
+.hp-pips[hidden] {
+    display: none;
+}
+
+.hp-pips i {
+    width: 14px;
+    height: 4px;
+    border-radius: 1px;
+    background: rgb(255 255 255 / 0.22);
+}
+
+.hp-pips i[data-full='true'] {
+    background: #f4f7f8;
+}
+
+.hp-pips.flash i {
+    animation: hp-flash 0.3s ease-out;
+}
+
+.hp-pips[data-head='true'].flash i {
+    animation-name: hp-flash-head;
+}
+
+@keyframes hp-flash {
+    0% {
+        background: #ff3b3b;
+    }
+}
+
+@keyframes hp-flash-head {
+    0% {
+        background: #ffc21a;
+        box-shadow: 0 0 6px #ffc21a;
+    }
+}

@@ -6,6 +6,7 @@ import { Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial, Vec
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
 import { FRISBEE_THROW_REMAINING } from '../characters/frisbeeThrowTrack';
 import { attachHeldItemSocket } from '../characters/heldItemSocket';
+import { MAX_HP } from '../net/protocol';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
 import { box, merge, place } from '../render/shapes';
@@ -157,7 +158,12 @@ export const createAvatars = (
         badge.className = 'title';
         badge.textContent = '淘汰王';
         badge.hidden = true;
-        tag.append(badge, document.createTextNode(name));
+        // Health pips, shown briefly over a player who was just hit (two hits, or one to the head, eliminate).
+        const pips = document.createElement('span');
+        pips.className = 'hp-pips';
+        pips.hidden = true;
+        for (let i = 0; i < MAX_HP; i++) pips.append(document.createElement('i'));
+        tag.append(badge, document.createTextNode(name), pips);
         tag.style.setProperty('--player-colour', `hsl(${hue} 75% 52%)`);
         tag.hidden = true;
         layer.append(tag);
@@ -352,6 +358,29 @@ export const createAvatars = (
         set goldMaterial(material: StandardMaterial) {
             goldMaterial = material;
             setGold(goldHolder);
+        },
+        /** Shows the struck player's remaining health pips over their head for a moment (gold flash on a head hit). */
+        health(id: string, hp: number, head: boolean) {
+            const avatar = avatars.get(id);
+            const pips = avatar?.tag.querySelector<HTMLElement>('.hp-pips');
+            if (!avatar || !pips) return;
+            [...pips.children].forEach((pip, index) => {
+                (pip as HTMLElement).dataset.full = String(index < hp);
+            });
+            pips.dataset.head = String(head);
+            pips.hidden = false;
+            pips.classList.remove('flash');
+            void pips.offsetWidth;
+            pips.classList.add('flash');
+            window.clearTimeout(Number(pips.dataset.timer ?? 0));
+            pips.dataset.timer = String(window.setTimeout(() => (pips.hidden = true), 2500));
+        },
+        /** Hit-stop: holds the struck player's pose for `ms` (presentation only; positions keep updating). */
+        freeze(id: string, ms: number) {
+            const avatar = avatars.get(id);
+            if (!avatar || ms <= 0) return;
+            avatar.character.setSpeed(0);
+            window.setTimeout(() => avatars.get(id)?.character.setSpeed(1), ms);
         },
         /** Flashes a struck player white. */
         flash(id: string, now: number) {

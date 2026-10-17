@@ -233,6 +233,10 @@ export class CharacterAssetLoader {
                 if (!tracks.has(name) || layer.activeState === name) return;
                 layer.transition(name, blend);
             },
+            /** Playback speed of every clip on this character (0 freezes the pose, 1 = authored speed). */
+            setSpeed(speed: number) {
+                if (!disposed) modelRoot.anim!.speed = speed;
+            },
             /** Re-tints a reused character (body, joints and bare head) without rebuilding it. */
             setColour(colour: [number, number, number]) {
                 for (const [name, material] of materials) {

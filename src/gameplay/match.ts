@@ -29,6 +29,7 @@ import {
 import { setLook } from '../player/playerController';
 import { box, place } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
+import { killIcons } from '../ui/killFeed';
 import type { Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
 
@@ -36,6 +37,15 @@ import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
 import { createDiscs } from './discs';
 import { createEffects } from './effects';
+import {
+    aimTarget,
+    endsRound,
+    FINAL_SLOW_MOTION,
+    footstepCadence,
+    HIT_STOP_MS,
+    SNEAK_SPEED_FACTOR,
+    surfaceFor
+} from './combatFeel';
 import { canStartGlobalFinisher, executionProgress, executionWatched } from './execution';
 import type { Execution } from './execution';
 import { createExecutionView } from './executionView';
@@ -374,6 +384,17 @@ export const createMatch = ({
     const streaks = new Map<string, { count: number; at: number }>();
     // Feel: FOV punch on release, damped local camera impulses, in-hand disc that winds up and snaps forward.
     let punch = 0;
+    /** Combat feel 3.0: presentation-only hit-stop, final-kill slow motion, elimination marks, footsteps. */
+    let hitStopUntil = 0;
+    let feelMotion: CameraMotion = 'low';
+    const killMarks: { at: V3; until: number }[] = [];
+    let slowMotionUntil = 0;
+    let stepClock = 0;
+    const remoteSteps = new Map<string, { last: V3; clock: number }>();
+    let currentSurface: ReturnType<typeof surfaceFor> = 'epoxy';
+    let sneaking = false;
+    let chargeFullPlayed = false;
+    let aimCheckAt = 0;
     const eyeOffset = camera.getLocalPosition().clone();
     const viewmodel = new Entity('viewmodel-disc');
     viewmodel.addComponent('render', { meshInstances: discs.meshInstances(colourFor('local')), castShadows: false });
@@ -744,7 +765,7 @@ export const createMatch = ({
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
-        struck: (throwId, target, by, targetHp, out, head, at, scores, sniper, golden, final, execution) => {
+        struck: (throwId, target, by, targetHp, out, head, at, scores, sniper, golden, final, execution, shot) => {
             const goldKill = golden && out;
             const feedbackKind =
                 target === selfId()
@@ -781,6 +802,15 @@ export const createMatch = ({
             const me = selfId();
             avatars.flash(target, performance.now());
             avatars.react(target, head, out, poses.get(target), performance.now());
+            if (target !== selfId()) avatars.health(target, targetHp, head);
+            if (by === selfId() && feelMotion !== 'off') {
+                // Hit-stop on your own head hits and eliminations: the victim's pose and the effects hold briefly.
+                const stop = out ? HIT_STOP_MS.kill : head ? HIT_STOP_MS.head : HIT_STOP_MS.hit;
+                if (stop > 0) {
+                    hitStopUntil = performance.now() + stop;
+                    avatars.freeze(target, stop);
+                }
+            }
             if (target === me) {
                 hp = targetHp;
                 sound.hurt(out);
@@ -861,12 +891,33 @@ export const createMatch = ({
                 const streak = previous && now - previous.at < 12_000 ? previous.count + 1 : 1;
                 streaks.set(by, { count: streak, at: now });
                 streaks.delete(target);
+                const icons = killIcons({
+                    head,
+                    sniper,
+                    gold: golden,
+                    execution,
+                    guard: by === 'guard',
+                    bank: shot?.bank === true,
+                    range: shot?.range ?? null
+                });
+                const tone = target === me ? 'me' : by === me ? 'mine' : 'neutral';
+                if (presentation.showHud) ui.killFeed(nameOf(by), nameOf(target), icons, shot?.range ?? null, tone);
+                if (by === me) {
+                    if (presentation.showHud) ui.killBanner(streak, nameOf(target), icons);
+                    sound.streak(streak);
+                }
+                killMarks.push({ at: [...(positionOf(target) ?? at)] as V3, until: now + 3000 });
+                if (killMarks.length > 8) killMarks.shift();
+                const standing = [...roster.values()].filter((player) => player.alive && !player.spectating).length;
+                if (feelMotion !== 'off' && endsRound(final, standing))
+                    slowMotionUntil = now + FINAL_SLOW_MOTION.seconds * 1000;
                 if (goldKill) {
                     if (presentation.showHud)
                         ui.goldKill(nameOf(by), nameOf(target), target === me ? 'me' : by === me ? 'mine' : 'neutral');
                     if (by !== me) sound.goldChime();
                 } else {
-                    if (presentation.showHud)
+                    // The kill feed and banner carry ordinary eliminations; the centre stage is for executions.
+                    if (presentation.showHud && execution)
                         ui.broadcast(
                             nameOf(by),
                             nameOf(target),
@@ -1366,6 +1417,8 @@ export const createMatch = ({
             if (event.code !== 'Escape') event.preventDefault();
             return;
         }
+        // Hold C to sneak: slower, and silent (no footsteps).
+        if (event.code === 'KeyC' && locked()) sneaking = true;
         if (event.code === 'KeyV' && !event.repeat && locked()) {
             event.preventDefault();
             beginFinisherHold();
@@ -1407,9 +1460,85 @@ export const createMatch = ({
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
         if (event.code === 'KeyV' && finisherHoldStartedAt !== null) completeFinisherHold();
+        if (event.code === 'KeyC') sneaking = false;
     });
-    window.addEventListener('blur', cancelFinisherHold);
+    window.addEventListener('blur', () => {
+        cancelFinisherHold();
+        sneaking = false;
+    });
 
+    /** Combat feel 3.0, per frame: aim state, footsteps, elimination marks and the final-kill slow motion. */
+    const updateCombatFeel = (deltaTime: number, now: number) => {
+        app.timeScale = now < slowMotionUntil ? FINAL_SLOW_MOTION.scale : 1;
+        // Crosshair over a visible enemy within throwing range (checked ~15 times a second).
+        if (now >= aimCheckAt) {
+            aimCheckAt = now + 66;
+            let on = false;
+            if (started && alive && !spectating && locked()) {
+                const eye = camera.getPosition(),
+                    forward = camera.forward;
+                const others = [...poses.entries()]
+                    .filter(([id]) => id !== selfId() && roster.get(id)?.alive && !roster.get(id)?.spectating)
+                    .map(([id, pose]): [string, V3] => [id, pose.p as V3]);
+                const target = aimTarget(
+                    [eye.x, eye.y, eye.z],
+                    [forward.x, forward.y, forward.z],
+                    others,
+                    AIM_TARGET_RANGE
+                );
+                if (target) {
+                    const centre = poses.get(target.id)!.p;
+                    on = !rigidbody.raycastFirst(eye, new Vec3(centre[0], centre[1] + 0.3, centre[2]));
+                }
+            }
+            ui.crosshairTarget(on);
+        }
+        // Your own footsteps (silent while sneaking or barely moving).
+        const velocity = player.rigidbody?.linearVelocity;
+        if (velocity && alive && !spectating && Math.abs(velocity.y) < 1.5) {
+            const cadence = footstepCadence(Math.hypot(velocity.x, velocity.z));
+            stepClock = cadence ? stepClock + deltaTime : 0;
+            if (cadence && stepClock >= cadence.interval) {
+                stepClock = 0;
+                sound.footstep(undefined, currentSurface, cadence.loud);
+            }
+        }
+        // Other players' footsteps, positioned, from their drawn movement.
+        for (const [id, pose] of poses) {
+            if (id === selfId()) continue;
+            const p = pose.p;
+            const state = remoteSteps.get(id) ?? { last: [...p] as V3, clock: 0 };
+            const speed = deltaTime > 0 ? Math.hypot(p[0] - state.last[0], p[2] - state.last[2]) / deltaTime : 0;
+            // No steps in the air (jumps) or across teleports.
+            const grounded = Math.abs(p[1] - state.last[1]) < 0.05 && speed < 15;
+            state.last = [...p] as V3;
+            const cadence = grounded ? footstepCadence(speed) : null;
+            state.clock = cadence ? state.clock + deltaTime : 0;
+            if (cadence && state.clock >= cadence.interval) {
+                state.clock = 0;
+                sound.footstep([p[0], p[1] - 0.9, p[2]], 'epoxy', cadence.loud);
+            }
+            remoteSteps.set(id, state);
+        }
+        for (const id of remoteSteps.keys()) if (!poses.has(id)) remoteSteps.delete(id);
+        // Elimination marks, projected to the screen and fading over their last second.
+        const cam = camera.camera!;
+        const marks: { x: number; y: number; alpha: number }[] = [];
+        for (let i = killMarks.length - 1; i >= 0; i--) {
+            const mark = killMarks[i];
+            if (now >= mark.until) {
+                killMarks.splice(i, 1);
+                continue;
+            }
+            markPoint.set(mark.at[0], mark.at[1] + 0.2, mark.at[2]);
+            cam.worldToScreen(markPoint, markScreen);
+            if (markScreen.z <= 0) continue;
+            marks.push({ x: markScreen.x, y: markScreen.y, alpha: Math.min(1, (mark.until - now) / 1000) });
+        }
+        ui.killMarks(marks);
+    };
+    const markPoint = new Vec3(),
+        markScreen = new Vec3();
     const animateFeel = (deltaTime: number, now: number) => {
         if (executionView.hasActor(selfId())) {
             viewmodel.enabled = false;
@@ -1439,7 +1568,10 @@ export const createMatch = ({
             if (walkSpeed === null) walkSpeed = script.speedGround ?? 40;
             // Aiming slows you down; so does carrying the golden disc.
             script.speedGround =
-                walkSpeed * (1 - (1 - SCOPE.moveScale) * aim) * (holdingGold() ? ROUND.goldSpeedFactor : 1);
+                walkSpeed *
+                (1 - (1 - SCOPE.moveScale) * aim) *
+                (holdingGold() ? ROUND.goldSpeedFactor : 1) *
+                (sneaking ? SNEAK_SPEED_FACTOR : 1);
         }
         ui.scope(aim, ready);
         const [impulseX, impulseY] = cameraImpulses.update(deltaTime);
@@ -1970,8 +2102,15 @@ export const createMatch = ({
             }
             // The charge ring fills for quick throws; once aiming starts the scope takes over.
             if (chargingSince !== null && aim < 0.02) {
-                ui.charge(Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds));
+                const fraction = Math.min(1, (now - chargingSince) / 1000 / THROW.chargeSeconds);
+                ui.charge(fraction);
+                if (fraction >= 1 && !chargeFullPlayed) {
+                    chargeFullPlayed = true;
+                    sound.chargeFull();
+                }
             } else if (chargingSince !== null) ui.charge(null);
+            if (chargingSince === null) chargeFullPlayed = false;
+            updateCombatFeel(deltaTime, now);
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
             if (net.state === 'online' && alive && !executionView.hasActor(selfId())) {
                 // A move the game made itself is flagged so the room resets (not rewinds across) this player's history.
@@ -2005,7 +2144,7 @@ export const createMatch = ({
             avatars.update(poses, now, executionView.hiddenIds());
             animateFeel(deltaTime, now);
             updateRound(now);
-            effects.update(deltaTime);
+            effects.update(now < hitStopUntil ? 0 : deltaTime);
             targets.clear();
             for (const [id, each] of poses) targets.set(id, each.p);
             discs.update(
@@ -2092,8 +2231,9 @@ export const createMatch = ({
             return dark;
         },
         /** Entering the room does not reveal player positions; those require clicking the console. */
-        enteredRoom(_id: string | null) {
-            // Entering the room does not grant access to the camera feed.
+        enteredRoom(_id: string | null, kind: string | null = null) {
+            // Entering the room does not grant access to the camera feed; it does set the floor your steps sound on.
+            currentSurface = surfaceFor(kind);
         },
         /** The golden disc and 纪老师 for the maps. */
         markers: mapMarkers,
@@ -2114,6 +2254,7 @@ export const createMatch = ({
             confirmationVolume: number;
         }) {
             cameraImpulses.setMode(settings.cameraMotion);
+            feelMotion = settings.cameraMotion;
             effects.setQuality(settings.effectsQuality);
             effects.setReducedFlashes(settings.reducedFlashes);
             sound.setVolumes({
@@ -2218,5 +2359,7 @@ export const createMatch = ({
 const RADAR_SECONDS = 30;
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
+/** The crosshair turns red over a visible enemy within this distance (m), about a full-strength throw. */
+const AIM_TARGET_RANGE = 30;
 
 export type MatchDebug = ReturnType<typeof createMatch>['debug'];

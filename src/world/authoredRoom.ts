@@ -12,6 +12,7 @@ import {
     StandardMaterial
 } from 'playcanvas';
 
+import { SURFACE_RESTITUTION } from '../config/bounce';
 import { MeshBuilder } from '../render/meshBuilder';
 import { merge } from '../render/shapes';
 
@@ -74,7 +75,7 @@ export const buildAuthoredRoom = (app: AppBase, parent: Entity, scene: AuthoredR
     if (!colliders.empty) {
         const body = new Entity(`GameplayAuthored_${scene.room}_Colliders`);
         body.addComponent('collision', { type: 'mesh', render: { meshes: [colliders.build(app.graphicsDevice)] } });
-        body.addComponent('rigidbody', { type: 'static', friction: 0.5, restitution: 0 });
+        body.addComponent('rigidbody', { type: 'static', friction: 0.5, restitution: SURFACE_RESTITUTION.furniture });
         root.addChild(body);
     }
     return { root, materials: byMaterial.size, triangles, colliders: scene.colliders.length };

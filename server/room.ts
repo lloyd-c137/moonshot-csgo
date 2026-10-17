@@ -823,6 +823,8 @@ export class Room {
             sniper,
             gold: entry.golden,
             final: out && target.spectating,
+            ...(verdict.bank ? { bank: true } : {}),
+            range: verdict.range,
             at,
             scores
         });

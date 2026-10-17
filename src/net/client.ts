@@ -58,7 +58,8 @@ type Handlers = {
         sniper: boolean,
         gold: boolean,
         final: boolean,
-        execution: boolean
+        execution: boolean,
+        shot?: { bank: boolean; range: number | null }
     ) => void;
     hitRejected: (throwId: number) => void;
     chat: (line: ChatLine) => void;
@@ -191,7 +192,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     message.sniper === true,
                     message.gold === true,
                     message.final === true,
-                    message.execution === true
+                    message.execution === true,
+                    { bank: message.bank === true, range: typeof message.range === 'number' ? message.range : null }
                 );
                 break;
             case 'hitRejected':

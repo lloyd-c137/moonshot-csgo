@@ -11,7 +11,7 @@ export const webpDimensions = (bytes: Uint8Array) => {
         new DataView(bytes.buffer, bytes.byteOffset + 4, 4).getUint32(0, true) + 8 !== bytes.length
     )
         return null;
-    for (let offset = 12; offset + 8 <= bytes.length;) {
+    for (let offset = 12; offset + 8 <= bytes.length; ) {
         const size = new DataView(bytes.buffer, bytes.byteOffset + offset + 4, 4).getUint32(0, true);
         const data = offset + 8;
         if (data + size > bytes.length) return null;

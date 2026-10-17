@@ -4,6 +4,7 @@
 import type { AppBase, Texture } from 'playcanvas';
 import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, Layer, MeshInstance, StandardMaterial, Vec2 } from 'playcanvas';
 
+import { SURFACE_RESTITUTION } from '../config/bounce';
 import { ARENA_WALL_HEIGHT, DERIVED_GRID } from '../config/presentation';
 import { worldTriangles } from '../physics/collisionWorld';
 import { MeshBuilder } from '../render/meshBuilder';
@@ -300,7 +301,7 @@ export const buildDressing = (
     addMesh(app, root, 'Arena_Coping', arenaCoping, makeMaterial('coping', { colour: [0.62, 0.64, 0.67], gloss: 0.3 }));
     const arenaWallBody = new Entity('GameplayAuthored_ArenaWallCollider');
     arenaWallBody.addComponent('collision', { type: 'mesh', render: { meshes: [arenaWall.build(device)] } });
-    arenaWallBody.addComponent('rigidbody', { type: 'static', friction: 0, restitution: 0 });
+    arenaWallBody.addComponent('rigidbody', { type: 'static', friction: 0, restitution: SURFACE_RESTITUTION.wall });
     root.addChild(arenaWallBody);
 
     // Doors from the swing linework: a lintel over the opening and an open leaf along the drawn swing.
@@ -579,7 +580,7 @@ export const buildDressing = (
     if (!colliders.empty) {
         const body = new Entity('GameplayAuthored_FurnitureColliders');
         body.addComponent('collision', { type: 'mesh', render: { meshes: [colliders.build(device)] } });
-        body.addComponent('rigidbody', { type: 'static', friction: 0.5, restitution: 0 });
+        body.addComponent('rigidbody', { type: 'static', friction: 0.5, restitution: SURFACE_RESTITUTION.furniture });
         root.addChild(body);
     }
     return {

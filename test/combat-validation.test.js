@@ -83,7 +83,8 @@ test('head or body is decided against the rewound height (a target that jumped a
             bounces: [],
             reach: 30
         });
-    assert.deepEqual(judge(1050), { ok: true, head: true, centre: [0, 0.92, -3] });
+    const seen = judge(1050);
+    assert.deepEqual([seen.ok, seen.head, seen.centre], [true, true, [0, 0.92, -3]]);
     const present = judge(1200);
     assert.equal(present.ok && present.head, false, 'at the present height the same contact is no head hit');
 });
@@ -289,4 +290,28 @@ test('lag-compensation history keeps the real room clock across a global-finishe
         inbox.get('b').some((m) => m.type === 'struck'),
         'judged on the same clock the client reports'
     );
+});
+
+test('bank shots and long shots are recognised from the reported flight', async () => {
+    const { wallBounces } = await import('../server/combatValidation.ts');
+    assert.equal(wallBounces([[-8, 0.1, -10]]), 0, 'a floor skid is not a bank shot');
+    assert.equal(wallBounces([[-8, 1.2, -10]]), 1);
+    const history = new PoseHistory();
+    history.push(0, at(2));
+    const verdict = (bounces) =>
+        judgeHit({
+            history,
+            now: 100,
+            claimedTime: 0,
+            origin: [-18, 1.5, -3],
+            contact: [1.7, 1.2, -3],
+            bounces,
+            reach: 60
+        });
+    const straight = verdict([]);
+    assert.equal(straight.ok && straight.bank, false);
+    assert.ok(straight.ok && Math.abs(straight.range - 19.7) < 0.2);
+    const banked = verdict([[-8, 1.3, -10]]);
+    assert.equal(banked.ok && banked.bank, true);
+    assert.ok(banked.ok && banked.range > straight.range, 'range follows the bounce path');
 });

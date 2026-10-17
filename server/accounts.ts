@@ -94,7 +94,8 @@ const statsOf = (row: UserRow): AccountStats => ({
 });
 
 export type AuthResult =
-    { ok: true; token: string; account: AccountStats; created?: boolean } | { ok: false; error: string };
+    | { ok: true; token: string; account: AccountStats; created?: boolean }
+    | { ok: false; error: string };
 
 export class Accounts {
     private readonly db: AccountDb;

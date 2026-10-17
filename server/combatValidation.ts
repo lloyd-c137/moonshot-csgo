@@ -5,6 +5,7 @@
 // history and checks the claimed contact against the rewound capsule. The rewind is capped at RENDER_DELAY plus
 // LAG_ALLOWANCE (owner decision 2026-10-17: 200 ms of network allowance); older views are judged at the cap, so
 // very high-latency throwers lose some hits rather than everyone else being hit around corners.
+import { WALL_BOUNCE_MIN_Y } from '../src/config/bounce.ts';
 import { DISC, PLAYER_HIT } from '../src/gameplay/frisbee.ts';
 import type { V3 } from '../src/gameplay/frisbee.ts';
 import { flightSegmentClear, maskLookup } from '../src/gameplay/occlusionMask.ts';
@@ -98,8 +99,12 @@ export const pathLength = (points: readonly (readonly number[])[]) => {
     return total;
 };
 
+/** Wall/furniture bounces on a reported path (floor skids do not make a bank shot). */
+export const wallBounces = (bounces: readonly (readonly number[])[]) =>
+    bounces.filter((point) => point[1] > WALL_BOUNCE_MIN_Y).length;
+
 export type HitVerdict =
-    | { ok: true; head: boolean; centre: Vec3Tuple }
+    | { ok: true; head: boolean; centre: Vec3Tuple; bank: boolean; range: number }
     | { ok: false; reason: 'no-history' | 'contact' | 'wall' | 'reach' };
 
 /**
@@ -121,7 +126,13 @@ export const judgeHit = (options: {
     const path = [options.origin, ...options.bounces.slice(0, MAX_PATH_POINTS), options.contact];
     if (pathLength(path) > options.reach) return { ok: false, reason: 'reach' };
     if (!flightClear(path)) return { ok: false, reason: 'wall' };
-    return { ok: true, head: isHeadHit(options.contact[1], centre[1]), centre };
+    return {
+        ok: true,
+        head: isHeadHit(options.contact[1], centre[1]),
+        centre,
+        bank: wallBounces(options.bounces.slice(0, MAX_PATH_POINTS)) > 0,
+        range: Math.round(pathLength(path) * 10) / 10
+    };
 };
 
 /**

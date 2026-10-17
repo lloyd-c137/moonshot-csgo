@@ -1,6 +1,7 @@
 import type { AppBase, GraphNode } from 'playcanvas';
 import { Entity, Mesh, Vec3 } from 'playcanvas';
 
+import { SURFACE_RESTITUTION } from '../config/bounce';
 import { BARRIER_TOP_Y } from '../config/gameplay';
 
 import type { Triangle, Vec3Tuple } from './boundaryBarriers';
@@ -70,7 +71,7 @@ const addBarriers = (app: AppBase, campus: Entity) => {
     mesh.update();
     const barrier = new Entity(BARRIER_ENTITY_NAME);
     barrier.addComponent('collision', { type: 'mesh', render: { meshes: [mesh] } });
-    barrier.addComponent('rigidbody', { type: 'static', friction: 0, restitution: 0 });
+    barrier.addComponent('rigidbody', { type: 'static', friction: 0, restitution: SURFACE_RESTITUTION.wall });
     campus.addChild(barrier);
     return walls.length;
 };
@@ -82,7 +83,11 @@ export const addCampusCollisions = (app: AppBase, campus: Entity) => {
             type: 'mesh',
             render: { meshes: entity.render!.meshInstances.map((instance) => instance.mesh) }
         });
-        entity.addComponent('rigidbody', { type: 'static', friction: 0.8, restitution: 0 });
+        entity.addComponent('rigidbody', {
+            type: 'static',
+            friction: 0.8,
+            restitution: name === 'Walls' || name === 'Glazing' ? SURFACE_RESTITUTION.wall : SURFACE_RESTITUTION.floor
+        });
     }
     const barrierWalls = addBarriers(app, campus);
     return { sourceBodies: COLLISION_SOURCE_NODES.length, barrierWalls };

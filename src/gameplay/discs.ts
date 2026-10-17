@@ -15,6 +15,7 @@ import {
     Vec3
 } from 'playcanvas';
 
+import { DISC_CONTACT } from '../config/bounce';
 import { SNIPER } from '../net/protocol';
 import { cylinder, merge, place, torus } from '../render/shapes';
 
@@ -156,8 +157,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             entity.addComponent('rigidbody', {
                 type: 'dynamic',
                 mass: DISC.mass,
-                friction: 0.35,
-                restitution: 0.45,
+                friction: DISC_CONTACT.friction,
+                restitution: DISC_CONTACT.restitution,
                 linearDamping: 0.02,
                 angularDamping: 0,
                 angularFactor: Vec3.ZERO,

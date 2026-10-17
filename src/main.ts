@@ -280,7 +280,7 @@ const boot = async () => {
         namedRooms.filter((room) => room.hasRegion),
         (location) => {
             shell.setLocation(location);
-            match.enteredRoom(location?.id ?? null);
+            match.enteredRoom(location?.id ?? null, location?.kind ?? null);
         },
         0.35,
         0.2,

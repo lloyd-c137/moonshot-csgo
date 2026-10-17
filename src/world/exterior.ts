@@ -318,8 +318,8 @@ export const buildExterior = (app: AppBase, parent: EntityType, rooms: readonly 
     }
 
     // Forecourt fence either side of the entrance and a bicycle rack.
+    // The fence closes the waiting plaza on the street side (no way out but through the turnstiles).
     for (let x = X - 18; x <= X + 18; x += 3) {
-        if (Math.abs(x - X) < 4) continue;
         orientedBox(b.frame, [x, 0.55, ZF + street.forecourt - 0.3], [2.72, 1.05, 0.08]);
     }
     for (let x = X + 8; x < X + 19; x += 1.25) {

@@ -1,5 +1,5 @@
 // The entry flyover's camera path (pure): a high aerial over the campus, a sweep past the 莲花球场, down onto the
-// street and through the south gate into the player's own eyes. Catmull-Rom through the keys; the last stretch
+// street and into the player's own eyes in the waiting plaza, facing the south-gate turnstiles. Catmull-Rom through the keys; the last stretch
 // blends into the live first-person view so control hands over without a cut. GAMEPLAY_AUTHORED.
 import { EXTERIOR } from '../world/exteriorLayout.ts';
 
@@ -19,7 +19,7 @@ export const INTRO_KEYS: readonly IntroKey[] = [
     { t: 2.3, pos: [-52, 58, 120], look: [-8, 2, -2], fov: 48 },
     { t: 4.5, pos: [-38, 17, GZ + 36], look: [GX, 3, GZ], fov: 54 },
     { t: 6.3, pos: [GX, 4.6, GZ + 22], look: [GX, 3, GZ], fov: 58 },
-    { t: INTRO_DURATION - INTRO_HANDOFF, pos: [GX, 1.9, GZ + 6], look: [GX, 1.75, GZ - 8], fov: 64 }
+    { t: INTRO_DURATION - INTRO_HANDOFF, pos: [GX, 2.1, GZ + 8.5], look: [GX, 1.5, GZ - 2], fov: 64 }
 ];
 
 const smooth = (u: number) => u * u * (3 - 2 * u);

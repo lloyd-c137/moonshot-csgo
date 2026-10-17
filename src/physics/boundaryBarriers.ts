@@ -81,3 +81,45 @@ export const barrierMeshData = (walls: BarrierWall[]) => {
     });
     return { positions, indices };
 };
+
+/**
+ * Cuts the walls out of an opening: every wall segment (or part of one) inside the rectangle x0…x1, z0…z1 is
+ * removed, longer segments are split around it. Used for the south gate, the one way in from the waiting plaza.
+ */
+export const cutBarrierOpening = (
+    walls: readonly BarrierWall[],
+    opening: { x0: number; x1: number; z0: number; z1: number }
+): BarrierWall[] =>
+    walls.flatMap((wall) => {
+        const [[ax, az], [bx, bz]] = wall.edge;
+        const inside = (t: number) => {
+            const x = ax + (bx - ax) * t,
+                z = az + (bz - az) * t;
+            return x > opening.x0 && x < opening.x1 && z > opening.z0 && z < opening.z1;
+        };
+        const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.05));
+        const pieces: BarrierWall[] = [];
+        let start: number | null = null;
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            if (!inside(t)) {
+                if (start === null) start = t;
+                continue;
+            }
+            if (start !== null && t > start) pieces.push(piece(wall, start, (i - 1) / steps));
+            start = null;
+        }
+        if (start !== null && start < 1) pieces.push(piece(wall, start, 1));
+        return pieces.filter((p) => Math.hypot(p.edge[1][0] - p.edge[0][0], p.edge[1][1] - p.edge[0][1]) > 1e-3);
+    });
+
+const piece = (wall: BarrierWall, t0: number, t1: number): BarrierWall => {
+    const [[ax, az], [bx, bz]] = wall.edge;
+    return {
+        ...wall,
+        edge: [
+            [ax + (bx - ax) * t0, az + (bz - az) * t0],
+            [ax + (bx - ax) * t1, az + (bz - az) * t1]
+        ]
+    };
+};

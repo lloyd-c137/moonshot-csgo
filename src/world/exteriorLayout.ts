@@ -1,5 +1,6 @@
 // Pure layout of the campus exterior (no engine imports): where the owner's 2026-08-06 model puts the south gate,
 // the street, the paths and the sculptures, carried into FF-01 metres with the room-naming plan fit.
+import { SOUTH_GATE } from '../config/gameplay.ts';
 import { ROOM_NAMING } from '../config/roomNaming.ts';
 
 /** The 2026-08-06 model's world → plan pixels (app/campus-data.ts `world`), inverted. */
@@ -30,11 +31,15 @@ export const EXTERIOR = {
         [-115, -9.2, -66.5, -4.2]
     ] as const,
     gate: {
-        /** Gate centre (model south gate, fitted) and the façade's front plane (FF-01 south wall, z 57.72). */
-        x: round(southGate[0]),
-        front: 57.95,
+        /**
+         * The model's south gate (fitted to x ≈ −9.9) centred on the real FF-01 entrance opening, the one the
+         * turnstiles stand in; the façade's front plane sits on the slab edge (z 57.5), where the plaza starts.
+         */
+        x: (SOUTH_GATE.x0 + SOUTH_GATE.x1) / 2,
+        modelX: round(southGate[0]),
+        front: 57.55,
         halfWidth: 19.5,
-        opening: 4.4,
+        opening: SOUTH_GATE.x1 - SOUTH_GATE.x0,
         canopyHeight: 3.3,
         canopyDepth: 4.2
     },

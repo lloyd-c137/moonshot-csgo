@@ -2,10 +2,10 @@ import type { AppBase, GraphNode } from 'playcanvas';
 import { Entity, Mesh, Vec3 } from 'playcanvas';
 
 import { SURFACE_RESTITUTION } from '../config/bounce';
-import { BARRIER_TOP_Y } from '../config/gameplay';
+import { BARRIER_TOP_Y, SOUTH_GATE } from '../config/gameplay';
 
 import type { Triangle, Vec3Tuple } from './boundaryBarriers';
-import { barrierMeshData, campusBarrierWalls } from './boundaryBarriers';
+import { barrierMeshData, campusBarrierWalls, cutBarrierOpening } from './boundaryBarriers';
 
 export const COLLISION_SOURCE_NODES = [
     'Floor_Slab',
@@ -55,13 +55,18 @@ export const worldTriangles = (entity: Entity): Triangle[] => {
  * wall/glazing top outlines are extruded to BARRIER_TOP_Y as one static, unrendered triangle-mesh collider.
  */
 const addBarriers = (app: AppBase, campus: Entity) => {
-    const walls = campusBarrierWalls(
-        {
-            floor: worldTriangles(renderEntity(campus, 'Floor_Slab')),
-            wallTops: worldTriangles(renderEntity(campus, 'Walls_Top')),
-            glazing: worldTriangles(renderEntity(campus, 'Glazing'))
-        },
-        BARRIER_TOP_Y
+    // The south gate opening is cut out: the turnstiles (world/turnstiles.ts) guard it instead, and the waiting
+    // plaza outside has its own floor and fence.
+    const walls = cutBarrierOpening(
+        campusBarrierWalls(
+            {
+                floor: worldTriangles(renderEntity(campus, 'Floor_Slab')),
+                wallTops: worldTriangles(renderEntity(campus, 'Walls_Top')),
+                glazing: worldTriangles(renderEntity(campus, 'Glazing'))
+            },
+            BARRIER_TOP_Y
+        ),
+        { x0: SOUTH_GATE.x0, x1: SOUTH_GATE.x1, z0: SOUTH_GATE.line - 0.4, z1: SOUTH_GATE.plaza.z0 + 0.6 }
     );
     if (!walls.length) throw new Error('Barrier generation produced no walls');
     const { positions, indices } = barrierMeshData(walls);

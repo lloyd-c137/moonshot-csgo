@@ -73,8 +73,8 @@ export class CharacterAssetLoader {
                     !tracks.has('Idle_Loop') ||
                     !tracks.has('Walk_Loop') ||
                     !tracks.has('Sprint_Loop') ||
-                    !tracks.has('Finisher_Boomerang_Attacker') ||
-                    !tracks.has('Finisher_Boomerang_Victim')
+                    !tracks.has('Finisher_Toss_Attacker') ||
+                    !tracks.has('Finisher_Toss_Victim')
                 ) {
                     reject(new Error('Character container is missing required locomotion or Boomerang finisher clips'));
                     return;

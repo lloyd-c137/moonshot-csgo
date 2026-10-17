@@ -24,10 +24,12 @@ import { installDebugHooks } from './app/debugHooks';
 import { browserStorage } from './app/storage';
 import { watchForUpdates } from './app/updates';
 import { CharacterAssetLoader } from './characters/CharacterAssetLoader';
-import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER } from './config/gameplay';
+import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER, SOUTH_GATE } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
 import { ROOM_NAMING } from './config/roomNaming';
+import type { GateState } from './gameplay/gateLobby';
+import { stepGate } from './gameplay/gateLobby';
 import { createIntro } from './gameplay/intro';
 import { createMatch } from './gameplay/match';
 import { StuckDetector } from './gameplay/stuck';
@@ -57,6 +59,7 @@ import { applyRoomNaming } from './world/roomNaming';
 import { AUTHORED_ROOM_IDS, authoredRoomScenes } from './world/rooms';
 import { buildSigns } from './world/signage';
 import { buildStadium } from './world/stadium';
+import { buildTurnstiles } from './world/turnstiles';
 
 let ui: Ui | null = null;
 
@@ -216,8 +219,18 @@ const boot = async () => {
     const stadium = buildStadium(app, campus.root, campus.root, derivedWorld.arena);
     // The campus seen from outside (roof, south gate, street, lawn) for the entry flyover.
     buildExterior(app, campus.root, namedRooms);
+    const turnstiles = buildTurnstiles(app, campus.root);
     const { player, camera } = createPlayer(app);
     const intro = createIntro(app, camera, shell);
+    // South gate: new players wait in the plaza outside and join the round in progress by walking through the
+    // turnstiles (owner brief 2026-10-17). Automated browsers and the audio lab start inside, as before.
+    const query = new URLSearchParams(window.location.search);
+    const useLobby =
+        !query.has('noLobby') && query.get('audioLab') !== '1' && (!navigator.webdriver || query.has('lobby'));
+    let gateState: GateState = useLobby ? 'lobby' : 'inside';
+    /** Set on the first entry; the gate only runs once the player is in the world. */
+    let gateLive = false;
+    const safeSpot = () => (gateState === 'lobby' ? SOUTH_GATE.spawn : undefined);
     shell.stage('characters', 'active');
     const characters = await CharacterAssetLoader.load(app);
     shell.stage('characters', 'done');
@@ -310,9 +323,9 @@ const boot = async () => {
         stuck.reset();
         stuckShown = false;
         shell.stuck(false);
-        recoverPlayer(player);
+        recoverPlayer(player, safeSpot());
         match.teleported();
-        shell.notify('已脱离卡死，回到南入口');
+        shell.notify(gateState === 'lobby' ? '已脱离卡死，回到南门广场' : '已脱离卡死，回到南入口');
     };
     shell.stuck(false, () => {
         escapeStuck();
@@ -339,10 +352,20 @@ const boot = async () => {
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
-            recoverPlayer(player);
+            recoverPlayer(player, safeSpot());
             match.teleported();
             shell.notify('已离开可探索范围，已回到南入口');
             return;
+        }
+        if (gateLive) {
+            const gate = stepGate(gateState, position.x, position.z);
+            turnstiles.set(gate.open, gate.light);
+            if (gate.joined) {
+                gateState = 'inside';
+                match.start('');
+                shell.notify('已通过闸机 · 加入本局');
+            }
+            gateState = gate.state;
         }
         roomTracker.update([position.x, position.z], deltaTime);
         if (document.pointerLockElement === canvas && match.alive) {
@@ -428,6 +451,10 @@ const boot = async () => {
     let recoverAt = -Infinity;
     const RECOVER_COOLDOWN = 180_000;
     const recover = () => {
+        if (gateState === 'lobby') {
+            shell.notify('先穿过南门闸机加入本局');
+            return;
+        }
         if (match.executing) {
             shell.notify('处决动画期间无法传送');
             return;
@@ -449,7 +476,12 @@ const boot = async () => {
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
             if (!hasEntered) {
-                match.start('');
+                if (gateState === 'lobby') {
+                    // Wait in the plaza facing the gate; the round is joined at the turnstiles.
+                    recoverPlayer(player, SOUTH_GATE.spawn);
+                    shell.notify('南门待机：穿过闸机即加入正在进行的这一局');
+                } else match.start('');
+                gateLive = true;
                 // First entry: the flyover over the campus and through the south gate, input held until it ends.
                 // Automated browsers skip it (tests drive input at once) unless ?intro=1 asks for it.
                 const query = new URLSearchParams(window.location.search);

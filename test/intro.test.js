@@ -29,10 +29,11 @@ test('the flyover is continuous (no jumps at keys or the hand-over) and never be
     }
 });
 
-test('the gate stands where the owner model puts it, on the FF-01 south wall', () => {
+test('the gate stands where the owner model puts it, centred on the real entrance opening', () => {
     const [x] = exteriorFromModel(-8, 47);
-    assert.ok(Math.abs(x - EXTERIOR.gate.x) < 0.1);
-    assert.ok(EXTERIOR.gate.front > 57.72 && EXTERIOR.gate.front < 58.2, 'just outside the south wall');
+    assert.ok(Math.abs(x - EXTERIOR.gate.modelX) < 0.1);
+    assert.ok(Math.abs(EXTERIOR.gate.x - x) < 2, 'within 2 m of the model gate');
+    assert.ok(EXTERIOR.gate.front > 57.4 && EXTERIOR.gate.front < 58.2, 'on the slab edge');
     // The fit matches the room naming: model origin lands near the campus centre.
     const [cx, cz] = exteriorFromModel(0, 0);
     assert.ok(Math.abs(cx) < 2 && Math.abs(cz) < 3);

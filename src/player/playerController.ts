@@ -52,8 +52,8 @@ export const createPlayer = (app: AppBase) => {
  * Returns the player to the safe spawn, stopped and facing the spawn heading (north, yaw 0). The upstream controller
  * keeps its look angles in `_angles` and has no public setter, so the reset writes that field directly.
  */
-export const recoverPlayer = (player: Entity) => {
-    player.rigidbody!.teleport(SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z, 0, 0, 0);
+export const recoverPlayer = (player: Entity, at: { x: number; y: number; z: number } = SAFE_SPAWN) => {
+    player.rigidbody!.teleport(at.x, at.y, at.z, 0, 0, 0);
     player.rigidbody!.linearVelocity = Vec3.ZERO;
     player.rigidbody!.angularVelocity = Vec3.ZERO;
     setLook(player, 0, 0);

@@ -13,7 +13,14 @@ import { hueColour } from './discs';
 import { executionProgress } from './execution';
 import type { Execution } from './execution';
 import { FinisherDiscController } from './finisher/FinisherDiscController';
-import { FINISHER_STRIKE, finisherCamera, finisherPunch, finisherWarp } from './finisher/finisherTiming';
+import {
+    FINISHER_STRIKE,
+    finisherCamera,
+    finisherFlight,
+    finisherPunch,
+    finisherWarp
+} from './finisher/finisherTiming';
+import { TOSS, tossApproach } from './finisher/tossTimeline';
 
 type Actor = ReturnType<CharacterAssetLoader['create']> & {
     character: ReturnType<CharacterAssetLoader['create']>;
@@ -146,8 +153,8 @@ export const createExecutionView = (
                 target = acquire(0);
             attacker.root.setPosition(at[0], at[1] - 0.9, at[2]);
             target.root.setPosition(at[0] + 0.8, at[1] - 0.9, at[2]);
-            attacker.character.playAt('Finisher_Boomerang_Attacker', 1.15);
-            target.character.playAt('Finisher_Boomerang_Victim', 1.15);
+            attacker.character.playAt('Finisher_Toss_Attacker', 1.15);
+            target.character.playAt('Finisher_Toss_Victim', 1.15);
             // Both disc finishes too, so their glowing material's shader is compiled before the first real move.
             const discs = [false, true].map((gold) => {
                 const disc = new FinisherDiscController(discMesh, attacker, target, gold);
@@ -215,16 +222,18 @@ export const createExecutionView = (
                     dz = record.target.pose.p[2] - record.attacker.pose.p[2],
                     distance = Math.hypot(dx, dz);
                 attacker.root.enabled = target.root.enabled = true;
+                // THE TOSS: the attacker strolls in from behind, ending on their real position.
+                const behind = (TOSS.approach * (1 - tossApproach(film * TOSS.frames))) / Math.max(distance, 1e-6);
                 attacker.root.setPosition(
-                    record.attacker.pose.p[0],
+                    record.attacker.pose.p[0] - dx * behind,
                     record.attacker.pose.p[1] - 0.9,
-                    record.attacker.pose.p[2]
+                    record.attacker.pose.p[2] - dz * behind
                 );
                 attacker.root.setEulerAngles(0, (Math.atan2(-dx, -dz) * 180) / Math.PI, 0);
                 const actionTime = film * 2.6;
                 // Seek every frame on the smooth local clock: immune to slow motion and hit-stop on app.timeScale.
-                attacker.character.playAt('Finisher_Boomerang_Attacker', actionTime, 0.045, 0);
-                target.character.playAt('Finisher_Boomerang_Victim', actionTime, 0.045, 0);
+                attacker.character.playAt('Finisher_Toss_Attacker', actionTime, 0.045, 0);
+                target.character.playAt('Finisher_Toss_Victim', actionTime, 0.045, 0);
                 target.root.setPosition(
                     record.target.pose.p[0],
                     record.target.pose.p[1] - 0.9,
@@ -232,7 +241,11 @@ export const createExecutionView = (
                 );
                 target.root.setEulerAngles(0, (Math.atan2(dx, dz) * 180) / Math.PI, 0);
                 scene.disc?.update(film);
-                if (scene.disc && hooks.trail && film > 0.02 && film < 0.97 && real >= scene.trailAt) {
+                const frame = film * TOSS.frames;
+                const flying =
+                    (frame > TOSS.tossRelease && frame < TOSS.tossCatch) ||
+                    (frame > TOSS.throwRelease && frame < TOSS.homeCatch);
+                if (scene.disc && hooks.trail && flying && real >= scene.trailAt) {
                     scene.trailAt = real + 28;
                     const at = scene.disc.position;
                     hooks.trail([at.x, at.y, at.z], record.variant === 'THE_BOOMERANG_GOLD');
@@ -262,25 +275,28 @@ export const createExecutionView = (
                 if (scene.global) {
                     // One continuous orbit (Catmull-Rom through the keys), pushed in and shaken on the strike.
                     const { angle, fov } = finisherCamera(film);
+                    // While the disc is far out ahead the frame widens and leans forward to keep it in view.
+                    const flight = finisherFlight(film);
+                    const focus = shot.look.clone().add(shot.forward.clone().mulScalar(2.6 * flight));
                     const direction = shot.right
                         .clone()
                         .mulScalar(Math.cos(angle))
                         .add(shot.forward.clone().mulScalar(Math.sin(angle)));
-                    const wanted = shot.radius * (1 - 0.22 * punch);
-                    const probe = shot.look.clone().add(direction.clone().mulScalar(wanted));
+                    const wanted = shot.radius * (1 + 0.55 * flight) * (1 - 0.22 * punch);
+                    const probe = focus.clone().add(direction.clone().mulScalar(wanted));
                     probe.y += 0.85;
-                    const hit = system.raycastFirst(shot.look, probe);
-                    const free = hit ? Math.max(0.6, shot.look.distance(hit.point) - 0.28) : wanted;
+                    const hit = system.raycastFirst(focus, probe);
+                    const free = hit ? Math.max(0.6, focus.distance(hit.point) - 0.28) : wanted;
                     // Walls pull the camera in at once; it eases back out instead of popping.
                     shot.reach = free < shot.reach ? free : Math.min(free, shot.reach + dt * 2.5);
                     const scale = Math.min(1, shot.reach / Math.max(0.01, wanted));
-                    const eye = shot.look.clone().add(direction.mulScalar(shot.reach));
+                    const eye = focus.clone().add(direction.mulScalar(shot.reach));
                     eye.y += 0.85 * scale;
                     const shake = 0.07 * punch;
                     eye.x += Math.sin(real * 0.09) * shake;
                     eye.y += Math.sin(real * 0.113 + 1) * shake;
                     eye.z += Math.cos(real * 0.071) * shake;
-                    place(eye, shot.look, fov - 6 * punch);
+                    place(eye, focus, fov - 6 * punch);
                 } else {
                     const eye = shot.look.clone().add(shot.right.clone().mulScalar(4.2));
                     eye.y += 0.9;

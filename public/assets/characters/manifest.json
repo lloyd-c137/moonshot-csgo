@@ -10,9 +10,9 @@
     },
     "runtime": {
         "path": "public/assets/characters/moonshot-humanoid.glb",
-        "sha256": "c43e612307de459eff95d33cabe8389c9f3e8d5e82c09d26a1b05e1a15090e91",
-        "bytes": 3502980,
-        "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14",
+        "sha256": "7aad3cfa821f2f731095e5040e470ba5d484d3654f7883f05df5033dad5b8b22",
+        "bytes": 3850540,
+        "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14 + tools/authorFinisherToss.ts",
         "headMaterial": "M_Head",
         "headUv": "cylindrical, seam at the back"
     },
@@ -27,7 +27,14 @@
         ],
         "durationSeconds": 2.6,
         "fps": 30,
-        "keyframeBeatsSeconds": [0, 0.45, 1.15, 1.65, 2.15, 2.6],
+        "keyframeBeatsSeconds": [
+            0,
+            0.45,
+            1.15,
+            1.65,
+            2.15,
+            2.6
+        ],
         "rootTranslation": false,
         "prop": "Finisher_Disc_Animation_Prop",
         "propTimeline": "Blender source path is editorial reference; browser path is hand-following runtime spline"
@@ -35,8 +42,19 @@
     "verified": {
         "triangles": 13743,
         "joints": 65,
-        "animationClips": 45,
+        "animationClips": 47,
         "heightMeters": 1.829,
         "skinInfluencesPerVertex": 4
+    },
+    "toss": {
+        "name": "THE TOSS",
+        "actions": [
+            "Finisher_Toss_Attacker",
+            "Finisher_Toss_Victim"
+        ],
+        "durationSeconds": 2.6,
+        "fps": 30,
+        "generator": "tools/authorFinisherToss.ts (blend of Walk_Loop, Idle_Loop and the Boomerang key poses; no Blender)",
+        "rootTranslation": false
     }
 }

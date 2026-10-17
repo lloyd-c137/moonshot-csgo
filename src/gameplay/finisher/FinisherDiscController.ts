@@ -1,22 +1,9 @@
 import { Color, Entity, MeshInstance, Quat, StandardMaterial, Vec3 } from 'playcanvas';
 import type { Mesh } from 'playcanvas';
 
+import { TOSS, tossDisc } from './tossTimeline';
+
 type ActorHand = { root: Entity; character: { root: Entity } };
-
-const smooth = (t: number) => {
-    const u = Math.max(0, Math.min(1, t));
-    return u * u * (3 - 2 * u);
-};
-
-const cubic = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, t: number) => {
-    const u = 1 - t;
-    return a
-        .clone()
-        .mulScalar(u * u * u)
-        .add(b.clone().mulScalar(3 * u * u * t))
-        .add(c.clone().mulScalar(3 * u * t * t))
-        .add(d.clone().mulScalar(t * t * t));
-};
 
 /** Cinematic-only disc. It has no Ammo body and is fully positioned by the shared film timeline. */
 export class FinisherDiscController {
@@ -68,70 +55,37 @@ export class FinisherDiscController {
         );
     }
 
+    /** Hand positions captured at the toss and throw releases (the arcs start exactly where the disc left). */
+    private releaseHand: Vec3 | null = null;
+    private throwHand: Vec3 | null = null;
+
+    /** `progress` is the film position 0…1 (TOSS timeline, tossTimeline.ts). */
     update(progress: number) {
         if (this.destroyed) return;
         this.entity.enabled = true;
-        const t = Math.max(0, Math.min(1, progress));
-        const fromHand = this.hand(this.attacker);
-        const toHand = this.hand(this.target);
-        const targetRoot = this.target.root.getPosition();
-        const attackerRoot = this.attacker.root.getPosition();
-        const towardAttacker = new Vec3(attackerRoot.x - targetRoot.x, 0, attackerRoot.z - targetRoot.z).normalize();
-        const startOrbit = targetRoot
-            .clone()
-            .add(towardAttacker.clone().mulScalar(0.76))
-            .add(new Vec3(0, 1.68, 0));
-        const orbitEnd = startOrbit.clone();
-        const orbitMid = targetRoot.clone().add(new Vec3(0, 1.95, 0));
-        const strikePoint = targetRoot.clone().add(new Vec3(0, 1.3, 0));
-        let position: Vec3;
-
-        if (t < 0.17) {
-            const u = smooth(t / 0.17);
-            position = cubic(
-                fromHand,
-                fromHand.clone().add(new Vec3(0, 0.7, 0)),
-                startOrbit.clone().add(new Vec3(0, 0.58, 0)),
-                startOrbit,
-                u
-            );
-        } else if (t < 0.44) {
-            const u = (t - 0.17) / 0.27;
-            const angle = u * Math.PI * 2;
-            const radial = towardAttacker
-                .clone()
-                .mulScalar(Math.cos(angle) * 0.76)
-                .add(new Vec3(-towardAttacker.z, 0, towardAttacker.x).mulScalar(Math.sin(angle) * 0.76));
-            position = targetRoot
-                .clone()
-                .add(radial)
-                .add(new Vec3(0, 1.68 + Math.sin(angle * 2) * 0.22, 0));
-        } else if (t < 0.635) {
-            const u = smooth((t - 0.44) / 0.195);
-            position = cubic(orbitEnd, orbitMid, fromHand.clone().add(new Vec3(0, 0.36, 0)), fromHand, u);
-        } else if (t < 0.83) {
-            const u = smooth((t - 0.635) / 0.195);
-            position = cubic(
-                fromHand,
-                fromHand.clone().add(new Vec3(0.9, 0.38, 0)),
-                strikePoint.clone().add(new Vec3(-0.35, 0.32, 0)),
-                strikePoint,
-                u
-            );
-        } else {
-            const u = smooth((t - 0.83) / 0.17);
-            position = cubic(
-                strikePoint,
-                strikePoint.clone().add(new Vec3(0, 0.7, 0)),
-                toHand.clone().add(new Vec3(0, 0.32, 0)),
-                fromHand,
-                u
-            );
-        }
-
-        const spin = t * 3600;
-        this.rotation.setFromEulerAngles(78 + Math.sin(t * 16) * 12, spin, Math.sin(t * 11) * 18);
-        this.entity.setPosition(position);
+        const frame = Math.max(0, Math.min(1, progress)) * TOSS.frames;
+        const hand = this.hand(this.attacker);
+        if (frame < TOSS.tossRelease || !this.releaseHand) this.releaseHand = hand.clone();
+        if (frame < TOSS.throwRelease || !this.throwHand) this.throwHand = hand.clone();
+        const victim = this.target.root.getPosition();
+        const attacker = this.attacker.root.getPosition();
+        const forward = new Vec3(victim.x - attacker.x, 0, victim.z - attacker.z).normalize();
+        const v = (p: Vec3): [number, number, number] => [p.x, p.y, p.z];
+        const { at, spin } = tossDisc(frame, v(hand), v(this.releaseHand), v(this.throwHand), v(victim), [
+            forward.x,
+            0,
+            forward.z
+        ]);
+        this.entity.setPosition(at[0], at[1], at[2]);
+        const heading = (Math.atan2(forward.x, forward.z) * 180) / Math.PI;
+        if (spin === 'flip') {
+            // End over end through the toss: three turns about the walker's right-hand axis.
+            const u = (frame - TOSS.tossRelease) / (TOSS.tossCatch - TOSS.tossRelease);
+            this.rotation.setFromEulerAngles(u * 1080, heading, 0);
+        } else if (spin === 'flat') {
+            // Thrown: spinning fast and flat, banked into its loop.
+            this.rotation.setFromEulerAngles(12 * Math.sin(frame * 0.35), frame * 47, 16 * Math.cos(frame * 0.2));
+        } else this.rotation.setFromEulerAngles(78, heading, 0);
         this.entity.setRotation(this.rotation);
     }
 

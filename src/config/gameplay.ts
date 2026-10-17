@@ -33,3 +33,23 @@ export const BARRIER_TOP_Y = 7;
  * these spaces have no source polygon and the trigger only applies where no source polygon contains the player.
  */
 export const LABEL_ONLY_TRIGGER_RADIUS = 4;
+
+/**
+ * South gate turnstiles and the waiting plaza outside them (owner brief 2026-10-17). The opening is the real gap in
+ * the FF-01 south-lobby glazing (x −10.25…−6.25 at z ≈ 57.12); the plaza is the forecourt outside, fenced in.
+ */
+export const SOUTH_GATE = {
+    x0: -10.25,
+    x1: -6.25,
+    /** The turnstile line (the glazing line). Inside is z < line. */
+    line: 57.12,
+    /** Cabinets across the opening (centres); lanes run between neighbours. */
+    cabinets: [-10.15, -9.2, -8.25, -7.3, -6.35],
+    /** How close (m) a player must come for the flaps to react. */
+    approach: 1.8,
+    /** Crossing this far past the line counts as through. */
+    through: 0.45,
+    plaza: { x0: -29.5, x1: 12.5, z0: 57.3, z1: 62.6 },
+    /** Where a new player waits, facing the gate. */
+    spawn: { x: -8.25, y: 0.92, z: 61 }
+} as const;

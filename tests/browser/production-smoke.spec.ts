@@ -29,10 +29,23 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         }
     });
 
+    let releaseHomepageAudio!: () => void;
+    const homepageAudioGate = new Promise<void>((resolve) => {
+        releaseHomepageAudio = resolve;
+    });
+    await page.route('**/assets/audio/homepage-theme.mp3', async (route) => {
+        await homepageAudioGate;
+        await route.continue();
+    });
     await page.goto('/');
+    await expect(page.locator('#boot-loader')).toBeVisible();
     await expect(page).toHaveTitle('Moonshot Frisbee Games');
+    await expect(page.locator('#stage-label')).toContainText('音效');
+    await expect(page.locator('#enter-button')).toBeDisabled();
+    releaseHomepageAudio();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
-    await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(5);
+    await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(6);
+    await expect(page.locator('#boot-loader')).toBeHidden();
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
     await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);

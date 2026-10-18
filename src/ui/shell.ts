@@ -20,13 +20,15 @@ import '@fontsource/noto-sans-sc/chinese-simplified-900.css';
 import './theme.css';
 import './esports.css';
 
-export type LoadStage = 'physics' | 'campus' | 'structure' | 'dressing' | 'characters';
+export type LoadStage = 'physics' | 'campus' | 'structure' | 'dressing' | 'characters' | 'audio';
+export type StageProgress = { completed: number; total: number };
 const STAGES: [LoadStage, string][] = [
     ['physics', '物理引擎'],
     ['campus', '校园模型与房间数据'],
     ['structure', '墙体、门洞与碰撞'],
     ['dressing', '家具、灯光与地图'],
-    ['characters', '骨骼角色与动作']
+    ['characters', '骨骼角色与动作'],
+    ['audio', '音效与背景音乐']
 ];
 
 export type AccountView = AccountStats;
@@ -392,6 +394,26 @@ const replay = (element: HTMLElement, className: string) => {
 export const createUi = () => {
     document.body.insertAdjacentHTML('beforeend', MARKUP);
     const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
+    const updateBootLoader = (progress: number, label: string) => {
+        const loader = document.getElementById('boot-loader');
+        const bar = document.getElementById('boot-progress');
+        const fill = document.getElementById('boot-progress-fill');
+        const percent = document.getElementById('boot-percent');
+        if (!loader || !bar || !fill || !percent) return;
+        const value = Math.max(0, Math.min(100, Math.round(progress)));
+        loader.dataset.determinate = 'true';
+        bar.setAttribute('aria-valuenow', String(value));
+        fill.style.width = `${value}%`;
+        percent.textContent = `${value}% · ${label}`;
+        const status = document.getElementById('boot-label');
+        if (status) status.textContent = label;
+    };
+    const hideBootLoader = () => {
+        const loader = document.getElementById('boot-loader');
+        if (!loader) return;
+        loader.classList.add('is-hidden');
+        window.setTimeout(() => loader.remove(), 400);
+    };
     // The execute button is a real hold: pressing starts it, releasing (or sliding off) ends it.
     let executeHold: { begin: () => void; end: () => void } | null = null;
     let introTyping = 0;
@@ -664,10 +686,16 @@ export const createUi = () => {
     };
 
     return {
-        stage: (stage: LoadStage, state: 'active' | 'done') => {
+        stage: (stage: LoadStage, state: 'active' | 'done', progress?: StageProgress) => {
             const item = stagesList.querySelector<HTMLElement>(`[data-stage="${stage}"]`);
             if (item) item.dataset.state = state;
-            if (state === 'active') $('#stage-label').textContent = `正在加载${item?.textContent ?? ''}…`;
+            const index = STAGES.findIndex(([key]) => key === stage);
+            const fraction = state === 'done' ? 1 : progress?.total ? progress.completed / progress.total : 0.08;
+            const label = progress?.total
+                ? `正在加载${item?.textContent ?? ''} ${progress.completed}/${progress.total}`
+                : `正在加载${item?.textContent ?? ''}…`;
+            updateBootLoader(((index + fraction) / STAGES.length) * 100, label);
+            if (state === 'active') $('#stage-label').textContent = label;
         },
         ready: (actions: Actions, settings: Settings) => {
             makeAvatarUrl = actions.avatarUrl;
@@ -680,6 +708,8 @@ export const createUi = () => {
             // All segments full: they close their gaps and become one bar.
             stagesList.dataset.complete = 'true';
             $('#stage-label').textContent = '准备就绪';
+            updateBootLoader(100, '准备就绪');
+            hideBootLoader();
             enterButton.disabled = false;
             $('#enter-label').textContent = '进入校园';
             enterButton.addEventListener('click', actions.enter);
@@ -850,6 +880,7 @@ export const createUi = () => {
             $('#resume-button').focus();
         },
         showError: (message: string) => {
+            hideBootLoader();
             const error = $<HTMLParagraphElement>('#load-error');
             error.textContent = `${message}。请检查网络或本地资源是否完整，然后重新加载。`;
             error.hidden = false;

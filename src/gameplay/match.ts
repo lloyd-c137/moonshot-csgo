@@ -2789,6 +2789,7 @@ export const createMatch = ({
         /** Call from a user gesture (a click or key) so the browser lets audio start. */
         unlockAudio: () => sound.unlock(),
         homepageMusic: (active: boolean) => sound.homepageMusic(active),
+        preloadAudio: (onProgress?: (completed: number, total: number) => void) => sound.preload(onProgress),
         /** Joins again with the current account (after signing in or out from the pause screen). */
         rejoin(name?: string) {
             if (name !== undefined) nickname = name;

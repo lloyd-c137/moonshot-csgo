@@ -579,7 +579,14 @@ const boot = async () => {
         true
     );
     rigidbodySystem.timeScale = 0;
-    await match.prewarm();
+    shell.stage('audio', 'active');
+    await Promise.all([
+        match.prewarm(),
+        match.preloadAudio((completed, total) =>
+            shell.stage('audio', 'active', { completed, total })
+        )
+    ]);
+    shell.stage('audio', 'done');
     shell.ready(
         {
             enter,

@@ -26,6 +26,7 @@ export const createSound = () => {
     let mix = { master: 0.8, combat: 0.8, confirmation: 1 };
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
+    const pendingClipLoads = new Map<string, Promise<AudioBuffer | null>>();
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
     const testClips = new Map<TestSoundCue, { buffer: AudioBuffer; gain: number; start: number; end: number }>();
     const testVersions = new Map<TestSoundCue, number>();
@@ -36,17 +37,27 @@ export const createSound = () => {
         voices.track(activeBus, source, cleanup, activePriority);
     };
 
-    const loadClip = async (audio: AudioContext, name: string, url: string) => {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Audio ${name}: HTTP ${response.status}`);
-            const buffer = await audio.decodeAudioData(await response.arrayBuffer());
-            clips.set(name, buffer);
-            return buffer;
-        } catch {
-            /* clip unavailable: the synthesised fallback plays instead */
-            return null;
-        }
+    const loadClip = (audio: AudioContext, name: string, url: string) => {
+        const cached = clips.get(name);
+        if (cached) return Promise.resolve(cached);
+        const pending = pendingClipLoads.get(name);
+        if (pending) return pending;
+        const loading = (async () => {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Audio ${name}: HTTP ${response.status}`);
+                const buffer = await audio.decodeAudioData(await response.arrayBuffer());
+                clips.set(name, buffer);
+                return buffer;
+            } catch {
+                /* clip unavailable: the synthesised fallback plays instead */
+                return null;
+            } finally {
+                pendingClipLoads.delete(name);
+            }
+        })();
+        pendingClipLoads.set(name, loading);
+        return loading;
     };
     const playClip = (audio: AudioContext, name: string, volume: number, start = 0, end = Infinity, at?: V3) => {
         const buffer = clips.get(name);
@@ -155,6 +166,18 @@ export const createSound = () => {
     const setHomepageMusic = createLoopingMusic('homepage-theme', HOMEPAGE_THEME_AUDIO);
     const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
     const setFinalShowdownMusic = createLoopingMusic('final-showdown-theme', FINAL_SHOWDOWN_THEME_AUDIO);
+    const requiredAudio = [
+        { name: 'homepage-theme', url: HOMEPAGE_THEME_AUDIO.url },
+        { name: 'opening-theme', url: OPENING_THEME_AUDIO.url },
+        { name: 'blackout-theme', url: BLACKOUT_THEME_AUDIO.url },
+        { name: 'final-showdown-theme', url: FINAL_SHOWDOWN_THEME_AUDIO.url },
+        { name: 'power-down', url: POWER_DOWN_AUDIO.url },
+        ...Object.entries(COMBAT_AUDIO).map(([name, clip]) => ({ name, url: clip.url }))
+    ];
+    const optionalAudio = [
+        { name: 'defeat', url: '/assets/audio/defeat.mp3' },
+        { name: 'legacy-kill', url: '/assets/audio/kill.mp3' }
+    ];
 
     // Browsers only let audio start (or restart after the tab was hidden, the device changed or Safari
     // "interrupted" it) inside a user gesture. Resume on every gesture and when the page comes back, so sounds
@@ -318,6 +341,21 @@ export const createSound = () => {
             buses.confirmation.gain.setTargetAtTime(mix.confirmation, now, 0.04);
         },
         voiceCount: () => voices.count(),
+        async preload(onProgress?: (completed: number, total: number) => void) {
+            const audio = ensure();
+            if (!audio) throw new Error('浏览器不支持 Web Audio，无法准备游戏音效');
+            const all = [...requiredAudio, ...optionalAudio];
+            let completed = 0;
+            const failed: string[] = [];
+            await Promise.all(
+                all.map(async ({ name, url }) => {
+                    const buffer = await loadClip(audio, name, url);
+                    if (!buffer && requiredAudio.some((clip) => clip.name === name)) failed.push(name);
+                    onProgress?.(++completed, all.length);
+                })
+            );
+            if (failed.length) throw new Error(`必需音频加载失败：${failed.join('、')}`);
+        },
         /** Loop the owner-selected theme only while campus lighting is in its blackout state. */
         blackoutMusic: setBlackoutMusic,
         /** Loop the owner-selected theme on the title screen. */

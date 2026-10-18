@@ -35,6 +35,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(5);
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
+    await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);
     expect(assets['/ammo/ammo.wasm.wasm']).toBe(200);
     for (const name of ['revive-medkit.glb', 'eye-monitor.glb', 'stealth-crystal.glb', 'creation-gear.glb']) {
         expect(assets[`/assets/pickups/${name}`]).toBe(200);
@@ -42,6 +43,15 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     for (const name of ['world.json', 'ceiling-mask.png', 'minimap.png']) {
         expect(assets[`/assets/campus/derived/${name}`]).toBe(200);
     }
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                (window as unknown as { __decodedCombatAudio: number[] }).__decodedCombatAudio.some(
+                    (duration) => duration > 171 && duration < 173
+                )
+            )
+        )
+        .toBe(true);
 
     await page.getByRole('button', { name: '进入校园' }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');

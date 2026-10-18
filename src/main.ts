@@ -265,6 +265,8 @@ const boot = async () => {
         mirrorLayer: dressing.mirrorLayer,
         stadiumSeats: stadium.seats
     });
+    // The title theme is queued on load; browsers that block autoplay resume it on the first user gesture.
+    match.homepageMusic(true);
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {
         void auth
@@ -483,6 +485,7 @@ const boot = async () => {
     let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
+            match.homepageMusic(false);
             if (!hasEntered) {
                 if (gateState === 'lobby') {
                     // Wait in the vestibule; the multiplayer room tracks lobby poses and chat before round entry.

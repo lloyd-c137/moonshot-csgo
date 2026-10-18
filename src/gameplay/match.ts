@@ -2788,6 +2788,7 @@ export const createMatch = ({
         },
         /** Call from a user gesture (a click or key) so the browser lets audio start. */
         unlockAudio: () => sound.unlock(),
+        homepageMusic: (active: boolean) => sound.homepageMusic(active),
         /** Joins again with the current account (after signing in or out from the pause screen). */
         rejoin(name?: string) {
             if (name !== undefined) nickname = name;

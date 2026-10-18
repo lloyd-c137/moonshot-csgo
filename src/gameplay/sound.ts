@@ -6,6 +6,7 @@
 import { BLACKOUT_THEME_AUDIO } from '../config/blackoutThemeAudio';
 import { COMBAT_AUDIO } from '../config/combatAudio';
 import { FINAL_SHOWDOWN_THEME_AUDIO } from '../config/finalShowdownThemeAudio';
+import { HOMEPAGE_THEME_AUDIO } from '../config/homepageThemeAudio';
 import { OPENING_THEME_AUDIO } from '../config/openingThemeAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
@@ -151,6 +152,7 @@ export const createSound = () => {
         };
     };
     const setBlackoutMusic = createLoopingMusic('blackout-theme', BLACKOUT_THEME_AUDIO);
+    const setHomepageMusic = createLoopingMusic('homepage-theme', HOMEPAGE_THEME_AUDIO);
     const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
     const setFinalShowdownMusic = createLoopingMusic('final-showdown-theme', FINAL_SHOWDOWN_THEME_AUDIO);
 
@@ -318,6 +320,8 @@ export const createSound = () => {
         voiceCount: () => voices.count(),
         /** Loop the owner-selected theme only while campus lighting is in its blackout state. */
         blackoutMusic: setBlackoutMusic,
+        /** Loop the owner-selected theme on the title screen. */
+        homepageMusic: setHomepageMusic,
         /** Loop the opening theme during active play, handing off to the blackout theme when lights go out. */
         openingMusic: setOpeningMusic,
         /** Loop the owner-selected theme only during the final-arena showdown. */

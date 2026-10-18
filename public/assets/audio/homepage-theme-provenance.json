@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-18",
+    "basis": "Owner confirmed public release authorization on 2026-10-18. Original creator/license was not independently identified."
+  },
+  "sourceFile": "VALORANT,bbno$ - in my zone.mp3",
+  "runtimeFile": "homepage-theme.mp3",
+  "durationSeconds": 172.094694,
+  "sizeBytes": 6983903,
+  "sha256": "59844eb8572b2dc8565ced152d2f464b0cdec861ee4de17bb4169a31eab34abe",
+  "event": "title screen background music; loops until the player enters campus, then fades out"
+}

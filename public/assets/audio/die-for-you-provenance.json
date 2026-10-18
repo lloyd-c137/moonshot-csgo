@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-18",
+    "basis": "Owner confirmed public game-release authorization on 2026-10-18. Original creator/license was not independently identified."
+  },
+  "sourceFile": "VALORANT,Grabbitz - Die For You.mp3",
+  "runtimeFile": "die-for-you.mp3",
+  "durationSecondsEstimated": 212.976327,
+  "sizeBytes": 8587412,
+  "sha256": "df7de009f2ede280c62a1c9a6ca58bc876a5ae862322e51f6dc6b8b1d2114ad9",
+  "event": "second track in the looping active-match playlist; fades over two seconds"
+}

@@ -5,6 +5,12 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.22.0',
+        date: '2026.10.18',
+        title: '局内音乐更新',
+        notes: ['普通对局背景音乐按顺序播放《Ticking Away》与《Die For You》，并在停电或最终决战阶段平滑切换到对应主题。']
+    },
+    {
         version: 'v0.21.0',
         date: '2026.10.18',
         title: '莲花球场看台可通行',

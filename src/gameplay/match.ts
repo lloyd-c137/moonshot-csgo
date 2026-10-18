@@ -2199,7 +2199,7 @@ export const createMatch = ({
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
         const finalNow =
             (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
-        sound.openingMusic(
+        sound.matchPlaylistMusic(
             started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !finalNow
         );
         sound.blackoutMusic(dark && !finalNow);

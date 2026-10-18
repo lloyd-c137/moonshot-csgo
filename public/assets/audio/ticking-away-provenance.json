@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-18",
+    "basis": "Owner confirmed public game-release authorization on 2026-10-18. Original creator/license was not independently identified."
+  },
+  "sourceFile": "VALORANT,Grabbitz,bbno$ - Ticking Away.mp3",
+  "runtimeFile": "ticking-away.mp3",
+  "durationSecondsEstimated": 205.322449,
+  "sizeBytes": 8297101,
+  "sha256": "033329dee0bfe0575ebafd330da2c9d81c9d0c6e2437024177bfc907320b0be4",
+  "event": "first track in the looping active-match playlist; fades over two seconds"
+}

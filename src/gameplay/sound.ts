@@ -7,6 +7,7 @@ import { BLACKOUT_THEME_AUDIO } from '../config/blackoutThemeAudio';
 import { COMBAT_AUDIO } from '../config/combatAudio';
 import { FINAL_SHOWDOWN_THEME_AUDIO } from '../config/finalShowdownThemeAudio';
 import { HOMEPAGE_THEME_AUDIO } from '../config/homepageThemeAudio';
+import { MATCH_PLAYLIST_AUDIO } from '../config/matchPlaylistAudio';
 import { OPENING_THEME_AUDIO } from '../config/openingThemeAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
 
@@ -162,13 +163,59 @@ export const createSound = () => {
             });
         };
     };
+    const createMatchPlaylist = () => {
+        let wanted = false;
+        let generation = 0;
+        let voice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+        const play = async (audio: AudioContext, index: number, version: number) => {
+            const track = MATCH_PLAYLIST_AUDIO[index];
+            const buffer = clips.get(track.name) ?? (await loadClip(audio, track.name, track.url));
+            if (!buffer || !wanted || generation !== version || ctx !== audio || !buses) return;
+            const source = audio.createBufferSource();
+            const gain = audio.createGain();
+            source.buffer = buffer;
+            gain.gain.setValueAtTime(0, audio.currentTime);
+            source.connect(gain).connect(buses.environment);
+            const current = { source, gain };
+            voice = current;
+            source.onended = () => {
+                source.onended = null;
+                source.disconnect();
+                gain.disconnect();
+                if (voice === current) voice = null;
+                if (wanted && generation === version) play(audio, (index + 1) % MATCH_PLAYLIST_AUDIO.length, version);
+            };
+            source.start();
+            gain.gain.linearRampToValueAtTime(track.gain, audio.currentTime + track.fadeSeconds);
+        };
+        return (active: boolean) => {
+            if (active === wanted) return;
+            wanted = active;
+            const version = ++generation;
+            const audio = ensure();
+            if (!audio || !buses) return;
+            if (!active) {
+                const current = voice;
+                voice = null;
+                if (!current) return;
+                const fade = MATCH_PLAYLIST_AUDIO[0].fadeSeconds;
+                current.gain.gain.cancelScheduledValues(audio.currentTime);
+                current.gain.gain.setValueAtTime(current.gain.gain.value, audio.currentTime);
+                current.gain.gain.linearRampToValueAtTime(0, audio.currentTime + fade);
+                current.source.stop(audio.currentTime + fade + 0.05);
+                return;
+            }
+            play(audio, 0, version);
+        };
+    };
     const setBlackoutMusic = createLoopingMusic('blackout-theme', BLACKOUT_THEME_AUDIO);
     const setHomepageMusic = createLoopingMusic('homepage-theme', HOMEPAGE_THEME_AUDIO);
     const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
+    const setMatchPlaylist = createMatchPlaylist();
     const setFinalShowdownMusic = createLoopingMusic('final-showdown-theme', FINAL_SHOWDOWN_THEME_AUDIO);
     const requiredAudio = [
         { name: 'homepage-theme', url: HOMEPAGE_THEME_AUDIO.url },
-        { name: 'opening-theme', url: OPENING_THEME_AUDIO.url },
+        ...MATCH_PLAYLIST_AUDIO.map(({ name, url }) => ({ name, url })),
         { name: 'blackout-theme', url: BLACKOUT_THEME_AUDIO.url },
         { name: 'final-showdown-theme', url: FINAL_SHOWDOWN_THEME_AUDIO.url },
         { name: 'power-down', url: POWER_DOWN_AUDIO.url },
@@ -360,7 +407,9 @@ export const createSound = () => {
         blackoutMusic: setBlackoutMusic,
         /** Loop the owner-selected theme on the title screen. */
         homepageMusic: setHomepageMusic,
-        /** Loop the opening theme during active play, handing off to the blackout theme when lights go out. */
+        /** Play the owner-selected in-match playlist in order, handing off to phase themes when play changes. */
+        matchPlaylistMusic: setMatchPlaylist,
+        /** Legacy opening theme retained for compatibility with existing callers. */
         openingMusic: setOpeningMusic,
         /** Loop the owner-selected theme only during the final-arena showdown. */
         finalShowdownMusic: setFinalShowdownMusic,

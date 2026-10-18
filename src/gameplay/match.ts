@@ -124,15 +124,16 @@ const globalExecution = (finisher: GlobalFinisher): Execution => ({
 });
 
 
-type SkillKind = 'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'coach';
-const SKILL_KINDS = ['revive', 'frc', 'eye', 'stealth', 'creation', 'coach'] as const;
+type SkillKind = 'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'flashlight' | 'coach';
+const SKILL_KINDS = ['revive', 'frc', 'eye', 'stealth', 'creation', 'flashlight', 'coach'] as const;
 /** How each skill looks and reads when someone gets it. */
 const SKILL_META: Record<SkillKind, { name: string; detail: string; colour: string; rgb: [number, number, number]; icon: EventIcon; has: (p: PlayerSummary) => boolean }> = {
     revive: { name: '复活甲', detail: '被淘汰时满血复活一次', colour: '#3ee69c', rgb: [0.24, 0.9, 0.61], icon: 'revive', has: (p) => p.hasReviveArmor === true },
     frc: { name: 'FRC 飞盘', detail: 'Enter 切换红色科技盘', colour: '#ff4d5e', rgb: [1, 0.3, 0.37], icon: 'frc', has: (p) => p.hasFrc === true },
     eye: { name: '监控室之眼', detail: '全场玩家位置已标记', colour: '#2ee6d6', rgb: [0.18, 0.9, 0.84], icon: 'eye', has: (p) => p.hasEye === true },
-    stealth: { name: '静止之力', detail: 'Enter 发动 · 隐身 3 秒', colour: '#a070ff', rgb: [0.63, 0.44, 1], icon: 'stealth', has: (p) => p.hasStealth === true },
+    stealth: { name: '请假条', detail: 'Enter 发动 · 隐身 3 秒', colour: '#55c9ff', rgb: [0.25, 0.72, 1], icon: 'stealth', has: (p) => p.hasStealth === true },
     creation: { name: '创造之力', detail: '每 30 秒自动补充一张飞盘', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'creation', has: (p) => p.hasCreation === true },
+    flashlight: { name: '手电筒', detail: '照亮视线前方区域', colour: '#ffe19a', rgb: [1, 0.86, 0.55], icon: 'flashlight', has: (p) => p.hasFlashlight === true },
     coach: { name: '飞盘天赋', detail: '携带上限提升至 5', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'coach', has: (p) => p.coachGift === true }
 };
 export const createMatch = ({
@@ -178,6 +179,7 @@ export const createMatch = ({
     let aimReadyPlayed = false;
     /** Normal view settings (the scope scales these), set from the player's settings. */
     let viewFov = camera.camera!.fov;
+    let stealthViewBlend = 0;
     let viewSens = 0.08;
     let walkSpeed: number | null = null;
     /** When the current weapon inspect started (performance.now ms), or null. */
@@ -190,6 +192,8 @@ export const createMatch = ({
     let throwCounter = 0;
     const localFrcThrows = new Set<number>();
     let started = false;
+    /** A welcome snapshot seeks audio and visuals to authoritative room time instead of replaying opening cues. */
+    let welcomeSyncPending = false;
     let playerPhase: 'lobby' | 'playing' = 'playing';
     let worldItems: WorldItem[] = ITEM_SPAWNS.map((spawn) => ({
         id: spawn.id,
@@ -201,7 +205,7 @@ export const createMatch = ({
         returnAt: null,
         cooldownUntil: 0
     }));
-    const localAbilities = { revive: false, reviveUsed: false, reviveTaken: false, frc: false, eye: false, stealth: false, creation: false, coach: false };
+    const localAbilities = { revive: false, reviveUsed: false, reviveTaken: false, frc: false, eye: false, stealth: false, creation: false, flashlight: false, coach: false };
     let localMarkGiven = false;
     let localFrcSelected = false;
     let localFrcCooldownUntil = 0;
@@ -669,6 +673,36 @@ export const createMatch = ({
     viewmodel.enabled = false;
     viewmodel.setLocalScale(0.85, 0.85, 0.85);
     camera.addChild(viewmodel);
+    const flashlightView = new Entity('viewmodel-flashlight');
+    const flashlightBodyMaterial = new StandardMaterial();
+    flashlightBodyMaterial.diffuse = new Color(0.08, 0.1, 0.13);
+    flashlightBodyMaterial.update();
+    flashlightView.addComponent('render', { type: 'cylinder', material: flashlightBodyMaterial, castShadows: false });
+    flashlightView.setLocalScale(0.055, 0.18, 0.055);
+    flashlightView.setLocalPosition(0.24, -0.2, -0.46);
+    flashlightView.setLocalEulerAngles(90, 0, 0);
+    flashlightView.enabled = false;
+    camera.addChild(flashlightView);
+    const flashlightLens = new Entity('viewmodel-flashlight-lens');
+    const flashlightLensMaterial = new StandardMaterial();
+    flashlightLensMaterial.useLighting = false;
+    flashlightLensMaterial.diffuse = new Color(1, 0.94, 0.72);
+    flashlightLensMaterial.emissive = new Color(1, 0.86, 0.5);
+    flashlightLensMaterial.emissiveIntensity = 1.2;
+    flashlightLensMaterial.update();
+    flashlightLens.addComponent('render', { type: 'sphere', material: flashlightLensMaterial, castShadows: false });
+    flashlightLens.setLocalScale(0.08, 0.04, 0.08);
+    flashlightLens.setLocalPosition(0, 0.09, -0.02);
+    flashlightView.addChild(flashlightLens);
+    const flashlightBeam = new Entity('player-flashlight-beam');
+    flashlightBeam.addComponent('light', {
+        type: 'spot', color: new Color(1, 0.94, 0.76), intensity: 3.2, range: 17,
+        innerConeAngle: 20, outerConeAngle: 38, castShadows: false
+    });
+    flashlightBeam.setLocalPosition(0.16, -0.1, -0.48);
+    flashlightBeam.setLocalEulerAngles(90, 0, 0);
+    flashlightBeam.enabled = false;
+    camera.addChild(flashlightBeam);
     let viewmodelHue = -1;
     // A white racing stripe across the top (and a crossing one underneath) so the spin reads during an inspect.
     const stripeMesh = new Mesh(app.graphicsDevice);
@@ -1016,12 +1050,12 @@ export const createMatch = ({
         }
 
         if (localAbilities.stealth) {
-            if (roomNow() < localStealthCooldownUntil) ui.notify('静止之力仍在冷却');
+            if (roomNow() < localStealthCooldownUntil) ui.notify('请假条仍在冷却');
             else if (net.state === 'online') net.activateStealth();
             else {
                 localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
                 localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
-                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1], 'still');
+                skillActivationFeedback('请假条发动 · 隐身 3 秒', [0.25, 0.72, 1], 'still');
             }
             return true;
         }
@@ -1098,6 +1132,7 @@ export const createMatch = ({
         welcome: (me, players, extra) => {
             matchClockOffset = Math.max(0, realRoomNow() - extra.matchTime);
             matchPausedAt = null;
+            welcomeSyncPending = true;
             globalFinisher = null;
             executionView.clear();
             for (const record of extra.executions) executionView.start(record);
@@ -1113,7 +1148,8 @@ export const createMatch = ({
             Object.assign(localAbilities, {
                 revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
                 reviveTaken: me.reviveTaken === true, reviveUsed: me.reviveTaken === true,
-                stealth: me.hasStealth === true, creation: me.hasCreation === true, coach: me.coachGift === true
+                stealth: me.hasStealth === true, creation: me.hasCreation === true,
+                flashlight: me.hasFlashlight === true, coach: me.coachGift === true
             });
             localAmmoCapacity = me.ammoCapacity ?? AMMO.max;
             localFrcSelected = me.frcSelected === true;
@@ -1137,6 +1173,14 @@ export const createMatch = ({
                 restroomMirrors.setAvatar(extra.account.avatarId, extra.account.avatarVersion);
             }
             roundState = extra.round;
+            wasPowerOut = powerOut(extra.matchTime, extra.power);
+            wasNight =
+                extra.round.phase === 'playing' &&
+                extra.matchTime >= extra.round.endsAt - ROUND.blackoutSecondsLeft * 1000;
+            dark = wasPowerOut || wasNight;
+            finalShown =
+                extra.round.phase === 'playing' &&
+                extra.matchTime >= extra.round.endsAt - ROUND.finalSecondsLeft * 1000;
             ammo = extra.ammo;
             ui.ammo(ammo, localAmmoCapacity);
             ground.set(extra.discs);
@@ -1147,6 +1191,7 @@ export const createMatch = ({
                 if (each.id !== me.id) {
                     avatars.add(each.id, each.name, each.colour, each.avatarId, each.avatarVersion);
                     avatars.setReviveArmor(each.id, each.hasReviveArmor === true);
+                    avatars.setFlashlight(each.id, each.hasFlashlight === true);
                 }
             }
             const ownSummary = players.find((each) => each.id === me.id);
@@ -1160,6 +1205,7 @@ export const createMatch = ({
             roster.set(summary.id, summary);
             avatars.add(summary.id, summary.name, summary.colour, summary.avatarId, summary.avatarVersion);
             avatars.setReviveArmor(summary.id, summary.hasReviveArmor === true);
+            avatars.setFlashlight(summary.id, summary.hasFlashlight === true);
             refreshCount();
             ui.notify(`${summary.name} 进入了校园`);
             sound.join();
@@ -1199,6 +1245,7 @@ export const createMatch = ({
             }
             roster.set(id, next);
             avatars.setReviveArmor(id, next.hasReviveArmor === true);
+            avatars.setFlashlight(id, next.hasFlashlight === true);
             if (id === selfId()) {
                 const wasFrcSelected = localFrcSelected;
                 const previousStealthUntil = localStealthUntil;
@@ -1209,6 +1256,7 @@ export const createMatch = ({
                 localAbilities.eye = next.hasEye === true;
                 localAbilities.stealth = next.hasStealth === true;
                 localAbilities.creation = next.hasCreation === true;
+                localAbilities.flashlight = next.hasFlashlight === true;
                 localAbilities.coach = next.coachGift === true;
                 localAmmoCapacity = next.ammoCapacity ?? AMMO.max;
                 localFrcSelected = next.frcSelected === true;
@@ -1223,7 +1271,7 @@ export const createMatch = ({
                     ui.notify('已切回普通飞盘');
                 }
                 if (localStealthUntil > previousStealthUntil && localStealthUntil > roomNow())
-                    skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1], 'still');
+                    skillActivationFeedback('请假条发动 · 隐身 3 秒', [0.25, 0.72, 1], 'still');
             }
             refreshBoard();
         },
@@ -1766,7 +1814,7 @@ export const createMatch = ({
         ui.charge(null);
     };
     const activeLocalSkill = (): ItemKind | null => {
-        for (const kind of ['revive', 'frc', 'eye', 'stealth', 'creation'] as const)
+        for (const kind of ['revive', 'frc', 'eye', 'stealth', 'creation', 'flashlight'] as const)
             if (localAbilities[kind]) return kind;
         return null;
     };
@@ -1845,6 +1893,7 @@ export const createMatch = ({
         if (item.kind === 'eye' && localAbilities.eye) return;
         if (item.kind === 'stealth' && localAbilities.stealth) return;
         if (item.kind === 'creation' && localAbilities.creation) return;
+        if (item.kind === 'flashlight' && localAbilities.flashlight) return;
         dropLocalSkill();
         localAbilities[item.kind] = true;
         if (item.kind === 'revive') localAbilities.reviveTaken = true;
@@ -2141,6 +2190,8 @@ export const createMatch = ({
     const markPoint = new Vec3(),
         markScreen = new Vec3();
     const animateFeel = (deltaTime: number, now: number) => {
+        flashlightView.enabled = localAbilities.flashlight && alive && !spectating;
+        flashlightBeam.enabled = localAbilities.flashlight && alive && !spectating && !executionFrozen && !globalFinisher;
         if (executionView.hasActor(selfId())) {
             viewmodel.enabled = false;
             for (const ghost of ghosts) ghost.entity.enabled = false;
@@ -2162,7 +2213,11 @@ export const createMatch = ({
             aimReadyPlayed = true;
             sound.scopeReady();
         }
-        cam.fov = viewFov * fovFactor(aim) + punch * 2.5 * cameraImpulses.scale;
+        const stealthActive = started && alive && !spectating && localStealthUntil > roomNow();
+        const stealthTarget = stealthActive && feelMotion !== 'off' ? 1 : 0;
+        stealthViewBlend += (stealthTarget - stealthViewBlend) * (1 - Math.exp(-deltaTime * 6));
+        cam.fov =
+            viewFov * fovFactor(aim) + punch * 2.5 * cameraImpulses.scale + stealthViewBlend * 5.5 * (1 - aim);
         const script = controller() as unknown as { lookSens?: number; speedGround?: number } | null;
         if (script) {
             script.lookSens = viewSens * sensitivityFactor(viewFov, aim);
@@ -2390,7 +2445,20 @@ export const createMatch = ({
         // Event cutscenes: everyone sees the moment the lights go out / the breaker is pulled, frozen meanwhile.
         const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower, currentMomentCutscene ?? labMomentCutscene) : null;
         if (cut && !cutsceneRun) {
-            cutsceneRun = { kind: cut.kind, at: cut.at, moment: cut.moment ?? null, skipped: false, lastPerf: performance.now(), beats: new Set() };
+            const elapsed = (time - cut.at) / 1000;
+            const beats = new Set<string>();
+            // Seeking a welcome snapshot must not replay one-shot cues that happened before this client joined.
+            if (welcomeSyncPending) {
+                const cueTimes = cut.kind === 'breaker'
+                    ? [['spark1', 0.05], ['spark2', 0.45], ['spark3', 0.9]] as const
+                    : cut.kind === 'blackout'
+                      ? [['torch', 1.75]] as const
+                      : cut.kind === 'last-two'
+                        ? [['duel', 0.25]] as const
+                        : [];
+                for (const [name, at] of cueTimes) if (elapsed >= at) beats.add(name);
+            }
+            cutsceneRun = { kind: cut.kind, at: cut.at, moment: cut.moment ?? null, skipped: false, lastPerf: performance.now(), beats };
             cutsceneView.start();
             ui.cutscene(CUTSCENE_CAPTIONS[cut.kind]);
             inputPaused = true;
@@ -2512,8 +2580,10 @@ export const createMatch = ({
             ((net.state === 'online' || audioLab) && roundState?.phase === 'playing'
                 ? roundState.endsAt - (ROUND.finalSecondsLeft + CEREMONY.seconds) * 1000
                 : null);
+        // `endsAt` and ceremonyAt use Match Time. Using the real server clock here lets earlier pauses
+        // consume the ceremony before the authoritative final-minute boundary is reached.
         const ceremonyT = ceremonyAt === null ? -1 : (roomNow() - ceremonyAt) / 1000;
-        if (!ceremonyRun && started && ceremonyAt !== null && ceremonyT >= 0 && ceremonyT < CEREMONY.seconds - 1) {
+        if (!ceremonyRun && started && ceremonyAt !== null && ceremonyT >= 0 && ceremonyT < CEREMONY.seconds) {
             const entrants: Entrant[] =
                 labCeremony?.entrants ??
                 (audioLab && roster.size === 0
@@ -2538,7 +2608,10 @@ export const createMatch = ({
                 ceremony.start(plan, (id) => avatars.headImage(id), film);
                 ceremonyCardId = null;
                 ui.ceremony.card(null);
-                sound.ceremonyDark();
+                // A player joining mid-ceremony picks it up where it is, without replaying the opening sound.
+                const seekingWelcome = welcomeSyncPending && ceremonyT > 0.15;
+                if (seekingWelcome) ceremony.update(ceremonyT, 0);
+                if (!seekingWelcome) sound.ceremonyDark();
                 if (film) {
                     ui.ceremony.show(true);
                     inputPaused = true;
@@ -2645,11 +2718,33 @@ export const createMatch = ({
             (((net.state === 'online' || audioLab) && finalAt !== null && roomNow() >= finalAt) ||
                 (audioLab && labFinalOverride));
         const showdown = finalNow || !!ceremonyRun;
+        const matchStartAt =
+            roundState?.phase === 'playing' ? roundState.endsAt - ROUND.roundSeconds * 1000 : time;
+        const blackoutStartAt = outage
+            ? activePower.pulledAt ?? time
+            : nightActive && lightsOut !== null
+              ? lightsOut
+              : time;
+        const finalMusicStartAt = ceremonyRun ? ceremonyAt ?? finalAt ?? time : finalAt ?? time;
+        const audioSeek = welcomeSyncPending && started;
         sound.matchPlaylistMusic(
-            started && (!audioLab || roundState?.phase === 'playing') && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !showdown
+            started &&
+                (!audioLab || roundState?.phase === 'playing') &&
+                (net.state !== 'online' || roundState?.phase === 'playing') &&
+                !dark &&
+                !showdown,
+            Math.max(0, (time - matchStartAt) / 1000),
+            audioSeek
         );
-        sound.blackoutMusic(dark && !showdown);
-        sound.finalShowdownMusic(started && showdown);
+        sound.blackoutMusic(dark && !showdown, Math.max(0, (time - blackoutStartAt) / 1000), audioSeek);
+        sound.finalShowdownMusic(started && showdown, Math.max(0, (time - finalMusicStartAt) / 1000), audioSeek);
+        const settlementStarted = started && (roundState?.phase === 'ended' || labMvp !== null);
+        const settlementAt =
+            roundState?.phase === 'ended'
+                ? roundState.nextAt - ROUND.intermissionSeconds * 1000
+                : (labMvp?.at ?? roomNow());
+        sound.settlementMusic(settlementStarted, Math.max(0, (roomNow() - settlementAt) / 1000), audioSeek);
+        if (audioSeek) welcomeSyncPending = false;
         if (finalNow !== finalShown) {
             finalShown = finalNow;
             floodlightFrom = floodlights[0].light!.intensity;
@@ -2768,11 +2863,19 @@ export const createMatch = ({
         if (localAbilities.stealth) {
             const remaining = Math.max(0, localStealthCooldownUntil - clockNow);
             const active = localStealthUntil > clockNow;
-            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `Enter 静止之力${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
+            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `Enter 请假条${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
             abilityProgress.push(remaining ? 1 - remaining / ITEM_RULES.stealthCooldownMs : 1);
+            const stealthRemaining = Math.max(0, localStealthUntil - clockNow);
+            ui.stealthState(
+                active && alive && !spectating ? stealthRemaining / 1000 : null,
+                stealthRemaining / ITEM_RULES.stealthDurationMs
+            );
+        } else {
+            ui.stealthState(null);
         }
         if (localAbilities.revive) abilityLabels.push('复活甲 · 可抵挡一次淘汰');
         if (localAbilities.eye) abilityLabels.push('监控室之眼 · 全场位置已标记');
+        if (localAbilities.flashlight) abilityLabels.push('手电筒 · 照亮视线前方');
         if (localAbilities.creation) {
             const remaining = Math.max(0, creationNextAt - clockNow);
             abilityLabels.push(`创造之力 · 下次补充 ${Math.ceil(remaining / 1000)} 秒`);
@@ -2932,11 +3035,11 @@ export const createMatch = ({
                     .filter((item) => item.available)
                     .map((item) => ({
                         id: item.id,
-                        short: item.kind === 'revive' ? '甲' : item.kind === 'frc' ? 'F' : item.kind === 'eye' ? '眼' : item.kind === 'stealth' ? '隐' : '创',
+                        short: item.kind === 'revive' ? '甲' : item.kind === 'frc' ? 'F' : item.kind === 'eye' ? '眼' : item.kind === 'stealth' ? '假' : item.kind === 'creation' ? '创' : '筒',
                         name: item.name,
                         x: item.at[0],
                         z: item.at[2],
-                        colour: item.kind === 'revive' ? '#ff9f9a' : item.kind === 'frc' ? '#ff5b4d' : item.kind === 'eye' ? '#65d8e8' : item.kind === 'stealth' ? '#b49aff' : '#b8d879'
+                        colour: item.kind === 'revive' ? '#ff9f9a' : item.kind === 'frc' ? '#ff5b4d' : item.kind === 'eye' ? '#65d8e8' : item.kind === 'stealth' ? '#b49aff' : item.kind === 'creation' ? '#b8d879' : '#ffe19a'
                     }))
             ]
         };

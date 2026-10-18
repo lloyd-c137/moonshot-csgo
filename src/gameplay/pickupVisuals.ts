@@ -11,8 +11,9 @@ const PALETTE: Record<ItemKind, { glow: [number, number, number]; trim: [number,
     revive: { glow: [1, 0.18, 0.22], trim: [1, 0.76, 0.64] },
     frc: { glow: [1, 0.08, 0.04], trim: [0.24, 0.86, 1] },
     eye: { glow: [0.06, 0.78, 1], trim: [0.7, 0.96, 1] },
-    stealth: { glow: [0.68, 0.3, 1], trim: [0.94, 0.76, 1] },
-    creation: { glow: [0.24, 0.92, 0.34], trim: [0.9, 1, 0.26] }
+    stealth: { glow: [0.12, 0.58, 1], trim: [0.82, 0.96, 1] },
+    creation: { glow: [0.24, 0.92, 0.34], trim: [0.9, 1, 0.26] },
+    flashlight: { glow: [1, 0.82, 0.36], trim: [1, 0.97, 0.74] }
 };
 
 const createPart = (app: AppBase, parent: Entity, name: string, shape: Shape, colour: [number, number, number], intensity: number) => {
@@ -66,7 +67,7 @@ const createFrcDisc = (app: AppBase, root: Entity) => {
 export const createPickupVisual = (app: AppBase, kind: ItemKind, assets: PickupAssetLoader) => {
     const root = new Entity(`Pickup_${kind}`);
     const palette = PALETTE[kind];
-    const importedModel = kind === 'frc' ? null : assets.instantiate(kind);
+    const importedModel = kind === 'frc' || kind === 'stealth' || kind === 'flashlight' ? null : assets.instantiate(kind);
     if (importedModel) {
         importedModel.name = `${kind}-open-game-art-model`;
         root.addChild(importedModel);
@@ -85,9 +86,27 @@ export const createPickupVisual = (app: AppBase, kind: ItemKind, assets: PickupA
     } else if (kind === 'eye') {
         createPart(app, root, 'eye-signal-ring', place(torus(0.48, 0.012, 40, 5), { y: 0.28 }), palette.trim, 1.2);
     } else if (kind === 'stealth') {
-        createPart(app, root, 'stealth-orbit', place(torus(0.31, 0.012, 32, 5), { y: 0.4, pitch: Math.PI / 2 }), palette.trim, 1.2);
+        const page = { y: 0.38, pitch: 0.08, roll: -0.04 };
+        createPart(app, root, 'leave-pass-paper', place(box(0.42, 0.014, 0.56), page), [0.96, 0.98, 1], 0.18);
+        createPart(app, root, 'leave-pass-header', place(box(0.26, 0.006, 0.025), { ...page, y: 0.391, z: -0.2 }), [0.12, 0.55, 0.92], 0.45);
+        createPart(app, root, 'leave-pass-lines', merge([
+            place(box(0.32, 0.006, 0.009), { ...page, y: 0.391, z: -0.11 }),
+            place(box(0.32, 0.006, 0.009), { ...page, y: 0.391, z: -0.04 }),
+            place(box(0.28, 0.006, 0.009), { ...page, y: 0.391, z: 0.03 }),
+            place(box(0.32, 0.006, 0.009), { ...page, y: 0.391, z: 0.1 })
+        ]), [0.36, 0.58, 0.72], 0.18);
+        createPart(app, root, 'leave-pass-orbit', place(torus(0.38, 0.012, 36, 5), { y: 0.14 }), palette.trim, 0.9);
     } else if (kind === 'creation') {
         createPart(app, root, 'creation-energy-ring', place(torus(0.43, 0.013, 40, 5), { y: 0.14 }), palette.trim, 1.2);
+    } else if (kind === 'flashlight') {
+        // GAMEPLAY_AUTHORED: recognizable hand torch with a luminous lens, grip and bezel.
+        createPart(app, root, 'flashlight-body', merge([
+            place(cylinder(0.085, 0.42, 20, true, 0.07), { y: 0.36 }),
+            place(cylinder(0.12, 0.11, 24, true, 0.09), { y: 0.12 }),
+            place(torus(0.095, 0.014, 24, 5), { y: 0.43 })
+        ]), [0.12, 0.16, 0.2], 0.12);
+        createPart(app, root, 'flashlight-lens', place(cylinder(0.077, 0.018, 24, true, 0.077), { y: 0.42 }), palette.trim, 1.6);
+        createPart(app, root, 'flashlight-grip', place(box(0.11, 0.16, 0.1), { y: 0.28 }), [0.07, 0.09, 0.12], 0.08);
     }
 
     app.root.addChild(root);

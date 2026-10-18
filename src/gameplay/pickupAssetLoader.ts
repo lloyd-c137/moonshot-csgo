@@ -6,7 +6,6 @@ import type { ItemKind } from '../config/gameplayItems';
 const MODEL_URL: Partial<Record<ItemKind, string>> = {
     revive: '/assets/pickups/revive-medkit.glb',
     eye: '/assets/pickups/eye-monitor.glb',
-    stealth: '/assets/pickups/stealth-crystal.glb',
     creation: '/assets/pickups/creation-gear.glb'
 };
 

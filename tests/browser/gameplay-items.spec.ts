@@ -42,7 +42,7 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
     await pickup(-8.39, 23.48, 'stealth');
     await page.keyboard.press('Enter');
     await advance(page, 100);
-    await expect(page.locator('#popup')).toContainText('静止之力发动');
+    await expect(page.locator('#popup')).toContainText('请假条发动');
     await expect.poll(() => page.evaluate(() => {
         const state = window.__MOONSHOT__!.match.state();
         return Number(state.abilities?.stealthUntil) > state.roomNow!;

@@ -54,7 +54,7 @@ test('offline practice replaces the active skill, keeps Michael talent, and rend
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }));
     });
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().abilities?.ammoCapacity)).toBe(5);
-    await pickup(-35.59, 51.76, 'creation');
+    await pickup(-38.69, 51.76, 'creation');
     await expect.poll(() => page.evaluate(() => {
         const abilities = window.__MOONSHOT__!.match.state().abilities;
         return [abilities?.revive, abilities?.frc, abilities?.eye, abilities?.stealth, abilities?.creation, abilities?.coach];

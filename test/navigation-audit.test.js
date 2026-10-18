@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { PLAYER } from '../src/config/gameplay.ts';
-import { ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
+import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { pointInRoom } from '../src/world/roomIndex.ts';
 import { auditFloor, auditTopSeats, loadCampusGeometry } from '../tools/navAudit.ts';
 
@@ -68,5 +68,15 @@ test('all GAMEPLAY_AUTHORED item and NPC positions are walkable inside their nam
         const cell = audit.grid.index(spawn.at[0], spawn.at[2]);
         assert.ok(cell >= 0 && audit.floor[cell] && !audit.inflated[cell], `${spawn.id} has floor and capsule clearance`);
         assert.ok(audit.reached[cell], `${spawn.id} is reachable from the campus spawn`);
+    }
+
+    for (const item of ITEM_SPAWNS) {
+        for (const npc of NPC_SPAWNS) {
+            const separation = Math.hypot(item.at[0] - npc.at[0], item.at[2] - npc.at[2]);
+            assert.ok(
+                separation > ITEM_RULES.pickupRadius * 2,
+                `${item.id} must be outside overlapping pickup/interaction range of ${npc.id} (${separation.toFixed(2)} m)`
+            );
+        }
     }
 });

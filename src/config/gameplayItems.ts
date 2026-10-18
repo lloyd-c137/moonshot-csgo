@@ -22,7 +22,7 @@ export const ITEM_SPAWNS: readonly ItemSpawn[] = [
     { id: 'item-frc', kind: 'frc', room: 'M103', name: 'FRC 飞盘', at: [-44.24, 0.2, 25.54] },
     { id: 'item-eye', kind: 'eye', room: 'S103', name: '监控室之眼', at: [-42.92, 0.2, 10.58] },
     { id: 'item-stealth', kind: 'stealth', room: 'S100', name: '静止之力', at: [-8.39, 0.2, 23.48] },
-    { id: 'item-creation', kind: 'creation', room: 'M100', name: '创造之力', at: [-35.59, 0.2, 51.76] }
+    { id: 'item-creation', kind: 'creation', room: 'M100', name: '创造之力', at: [-38.69, 0.2, 51.76] }
 ];
 
 export const NPC_SPAWNS = [

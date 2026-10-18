@@ -36,6 +36,7 @@ export type KingView = { name: string; kills: number; since: number };
 export type BoardView = { king: KingView | null; top: AccountView[]; online: number };
 
 type Actions = {
+    activateHome: () => Promise<void>;
     enter: () => void;
     logout: () => Promise<void>;
     loadBoard: () => Promise<BoardView>;
@@ -175,7 +176,7 @@ const MARKUP = `
       </div>
       <p class="load-error" id="load-error" role="alert" hidden></p>
       <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
-      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">点击开启音频 · ENTER THE ARENA</small><i class="play-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7"/></svg></i></button>
+      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">ENTER THE ARENA</small><i class="play-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7"/></svg></i></button>
       <p class="fine-print">账号只保存用户名、加密后的密码和战绩，不收集其他个人信息 · 场景由 FF-01 平面图推导，并非实地测量</p>
     </footer>
   </section>
@@ -518,6 +519,7 @@ export const createUi = () => {
         executeButton.addEventListener(type, () => executeHold?.end());
     $('#execute-button').addEventListener('mousedown', (event) => event.stopPropagation());
     const root = $('#app-ui');
+    root.inert = true;
     let hintsShown = false;
     const stagesList = $<HTMLOListElement>('.stages');
     for (const [stage, label] of STAGES) {
@@ -528,6 +530,7 @@ export const createUi = () => {
         stagesList.append(item);
     }
     const enterButton = $<HTMLButtonElement>('#enter-button');
+    const bootContinue = $<HTMLButtonElement>('#boot-continue');
     const toast = $<HTMLParagraphElement>('#toast');
     const map = createMapRenderer($<HTMLCanvasElement>('#minimap'), $<HTMLCanvasElement>('#full-map'));
     let toastTimer = 0;
@@ -709,7 +712,28 @@ export const createUi = () => {
             stagesList.dataset.complete = 'true';
             $('#stage-label').textContent = '准备就绪';
             updateBootLoader(100, '准备就绪');
-            hideBootLoader();
+            const bootLoader = document.getElementById('boot-loader');
+            if (bootLoader) bootLoader.dataset.state = 'ready';
+            $('#boot-label').textContent = '校园资源已准备完成';
+            $('#boot-percent').textContent = '已缓存 · 100%';
+            bootContinue.hidden = false;
+            bootContinue.addEventListener('click', async () => {
+                bootContinue.disabled = true;
+                bootContinue.textContent = '正在开启音频…';
+                try {
+                    await actions.activateHome();
+                    hideBootLoader();
+                    root.inert = false;
+                    setScreen('ready');
+                    const needsSignIn = !signedIn && $('#operator').dataset.accounts !== 'false';
+                    (needsSignIn ? $('#auth-name') : enterButton).focus();
+                } catch (error) {
+                    $('#boot-label').textContent = `音频开启失败：${error instanceof Error ? error.message : '请重试'}`;
+                    bootContinue.disabled = false;
+                    bootContinue.textContent = '重试开启音频';
+                    bootContinue.focus();
+                }
+            });
             enterButton.disabled = false;
             $('#enter-label').textContent = '进入校园';
             enterButton.addEventListener('click', actions.enter);
@@ -861,9 +885,7 @@ export const createUi = () => {
                 root.dataset.reducedFlashes = String(current.reducedFlashes);
                 actions.settingsChanged({ ...current });
             });
-            setScreen('ready');
-            const needsSignIn = !signedIn && $('#operator').dataset.accounts !== 'false';
-            (needsSignIn ? $('#auth-name') : enterButton).focus();
+            bootContinue.focus();
         },
         playing: () => {
             setScreen('play');
@@ -881,6 +903,7 @@ export const createUi = () => {
         },
         showError: (message: string) => {
             hideBootLoader();
+            root.inert = false;
             const error = $<HTMLParagraphElement>('#load-error');
             error.textContent = `${message}。请检查网络或本地资源是否完整，然后重新加载。`;
             error.hidden = false;

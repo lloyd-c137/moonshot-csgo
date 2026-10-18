@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
+import { enterHome } from './support';
+
 type PerformanceSample = {
     durationMs: number;
     frames: number;
@@ -66,7 +68,7 @@ const sampleFrames = (page: Page, durationMs: number) =>
 test('solo idle and fixed-dummy impact performance sample (opt-in)', async ({ page }, testInfo) => {
     test.skip(process.env.COMBAT_PERF !== '1', 'Run explicitly with COMBAT_PERF=1; sample is machine-specific.');
     await page.goto('/?offline=1&audioLab=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await expect(page.locator('.audio-lab-toggle')).toBeVisible();
     await page.getByRole('button', { name: /进入校园/ }).click();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
@@ -117,7 +119,7 @@ test('two authenticated clients rendered performance sample (opt-in)', async ({ 
     const suffix = Date.now().toString(36).slice(-6);
     const enterOnline = async (client: Page, name: string) => {
         await client.goto(`/?server=${encodeURIComponent(server)}`);
-        await expect(client.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+        await enterHome(client);
         await client.locator('#auth-name').fill(name);
         await client.locator('#auth-password').fill('combat-perf-42');
         await client.getByRole('button', { name: '进入校园' }).click();

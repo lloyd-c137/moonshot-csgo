@@ -267,8 +267,6 @@ const boot = async () => {
         mirrorLayer: dressing.mirrorLayer,
         stadiumSeats: stadium.seats
     });
-    // The title theme is queued on load; browsers that block autoplay resume it on the first user gesture.
-    match.homepageMusic(true);
     // Title data: saved session, the standing 淘汰王 and the online count (when a server is configured).
     if (auth.available) {
         void auth
@@ -593,6 +591,10 @@ const boot = async () => {
     shell.stage('audio', 'done');
     shell.ready(
         {
+            activateHome: async () => {
+                await match.unlockAudio();
+                match.homepageMusic(true);
+            },
             enter,
             recover: () => {
                 recover();

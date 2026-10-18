@@ -9,7 +9,7 @@
     </head>
     <body>
         <canvas id="application-canvas"></canvas>
-        <div id="boot-loader" role="status" aria-live="polite" aria-label="游戏资源加载中">
+        <div id="boot-loader" data-state="loading" aria-live="polite" aria-label="游戏资源加载中">
             <div class="boot-card">
                 <div class="boot-brand"><span>FF-01</span><b>MOONSHOT</b></div>
                 <p id="boot-label">正在准备校园资源…</p>
@@ -17,6 +17,7 @@
                     <i id="boot-progress-fill"></i>
                 </div>
                 <small id="boot-percent">正在连接资源</small>
+                <button id="boot-continue" type="button" hidden>进入游戏 <span>点击后进入首页并开启音频</span></button>
             </div>
         </div>
         <style>
@@ -32,8 +33,13 @@
             #boot-progress-fill{position:absolute;inset:0 auto 0 0;width:15%;background:linear-gradient(90deg,#ffc21a,#ffe28a);box-shadow:0 0 14px #ffc21a88;transition:width .32s ease}
             #boot-loader:not([data-determinate="true"]) #boot-progress-fill{animation:boot-sweep 1.35s cubic-bezier(.4,0,.2,1) infinite}
             #boot-percent{display:block;margin-top:10px;color:#8999a7;font:11px/1.4 system-ui,sans-serif;letter-spacing:.08em;text-align:right}
+            #boot-continue{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;margin-top:24px;padding:14px 16px;border:0;background:#ffc21a;color:#101a26;font:700 16px/1.2 system-ui,sans-serif;cursor:pointer;transition:background .18s ease,transform .18s ease}
+            #boot-continue:hover{background:#ffda62;transform:translateY(-1px)}
+            #boot-continue:focus-visible{outline:3px solid #eef2f4;outline-offset:3px}
+            #boot-continue span{font:500 11px/1.4 system-ui,sans-serif;opacity:.72}
+            #boot-continue[hidden]{display:none}
             @keyframes boot-sweep{0%{transform:translateX(-115%);width:30%}55%{transform:translateX(150%);width:42%}100%{transform:translateX(350%);width:30%}}
-            @media(prefers-reduced-motion:reduce){#boot-loader,#boot-progress-fill{transition:none}#boot-loader:not([data-determinate="true"]) #boot-progress-fill{animation:none;width:42%}}
+            @media(prefers-reduced-motion:reduce){#boot-loader,#boot-progress-fill,#boot-continue{transition:none}#boot-loader:not([data-determinate="true"]) #boot-progress-fill{animation:none;width:42%}}
         </style>
         <script type="module" src="/src/main.ts"></script>
     </body>

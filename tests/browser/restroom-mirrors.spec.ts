@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { enterCampus } from './support';
+import { enterCampus, enterHome } from './support';
 
 test('every polygonal restroom has a mirror and the nearby facing mirror renders the player rig', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
 
     const mirrors = await page.evaluate(() => window.__MOONSHOT__!.dressing.mirrors);
     expect(mirrors).toHaveLength(14);

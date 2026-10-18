@@ -44,10 +44,12 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect(page.locator('#stage-label')).toContainText('音效');
     await expect(page.locator('#enter-button')).toBeDisabled();
     releaseHomepageAudio();
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'loading', { timeout: 90_000 });
     await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(6);
-    await expect(page.locator('#boot-loader')).toBeHidden();
-    await expect(page.locator('#enter-button')).toContainText('点击开启音频');
+    await expect(page.locator('#boot-loader')).toHaveAttribute('data-state', 'ready');
+    await expect(page.locator('#boot-continue')).toBeVisible();
+    await expect(page.locator('#app-ui')).toHaveAttribute('inert', '');
+    await expect(page.locator('#enter-button')).toContainText('ENTER THE ARENA');
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
     await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);
@@ -68,10 +70,11 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         )
         .toBe(true);
 
+    await page.getByRole('button', { name: /进入游戏/ }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __gameAudioContext?: AudioContext }).__gameAudioContext?.state)).toBe('running');
+    await expect(page.locator('#boot-loader')).toBeHidden();
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready');
     await page.getByRole('button', { name: '进入校园' }).click();
-    await expect
-        .poll(() => page.evaluate(() => (window as unknown as { __gameAudioContext?: AudioContext }).__gameAudioContext?.state))
-        .toBe('running');
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     for (const [file, duration] of [

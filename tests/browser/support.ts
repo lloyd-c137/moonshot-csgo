@@ -69,6 +69,7 @@ export const loadSimulated = async (page: Page, url = '/') => {
     // clock still follows real time; pauseAt() stops it, after which game time only moves through advance().
     await page.clock.install();
     await page.goto(url);
+    await enterHome(page);
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     // Pause a little ahead of the page's virtual "now"; retry further ahead if real time overtook the target.
@@ -82,7 +83,18 @@ export const loadSimulated = async (page: Page, url = '/') => {
     }
 };
 
+export const enterHome = async (page: Page) => {
+    const startButton = page.locator('#boot-continue');
+    if (await startButton.count()) {
+        await expect(startButton).toBeVisible({ timeout: 90_000 });
+        await startButton.click();
+        await expect(page.locator('#boot-loader')).toBeHidden();
+    }
+    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+};
+
 export const enterCampus = async (page: Page) => {
+    await enterHome(page);
     await page.getByRole('button', { name: /进入校园|继续游戏/ }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');

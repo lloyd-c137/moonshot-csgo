@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import './support';
+import { enterHome } from './support';
 
 test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({
     page
@@ -17,7 +17,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         };
     });
     await page.goto('/?audioLab=1&offline=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab')).toBeVisible();
 
@@ -211,7 +211,7 @@ test('offline target stays visible after entry, uses selected defaults and respa
         };
     });
     await page.goto('/?audioLab=1&offline=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.keyboard.press('p');
     await page.locator('[data-action="execution-demo"]').click();
     await expect(page.locator('.audio-lab')).not.toBeVisible();
@@ -272,7 +272,7 @@ test('offline target stays visible after entry, uses selected defaults and respa
 
 test('practice dummy can be executed from behind and respawns at its fixed position', async ({ page }) => {
     await page.goto('/?audioLab=1&offline=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     const button = page.locator('#execute-button');
     // The prompt only appears in reach of a target (not at the spawn, four metres away).
     await expect(button).toBeHidden();
@@ -359,7 +359,7 @@ test('gold-kill and whoosh candidates preview and follow real practice throws', 
     const played = () =>
         page.evaluate(() => (window as unknown as { __candidateDurations: number[] }).__candidateDurations);
     await page.goto('/?audioLab=1&offline=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.keyboard.press('p');
     await expect(page.locator('.audio-lab section')).toHaveCount(6);
     await expect(page.locator('section[data-cue="goldKill"] option')).toHaveCount(2);

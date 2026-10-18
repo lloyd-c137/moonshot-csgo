@@ -1,7 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-import { collectErrors } from './support';
+import { collectErrors, enterHome } from './support';
 
 // Two players join the local shared-world room (wrangler dev) by typing a new username and password (one-step
 // sign-in registers them). They see each other, chat, and one eliminates the other with frisbees; the server
@@ -31,7 +31,7 @@ const open = async (browser: Browser, audioLab = false, captureSpatialAudio = fa
     const page = await context.newPage();
     const errors = collectErrors(page);
     await page.goto(`/?server=${encodeURIComponent(SERVER)}&lobby=1${audioLab ? '&audioLab=1' : ''}`);
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     return { page, errors };
 };
@@ -156,7 +156,7 @@ test('lifetime board shows eliminations and wins, including players without reco
         })
     );
     await page.goto(`/?server=${encodeURIComponent(SERVER)}`);
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     await page.getByRole('tab', { name: '排行榜' }).click();
     await expect(page.locator('.board-table th')).toHaveText(['#', '玩家', '淘汰数', '胜场']);

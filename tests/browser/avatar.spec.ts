@@ -1,12 +1,14 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
+import { enterHome } from './support';
+
 const SERVER = 'ws://127.0.0.1:8787/ws';
 
 const open = async (browser: Browser) => {
     const page = await (await browser.newContext()).newPage();
     await page.goto(`/?server=${encodeURIComponent(SERVER)}`);
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     return page;
 };
@@ -86,7 +88,7 @@ test('pause menu uploads a persistent avatar and other clients apply it to the r
 
 test('audio test mode applies a local avatar to the fixed dummy without an account', async ({ page }) => {
     await page.goto('/?offline=1&audioLab=1');
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.evaluate(() => window.__MOONSHOT__!.setRendering(false));
     await page.getByRole('button', { name: '进入校园' }).click();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');

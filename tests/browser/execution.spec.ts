@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+import { enterHome } from './support';
+
 const openPlayer = async (page: Page, name: string) => {
     await page.goto('/?server=' + encodeURIComponent('ws://127.0.0.1:8787/ws'));
-    await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
+    await enterHome(page);
     await page.locator('#auth-name').fill(name);
     await page.locator('#auth-password').fill('local-execution-test-42');
     await page.getByRole('button', { name: '进入校园' }).click();

@@ -5,7 +5,7 @@ import { BREAKER_ROUTE } from '../../src/config/breakerRoute';
 import { GUARD_ROUTE } from '../../src/config/guardRoute';
 import { POWER_TRAVEL_MS, POWER_RESTORE_MS, POWER_RETURN_MS } from '../../src/gameplay/power';
 
-import { advance, collectErrors, enterAtSpawn, hold, loadSimulated, position } from './support';
+import { advance, collectErrors, enterAtSpawn, enterHome, hold, loadSimulated, position } from './support';
 
 test('walk through the source power-room entrance, pull once, see blackout and guard repair/return', async ({
     page
@@ -161,7 +161,7 @@ test('two real clients receive one authoritative outage and the same repair rout
     const suffix = Date.now().toString(36);
     const open = async (p: Page, name: string) => {
         await p.goto('/?server=' + encodeURIComponent('ws://127.0.0.1:8787/ws'));
-        await expect(p.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90000 });
+        await enterHome(p);
         await p.evaluate(() => window.__MOONSHOT__!.setRendering(false));
         await p.locator('#auth-name').fill(name);
         await p.locator('#auth-password').fill('local-power-test-42');
@@ -184,7 +184,7 @@ test('two real clients receive one authoritative outage and the same repair rout
         expect(a.pulledAt).toBe(b.pulledAt);
         expect(Math.hypot(a.guard.x - b.guard.x, a.guard.z - b.guard.z)).toBeLessThan(0.6);
         await second.reload();
-        await expect(second.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90000 });
+        await enterHome(second);
         await second.evaluate(() => window.__MOONSHOT__!.setRendering(false));
         await second.getByRole('button', { name: '进入校园' }).click();
         await expect.poll(() => second.evaluate(() => window.__MOONSHOT__!.match.state().net)).toBe('online');

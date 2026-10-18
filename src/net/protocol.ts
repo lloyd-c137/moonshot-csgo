@@ -77,7 +77,12 @@ export const ROUND = {
      * The entrance ceremony plays in the seconds just before the final minute (gameplay/ceremony): everyone is frozen
      * and walks in on screen; nobody can be caught or hit during it.
      */
-    ceremonySeconds: 26
+    ceremonySeconds: 26,
+    /** Event cutscenes (gameplay/cutscenes): nobody can act, be hit or be caught while they play. */
+    blackoutCutsceneSeconds: 4.8,
+    breakerCutsceneSeconds: 4.2,
+    /** The guard sets off on his night rounds this long after the lights go out (on camera in the cutscene). */
+    guardNightDelaySeconds: 3.2
 } as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).

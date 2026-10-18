@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.24.0',
+        date: '2026.10.18',
+        title: '重大事件过场',
+        notes: [
+            '终局夜晚开始时播放 4.8 秒过场：保安岗位周围灯光熄灭，特写他举起手电，镜头跟着他出发巡逻；保安会在过场里起步，不会趁黑提前走。',
+            '有人在配电室拉闸时播放 4.2 秒过场：配电柜火花四溅、全校断电，镜头转向赶去修理的保安。',
+            '过场期间所有人原地不动，不会被命中也不会被保安抓到；按空格可以提前跳过画面。'
+        ]
+    },
+    {
         version: 'v0.23.0',
         date: '2026.10.18',
         title: 'Final 入场仪式',

@@ -4,6 +4,7 @@ import { SOUTH_GATE } from '../src/config/gameplay.ts';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
+import { inCutscene } from '../src/gameplay/cutscenes/cutscenes.ts';
 import { canExecute, canStartGlobalFinisher, EXECUTION, executionWatched } from '../src/gameplay/execution.ts';
 import type { Execution } from '../src/gameplay/execution.ts';
 import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';
@@ -964,6 +965,8 @@ export class Room {
         const reject = () => this.out.to(player.id, { type: 'hitRejected', throwId });
         if (
             this.round?.phase !== 'playing' ||
+            this.inCeremony(now) ||
+            inCutscene(now, this.blackoutAt(), this.power) ||
             player.phase !== 'playing' ||
             !entry ||
             entry.scored ||
@@ -1067,7 +1070,8 @@ export class Room {
     /** The guard's flashlight caught a player (checked against walls on their client; the room checks reach). */
     private spotted(player: Player, now: number) {
         if (player.phase !== 'playing' || !player.alive || !player.pose || !this.blackout(now)) return;
-        if (this.inCeremony(now)) return; // everyone is frozen for the final entrance ceremony
+        // Everyone is frozen for the final entrance ceremony and the event cutscenes.
+        if (this.inCeremony(now) || inCutscene(now, this.blackoutAt(), this.power)) return;
         const guard = guardAt(now, this.blackoutAt(), this.power);
         if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
         this.cancelExecutionFor(player.id, '被保安淘汰');

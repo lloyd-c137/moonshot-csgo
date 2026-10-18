@@ -2,6 +2,7 @@
 // walks the outer corridors with a flashlight. Anyone caught in its beam is out for the rest of the round. Like
 // 纪老师 he is placed from the room clock alone (pure; tested in test/guard.test.js); guardView.ts draws him.
 import { GUARD_ROUTE } from '../config/guardRoute.ts';
+import { ROUND } from '../net/protocol.ts';
 
 import { POWER_RETURN_MS, repairGuardAt } from './power.ts';
 import type { PowerState } from './power.ts';
@@ -26,11 +27,13 @@ const patrol = makePatrol(GUARD_ROUTE, GUARD.speed, GUARD.pause);
 export const guardAt = (ms: number, blackoutAt: number | null, power: PowerState = { pulledAt: null }): TeacherPose => {
     const repair = repairGuardAt(ms, power);
     if (repair) return repair;
-    if (blackoutAt === null || ms < blackoutAt) {
+    // He sets off a moment after the lights go out (the blackout cutscene shows it).
+    const nightStart = blackoutAt === null ? null : blackoutAt + ROUND.guardNightDelaySeconds * 1000;
+    if (nightStart === null || ms < nightStart) {
         const [x, z] = GUARD_ROUTE[0];
         return { x, z, yaw: patrol.firstHeading, walking: false };
     }
-    const start = power.pulledAt === null ? blackoutAt : Math.max(blackoutAt, power.pulledAt + POWER_RETURN_MS);
+    const start = power.pulledAt === null ? nightStart : Math.max(nightStart, power.pulledAt + POWER_RETURN_MS);
     return patrol.at((ms - start) / 1000);
 };
 

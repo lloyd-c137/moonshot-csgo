@@ -263,6 +263,7 @@ const MARKUP = `
       <div class="ceremony-bar" aria-hidden="true"></div><div class="ceremony-bar bottom" aria-hidden="true"></div>
       <div class="ceremony-card" id="ceremony-card"><small id="ceremony-order"></small><b id="ceremony-name"></b><span id="ceremony-facts"></span></div>
       <div class="ceremony-title" id="ceremony-title"><small>FINAL</small><b>最终对决</b><span>入口已封闭 · 60 秒</span></div>
+      <div class="cutscene-caption" id="cutscene-caption"><b id="cutscene-title"></b><span id="cutscene-sub"></span><small>空格 跳过</small></div>
       <div class="ceremony-fade" id="ceremony-fade" aria-hidden="true"></div>
     </div>
     <div class="kill-banner" id="kill-banner" hidden><div class="kill-pips" id="kill-pips"></div><strong id="kill-banner-title"></strong><span id="kill-banner-detail"></span></div>
@@ -1573,6 +1574,7 @@ export const createUi = () => {
         ceremony: {
             show(on: boolean) {
                 $('#ceremony').hidden = !on;
+                $('#ceremony').dataset.mode = '';
                 root.dataset.ceremony = on ? 'on' : 'off';
                 if (!on) {
                     $('#ceremony-card').classList.remove('show');
@@ -1605,6 +1607,26 @@ export const createUi = () => {
             fade(alpha: number) {
                 $('#ceremony-fade').style.opacity = String(Math.max(0, Math.min(1, alpha)));
             }
+        },
+        /** Event cutscene overlay (letterbox and a caption), or null to close it. */
+        cutscene(caption: { title: string; sub: string } | null) {
+            const overlay = $('#ceremony');
+            const box = $('#cutscene-caption');
+            if (!caption) {
+                if (overlay.dataset.mode === 'cutscene') {
+                    overlay.hidden = true;
+                    root.dataset.ceremony = 'off';
+                }
+                overlay.dataset.mode = '';
+                box.classList.remove('show');
+                return;
+            }
+            overlay.dataset.mode = 'cutscene';
+            overlay.hidden = false;
+            root.dataset.ceremony = 'on';
+            $('#cutscene-title').textContent = caption.title;
+            $('#cutscene-sub').textContent = caption.sub;
+            replay(box, 'show');
         },
         /** A skill card that slides in above the status cluster when you pick something up. */
         skillAcquired: ({

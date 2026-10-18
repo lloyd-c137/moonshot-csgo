@@ -10,7 +10,7 @@ import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../config/gameplayItems';
 import type { ItemKind } from '../config/gameplayItems';
 import { SPAWN_POINTS } from '../config/spawns';
-import { SPECIAL_LOCATIONS } from '../config/specialLocations';
+import { BREAKER_CABINET, SPECIAL_LOCATIONS } from '../config/specialLocations';
 import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
@@ -47,6 +47,9 @@ import {
     FINAL_SLOW_MOTION,
     HIT_STOP_MS
 } from './combatFeel';
+import { activeCutscene, CUTSCENE_CAPTIONS, cutsceneShot } from './cutscenes/cutscenes';
+import type { CutsceneKind } from './cutscenes/cutscenes';
+import { createCutsceneView } from './cutscenes/cutsceneView';
 import { createDiscs, hueColour } from './discs';
 import { createEffects } from './effects';
 import { canStartGlobalFinisher, executionProgress, executionWatched } from './execution';
@@ -61,6 +64,7 @@ import type { DiscContact, V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
 import { createGold, GOLD_COLOUR } from './gold';
 import { createGroundDiscs } from './groundDiscs';
+import { guardAt } from './guard';
 import { createGuard } from './guardView';
 import {
     airborne,
@@ -273,6 +277,8 @@ export const createMatch = ({
     // GAMEPLAY_AUTHORED fixed local dummy four metres north of the south-entrance spawn.
     const audioLab = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     let labNightOverride = false;
+    /** Room time the test panel turned the night on (the guard and the cutscene run from it). */
+    let labNightAt: number | null = null;
     let labFinalOverride = false;
     let labPowerOverride: PowerState | null = null;
     const labTargetId = 'audio-lab-target';
@@ -328,6 +334,7 @@ export const createMatch = ({
                 simulateBlackout: async () => {
                     if (await setRoundTestClock(ROUND.blackoutSecondsLeft)) return 'server';
                     labNightOverride = true;
+                    labNightAt = roomNow();
                     return 'local';
                 },
                 simulateFinalMinute: async () => {
@@ -345,6 +352,7 @@ export const createMatch = ({
                 },
                 resetTestMechanics: () => {
                     labNightOverride = false;
+                    labNightAt = null;
                     labFinalOverride = false;
                     labPowerOverride = null;
                     finalRelocationResult = 'idle';
@@ -435,6 +443,15 @@ export const createMatch = ({
     /** Test hook: a ceremony starting at this room time with these entrants (offline). */
     let labCeremony: { at: number; entrants: Entrant[] } | null = null;
     let shuttersShut = false;
+    // ---------- event cutscenes (lights out, breaker pulled) ----------
+    const cutsceneView = createCutsceneView(app, camera);
+    let cutsceneRun: { kind: CutsceneKind; at: number; skipped: boolean; lastPerf: number; beats: Set<string> } | null = null;
+    window.addEventListener('keydown', (event) => {
+        if (event.code === 'Space' && cutsceneRun && !cutsceneRun.skipped) {
+            cutsceneRun.skipped = true;
+            event.preventDefault();
+        }
+    });
     const playLabCeremony = (others = 4) => {
         const names = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO'];
         labCeremony = {
@@ -468,7 +485,7 @@ export const createMatch = ({
     /** Room time when this round's lights go out, or null (no round / offline). */
     const blackoutAt = () =>
         audioLab && labNightOverride
-            ? roomNow()
+            ? (labNightAt ?? roomNow())
             : roundState?.phase === 'playing'
               ? roundState.endsAt - ROUND.blackoutSecondsLeft * 1000
               : null;
@@ -2179,6 +2196,63 @@ export const createMatch = ({
         const nightActive =
             (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
+        // Event cutscenes: everyone sees the moment the lights go out / the breaker is pulled, frozen meanwhile.
+        const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower) : null;
+        if (cut && !cutsceneRun && cut.t < 1.2) {
+            cutsceneRun = { kind: cut.kind, at: cut.at, skipped: false, lastPerf: performance.now(), beats: new Set() };
+            cutsceneView.start();
+            ui.cutscene(CUTSCENE_CAPTIONS[cut.kind]);
+            inputPaused = true;
+            chargingSince = null;
+            ui.charge(null);
+            const script = controller();
+            if (script) script.enabled = false;
+        }
+        if (cutsceneRun) {
+            const perfNow = performance.now();
+            const dt = Math.min(0.1, (perfNow - cutsceneRun.lastPerf) / 1000);
+            cutsceneRun.lastPerf = perfNow;
+            const t = (time - cutsceneRun.at) / 1000;
+            const beat = (name: string, at: number, action: () => void) => {
+                if (t >= at && !cutsceneRun!.beats.has(name)) {
+                    cutsceneRun!.beats.add(name);
+                    action();
+                }
+            };
+            if (cutsceneRun.kind === 'breaker') {
+                const [bx, by, bz] = BREAKER_CABINET;
+                for (const [name, at] of [['spark1', 0.05], ['spark2', 0.45], ['spark3', 0.9]] as const)
+                    beat(name, at, () => {
+                        // A spray of small sparks off the cabinet front.
+                        for (let i = 0; i < 14; i++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            effects.mote(
+                                [bx, by + 0.35, bz],
+                                [1, 0.75 + Math.random() * 0.2, 0.3],
+                                [Math.cos(angle) * 1.6, 1 + Math.random() * 1.8, Math.sin(angle) * 1.6],
+                                0.012,
+                                0.45
+                            );
+                        }
+                        sound.impact([bx, by, bz]);
+                    });
+            } else beat('torch', 1.75, () => sound.ceremonySpot());
+            if (!cutsceneRun.skipped)
+                cutsceneView.update(
+                    cutsceneShot(cutsceneRun.kind, t, guardAt(time, lightsOut, activePower), [...BREAKER_CABINET] as [number, number, number]),
+                    dt
+                );
+            const over = !cut || cut.at !== cutsceneRun.at;
+            if ((cutsceneRun.skipped || over) && cutsceneView.active) {
+                // Skipping only hands back the view and controls; the room still protects everyone until it ends.
+                cutsceneView.stop();
+                ui.cutscene(null);
+                inputPaused = false;
+                const script = controller();
+                if (script) script.enabled = alive && !executionFrozen && !spectating;
+            }
+            if (over) cutsceneRun = null;
+        }
         breakerView.update(outage);
         if (outage !== wasPowerOut) {
             wasPowerOut = outage;
@@ -2954,6 +3028,7 @@ export const createMatch = ({
             /** Plays the final entrance ceremony now (offline test): you plus `others` stand-in players. */
             playCeremony: (others = 4) => playLabCeremony(others),
             ceremony: () => (ceremonyRun ? { t: ceremonyRun.t, entrants: ceremonyRun.plan.entrants.length } : null),
+            cutscene: () => (cutsceneRun ? { kind: cutsceneRun.kind, skipped: cutsceneRun.skipped, camera: cutsceneView.active } : null),
             shuttersClosed: () => ceremony.shuttersClosed(),
             setSimulatedRtt: (milliseconds: number) => net.setSimulatedRtt(milliseconds),
             markers: mapMarkers,

@@ -122,7 +122,8 @@ test('a lethal hit during a manual breaker outage sends the target to spectating
     throwAndHit(1, 1000);
     assert.equal(room.players.get('b').hp, MAX_HP - 1);
 
-    room.power = { pulledAt: 1800 };
+    // Pulled a while ago (past the breaker cutscene, during which nobody can be hit), the outage still on.
+    room.power = { pulledAt: 2000 - ROUND.breakerCutsceneSeconds * 1000 - 200 };
     throwAndHit(2, 2000);
     assert.equal(room.players.get('b').hp, MAX_HP - 2);
     throwAndHit(3, 3000);
@@ -817,9 +818,14 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     assert.equal(room.players.get('b').alive, true);
     // After it: B is caught by the flashlight — out for the round, and a disc drops where B stood.
     const discsBefore = room.discs.length;
-    const g = guardAt(blackout + 1000, blackout);
-    room.message('b', { type: 'pose', pose: { p: [g.x, 0.92, g.z - 3], yaw: 0, pitch: 0 } }, blackout + 900);
+    // (During the lights-out cutscene nobody can be caught.)
+    const gCut = guardAt(blackout + 1000, blackout);
+    room.message('b', { type: 'pose', pose: { p: [gCut.x, 0.92, gCut.z - 3], yaw: 0, pitch: 0 } }, blackout + 900);
     room.message('b', { type: 'spotted' }, blackout + 1000);
+    assert.equal(room.players.get('b').alive, true);
+    const g = guardAt(blackout + 6000, blackout);
+    room.message('b', { type: 'pose', pose: { p: [g.x, 0.92, g.z - 3], yaw: 0, pitch: 0 } }, blackout + 5900);
+    room.message('b', { type: 'spotted' }, blackout + 6000);
     const struck = inbox
         .get('a')
         .filter((m) => m.type === 'struck')

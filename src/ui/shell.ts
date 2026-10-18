@@ -55,7 +55,7 @@ export type FeedEvent = {
     who?: string;
 };
 export type EventIcon =
-    'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'coach' | 'gold' | 'gate' | 'drop' | 'power';
+    'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'flashlight' | 'coach' | 'gold' | 'gate' | 'drop' | 'power';
 export type Medal = { name: string; badge: string; tier: 'normal' | 'rare' | 'legend'; detail?: string };
 export type UiSoundCues = {
     hover: () => void;
@@ -71,6 +71,7 @@ const EVENT_ICON_SVG: Record<EventIcon, string> = {
     stealth: '<path d="M8 1.5 13 8l-5 6.5L3 8z"/><path d="M8 5v6"/>',
     creation:
         '<circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>',
+    flashlight: '<path d="M5 2.5h6l1.5 3H3.5zM4 5.5h8v7H4zM6 12.5h4v2H6z"/><path d="M6.5 8.5h3"/>',
     coach: '<circle cx="8" cy="5" r="2.5"/><path d="M3 14c.6-3 2.6-4.5 5-4.5s4.4 1.5 5 4.5"/>',
     gold: '<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
     gate: '<path d="M3 14V3h10v11"/><path d="M8 3v11M5.5 8.5h0M10.5 8.5h0"/>',
@@ -107,7 +108,7 @@ const MARKUP = `
     <div class="title-shade" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
     <header class="title-top">
-      <div class="brand"><img class="brand-logo" src="/favicon.svg" alt="" /><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
+      <div class="brand"><img class="brand-logo" src="/favicon.png" alt="" /><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
       <nav class="title-tabs" role="tablist" aria-label="菜单">
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
@@ -190,6 +191,10 @@ const MARKUP = `
     <div class="round-bar" id="round-bar" data-tone="neutral">
       <span class="round-clock" id="round-clock">--:--</span>
       <span class="round-gold"><i class="gold-dot" aria-hidden="true"></i><span id="round-gold">金飞盘</span></span>
+    </div>
+    <div class="stealth-hud" id="stealth-hud" hidden role="status" aria-label="隐身状态">
+      <span class="stealth-timer" id="stealth-timer">3</span>
+      <span class="stealth-copy"><b>隐身中</b><small>请假条</small></span>
     </div>
     <div class="gold-marker" id="gold-marker" hidden aria-hidden="true">
       <span class="gold-marker-arrow"></span><span class="gold-marker-icon"></span><span class="gold-marker-label" id="gold-marker-label"></span>
@@ -1353,6 +1358,15 @@ export const createUi = () => {
             if (label === null) return;
             $('#ability-label').textContent = label;
             root.style.setProperty('--ability-progress', `${Math.round(Math.max(0, Math.min(1, progress)) * 360)}deg`);
+        },
+        stealthState: (seconds: number | null, progress = 0) => {
+            const root = $('#stealth-hud');
+            const active = seconds !== null;
+            root.hidden = !active;
+            $('#app-ui').dataset.stealth = String(active);
+            if (!active) return;
+            $('#stealth-timer').textContent = String(Math.max(1, Math.ceil(seconds)));
+            root.style.setProperty('--stealth-progress', `${Math.round(Math.max(0, Math.min(1, progress)) * 360)}deg`);
         },
         playerPings: (pings: readonly { id: string; name: string; x: number; y: number; distance: number }[]) => {
             const root = $('#xray-pings');

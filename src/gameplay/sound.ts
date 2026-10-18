@@ -10,6 +10,7 @@ import { HOMEPAGE_THEME_AUDIO } from '../config/homepageThemeAudio';
 import { MATCH_PLAYLIST_AUDIO } from '../config/matchPlaylistAudio';
 import { OPENING_THEME_AUDIO } from '../config/openingThemeAudio';
 import { POWER_DOWN_AUDIO } from '../config/powerAudio';
+import { SETTLEMENT_THEME_AUDIO } from '../config/settlementThemeAudio';
 
 import { AudioVoicePool } from './feedback/AudioVoicePool';
 
@@ -116,13 +117,24 @@ export const createSound = () => {
         return ctx;
     };
 
-    const createLoopingMusic = (name: string, config: { url: string; gain: number; fadeSeconds: number }) => {
+    const createLoopingMusic = (
+        name: string,
+        config: {
+            url: string;
+            gain: number;
+            fadeSeconds: number;
+            startSeconds?: number;
+            endSeconds?: number;
+        }
+    ) => {
         let wanted = false;
+        let generation = 0;
         let loading: Promise<AudioBuffer | null> | null = null;
         let voice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
-        return (active: boolean) => {
-            if (active === wanted) return;
+        return (active: boolean, offsetSeconds = 0, resync = false) => {
+            if (active === wanted && !resync) return;
             wanted = active;
+            const version = ++generation;
             const audio = ensure();
             if (!audio || !buses) return;
             const now = audio.currentTime;
@@ -136,19 +148,23 @@ export const createSound = () => {
                 return;
             }
             if (voice) {
-                voice.gain.gain.cancelScheduledValues(now);
-                voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
-                voice.gain.gain.linearRampToValueAtTime(config.gain, now + config.fadeSeconds);
-                return;
+                voice.source.stop(now);
+                voice = null;
             }
             loading ??= clips.get(name) ? Promise.resolve(clips.get(name)!) : loadClip(audio, name, config.url);
             void loading.then((decoded) => {
                 loading = null;
-                if (!decoded || !wanted || ctx !== audio || !buses || voice) return;
+                if (!decoded || !wanted || generation !== version || ctx !== audio || !buses || voice) return;
                 const source = audio.createBufferSource();
                 const gain = audio.createGain();
                 source.buffer = decoded;
                 source.loop = true;
+                const segmentStart = config.startSeconds ?? 0;
+                const segmentEnd = Math.min(config.endSeconds ?? decoded.duration, decoded.duration);
+                if (config.startSeconds !== undefined) {
+                    source.loopStart = segmentStart;
+                    source.loopEnd = segmentEnd;
+                }
                 gain.gain.setValueAtTime(0, audio.currentTime);
                 source.connect(gain).connect(buses.environment);
                 const current = { source, gain };
@@ -158,7 +174,11 @@ export const createSound = () => {
                     gain.disconnect();
                     if (voice === current) voice = null;
                 };
-                source.start();
+                const loopDuration = Math.max(0.01, segmentEnd - segmentStart);
+                const offset = config.startSeconds === undefined
+                    ? ((Math.max(0, offsetSeconds) % decoded.duration) + decoded.duration) % decoded.duration
+                    : segmentStart + ((Math.max(0, offsetSeconds) % loopDuration) + loopDuration) % loopDuration;
+                source.start(0, offset);
                 gain.gain.linearRampToValueAtTime(config.gain, audio.currentTime + config.fadeSeconds);
             });
         };
@@ -167,29 +187,44 @@ export const createSound = () => {
         let wanted = false;
         let generation = 0;
         let voice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
-        const play = async (audio: AudioContext, index: number, version: number) => {
-            const track = MATCH_PLAYLIST_AUDIO[index];
-            const buffer = clips.get(track.name) ?? (await loadClip(audio, track.name, track.url));
-            if (!buffer || !wanted || generation !== version || ctx !== audio || !buses) return;
-            const source = audio.createBufferSource();
-            const gain = audio.createGain();
-            source.buffer = buffer;
-            gain.gain.setValueAtTime(0, audio.currentTime);
-            source.connect(gain).connect(buses.environment);
-            const current = { source, gain };
-            voice = current;
-            source.onended = () => {
-                source.onended = null;
-                source.disconnect();
-                gain.disconnect();
-                if (voice === current) voice = null;
-                if (wanted && generation === version) play(audio, (index + 1) % MATCH_PLAYLIST_AUDIO.length, version);
+        const play = async (audio: AudioContext, positionSeconds: number, version: number) => {
+            const buffers = await Promise.all(
+                MATCH_PLAYLIST_AUDIO.map((track) => clips.get(track.name) ?? loadClip(audio, track.name, track.url))
+            );
+            if (buffers.some((buffer) => !buffer) || !wanted || generation !== version || ctx !== audio || !buses) return;
+            const decoded = buffers as AudioBuffer[];
+            const totalDuration = decoded.reduce((sum, buffer) => sum + buffer.duration, 0);
+            let offset = ((Math.max(0, positionSeconds) % totalDuration) + totalDuration) % totalDuration;
+            let index = 0;
+            while (index < decoded.length - 1 && offset >= decoded[index].duration) {
+                offset -= decoded[index].duration;
+                index++;
+            }
+            const startTrack = (trackIndex: number, trackOffset: number) => {
+                if (!wanted || generation !== version || ctx !== audio || !buses) return;
+                const track = MATCH_PLAYLIST_AUDIO[trackIndex];
+                const source = audio.createBufferSource();
+                const gain = audio.createGain();
+                source.buffer = decoded[trackIndex];
+                gain.gain.setValueAtTime(0, audio.currentTime);
+                source.connect(gain).connect(buses.environment);
+                const current = { source, gain };
+                voice = current;
+                source.onended = () => {
+                    source.onended = null;
+                    source.disconnect();
+                    gain.disconnect();
+                    if (voice === current) voice = null;
+                    if (wanted && generation === version)
+                        startTrack((trackIndex + 1) % MATCH_PLAYLIST_AUDIO.length, 0);
+                };
+                source.start(0, Math.min(trackOffset, Math.max(0, source.buffer!.duration - 0.01)));
+                gain.gain.linearRampToValueAtTime(track.gain, audio.currentTime + track.fadeSeconds);
             };
-            source.start();
-            gain.gain.linearRampToValueAtTime(track.gain, audio.currentTime + track.fadeSeconds);
+            startTrack(index, offset);
         };
-        return (active: boolean) => {
-            if (active === wanted) return;
+        return (active: boolean, offsetSeconds = 0, resync = false) => {
+            if (active === wanted && !resync) return;
             wanted = active;
             const version = ++generation;
             const audio = ensure();
@@ -205,7 +240,14 @@ export const createSound = () => {
                 current.source.stop(audio.currentTime + fade + 0.05);
                 return;
             }
-            play(audio, 0, version);
+            const current = voice;
+            voice = null;
+            if (current) {
+                current.gain.gain.cancelScheduledValues(audio.currentTime);
+                current.gain.gain.setValueAtTime(0, audio.currentTime);
+                current.source.stop(audio.currentTime);
+            }
+            void play(audio, offsetSeconds, version);
         };
     };
     const setBlackoutMusic = createLoopingMusic('blackout-theme', BLACKOUT_THEME_AUDIO);
@@ -213,11 +255,13 @@ export const createSound = () => {
     const setOpeningMusic = createLoopingMusic('opening-theme', OPENING_THEME_AUDIO);
     const setMatchPlaylist = createMatchPlaylist();
     const setFinalShowdownMusic = createLoopingMusic('final-showdown-theme', FINAL_SHOWDOWN_THEME_AUDIO);
+    const setSettlementMusic = createLoopingMusic('settlement-theme', SETTLEMENT_THEME_AUDIO);
     const requiredAudio = [
         { name: 'homepage-theme', url: HOMEPAGE_THEME_AUDIO.url },
         ...MATCH_PLAYLIST_AUDIO.map(({ name, url }) => ({ name, url })),
         { name: 'blackout-theme', url: BLACKOUT_THEME_AUDIO.url },
         { name: 'final-showdown-theme', url: FINAL_SHOWDOWN_THEME_AUDIO.url },
+        { name: 'settlement-theme', url: SETTLEMENT_THEME_AUDIO.url },
         { name: 'power-down', url: POWER_DOWN_AUDIO.url },
         ...Object.entries(COMBAT_AUDIO).map(([name, clip]) => ({ name, url: clip.url }))
     ];
@@ -413,6 +457,8 @@ export const createSound = () => {
         openingMusic: setOpeningMusic,
         /** Loop the owner-selected theme only during the final-arena showdown. */
         finalShowdownMusic: setFinalShowdownMusic,
+        /** Loop only the owner-authorized excerpt during the end-of-round settlement. */
+        settlementMusic: setSettlementMusic,
         /** Decodes a local test clip; generation checks prevent fast selections from restoring a stale response. */
         async setTestClip(cue: TestSoundCue, url: string | null, gain = 0.35, start = 0, end = Infinity) {
             const version = (testVersions.get(cue) ?? 0) + 1;

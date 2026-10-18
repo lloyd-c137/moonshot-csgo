@@ -611,6 +611,7 @@ const boot = async () => {
 
     if (import.meta.env.DEV) {
         installDebugHooks({
+            ui: shell,
             perf: () => {
                 const stats = (
                     app.graphicsDevice as unknown as { _shaderStats: { linked: number; compileTime: number } }

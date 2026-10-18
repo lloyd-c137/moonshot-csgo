@@ -1,0 +1,1507 @@
+/*
+ * Moonshot Frisbee Games — esports UI layer (owner decision 2026-10-18; plan: "UI 与特效重构方案").
+ * Loaded after theme.css: it re-points the shared tokens and restyles/re-lays out the HUD. One accent per meaning,
+ * condensed numerals, hairlines instead of boxes, chamfered plates, and a fixed motion scale.
+ */
+
+:root {
+    /* Surfaces */
+    --ink: #0b0f14;
+    --ink-raised: #151d26;
+    --ink-veil: rgb(11 15 20 / 0.8);
+    --plate: linear-gradient(90deg, rgb(11 15 20 / 0.86), rgb(11 15 20 / 0.6));
+    --hairline: rgb(236 234 228 / 0.14);
+    /* Text */
+    --paper: #eceae4;
+    --paper-dim: rgb(236 234 228 / 0.62);
+    --line: rgb(236 234 228 / 0.32);
+    /* Meaning */
+    --accent: #2ee6d6;
+    --ok: #3ee69c;
+    --danger: #ff4d5e;
+    --alert: #ff4d5e;
+    --signal: #ffc21a;
+    --gold: #ffc21a;
+    --muted: #6b7a80;
+    /* Skills */
+    --skill-revive: #c8fbff;
+    --skill-frc: #ff3b30;
+    --skill-eye: #9a7bff;
+    --skill-stealth: #7fe3ff;
+    --skill-creation: #ff9a3c;
+    --skill-coach: #3ee69c;
+    /* Type */
+    --font-ui: 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+    --font-display: 'Barlow Condensed', 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+    --step-0: 12px;
+    --step-1: 14px;
+    --step-2: 18px;
+    --step-3: 28px;
+    --step-4: 56px;
+    /* Shape */
+    --radius-plate: 2px;
+    --cut: 10px;
+    /* Motion */
+    --dur-1: 90ms;
+    --dur-2: 160ms;
+    --dur-3: 240ms;
+    --dur-4: 420ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-back: cubic-bezier(0.2, 1.45, 0.4, 1);
+}
+
+html,
+body {
+    background: var(--ink);
+    font-family: var(--font-ui);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+/* A plate with its top-right corner cut: the one esports gesture this UI uses. */
+.plate,
+.round-bar,
+.killfeed li,
+.feed li,
+.medal,
+.status-block,
+.toast,
+.interaction,
+.execute-button,
+.leaderboard {
+    --cut-shape: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+}
+
+.kbd {
+    min-width: 1.8em;
+    height: 1.8em;
+    border: 1px solid rgb(236 234 228 / 0.28);
+    border-bottom-width: 2px;
+    border-radius: 2px;
+    background: rgb(11 15 20 / 0.6);
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ---------- buttons ---------- */
+
+.primary,
+.secondary {
+    position: relative;
+    border-radius: 0;
+    font-family: var(--font-ui);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    transition:
+        background var(--dur-1) var(--ease-out),
+        color var(--dur-1) var(--ease-out),
+        translate var(--dur-1) var(--ease-out);
+}
+
+.primary {
+    border: 0;
+    background: var(--accent);
+    color: #04201d;
+    box-shadow: none;
+}
+
+.primary:hover {
+    background: #6ff3e7;
+}
+
+.primary:active,
+.secondary:active {
+    translate: 0 1px;
+}
+
+.secondary {
+    border: 1px solid var(--line);
+    background: rgb(236 234 228 / 0.04);
+    color: var(--paper);
+}
+
+.secondary:hover {
+    border-color: var(--paper);
+    background: rgb(236 234 228 / 0.1);
+}
+
+/* ---------- HUD: top centre — clock, golden disc, place ---------- */
+
+.round-bar {
+    min-width: 220px;
+    padding: 6px 22px 8px;
+    border: 0;
+    border-bottom: 2px solid var(--accent);
+    background: var(--plate);
+    text-align: center;
+}
+
+.round-clock {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.round-clock[data-urgent='true'] {
+    color: var(--danger);
+    animation: clock-urgent 1s steps(1) infinite;
+}
+
+@keyframes clock-urgent {
+    50% {
+        color: var(--paper);
+    }
+}
+
+.round-gold {
+    margin-top: 3px;
+    color: var(--paper-dim);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+}
+
+.location {
+    top: calc(var(--gutter) + 70px);
+    padding: 2px 10px;
+    border-radius: 0;
+    background: none;
+    color: var(--paper-dim);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
+    backdrop-filter: none;
+}
+
+.location .location-code {
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+}
+
+.location .stripe {
+    width: 6px;
+    height: 6px;
+    border-radius: 0;
+    rotate: 45deg;
+}
+
+/* ---------- HUD: top left — this round's scores ---------- */
+
+.leaderboard {
+    width: 220px;
+    border: 0;
+    border-left: 2px solid var(--accent);
+    border-radius: 0;
+    background: var(--plate);
+}
+
+.leaderboard header {
+    color: var(--paper-dim);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+}
+
+.leaderboard li {
+    font-variant-numeric: tabular-nums;
+}
+
+.leaderboard li[data-me='true'] {
+    background: linear-gradient(90deg, rgb(46 230 214 / 0.22), transparent);
+}
+
+/* ---------- HUD: top right — minimap, then the feeds stacked under it ---------- */
+
+.map-dock canvas#minimap {
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 1px var(--hairline),
+        0 0 0 4px rgb(11 15 20 / 0.55),
+        0 0 0 5px rgb(46 230 214 / 0.35);
+}
+
+.feed-stack {
+    position: absolute;
+    top: calc(var(--gutter) + 150px + 18px);
+    right: var(--gutter);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    width: min(340px, 40vw);
+    pointer-events: none;
+}
+
+.feed-stack .killfeed,
+.feed-stack .feed {
+    position: static;
+    top: auto;
+    right: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+}
+
+.killfeed li {
+    gap: 8px;
+    padding: 4px 14px 4px 10px;
+    border-radius: 0;
+    background: var(--plate);
+    font-size: 13px;
+    box-shadow: none;
+    animation: feed-in var(--dur-2) var(--ease-out);
+}
+
+.killfeed li[data-tone='mine'] {
+    box-shadow: inset 3px 0 0 var(--accent);
+    background: linear-gradient(90deg, rgb(46 230 214 / 0.28), rgb(11 15 20 / 0.7));
+}
+
+.killfeed li[data-tone='me'] {
+    box-shadow: inset 3px 0 0 var(--danger);
+    background: linear-gradient(90deg, rgb(255 77 94 / 0.28), rgb(11 15 20 / 0.7));
+}
+
+.killfeed .killer {
+    font-weight: 700;
+}
+
+.killfeed .victim {
+    color: var(--paper-dim);
+}
+
+/* The event lane: pickups, drops, revives, joins — smaller and quieter than kills. */
+.feed li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 12px 3px 8px;
+    border: 0;
+    border-radius: 0;
+    background: rgb(11 15 20 / 0.62);
+    color: var(--paper-dim);
+    font-size: 12px;
+    animation: feed-in var(--dur-2) var(--ease-out);
+}
+
+.feed li b {
+    color: var(--paper);
+    font-weight: 700;
+}
+
+.feed li[data-tone='mine'] {
+    border-right: 0;
+    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--paper);
+}
+
+.feed li[data-tone='me'] {
+    border-right: 0;
+    box-shadow: inset 2px 0 0 var(--danger);
+    color: var(--paper);
+}
+
+.feed li .event-icon {
+    display: inline-grid;
+    width: 16px;
+    height: 16px;
+    place-items: center;
+    color: var(--event-colour, var(--paper));
+}
+
+.feed li .event-icon svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.feed li.leave,
+.killfeed li.fade {
+    opacity: 0;
+    translate: 12px 0;
+    transition:
+        opacity var(--dur-3) var(--ease-in),
+        translate var(--dur-3) var(--ease-in);
+}
+
+@keyframes feed-in {
+    from {
+        opacity: 0;
+        translate: 24px 0;
+    }
+}
+
+/* ---------- HUD: bottom centre — your status ---------- */
+
+.status-cluster {
+    position: absolute;
+    bottom: var(--gutter);
+    left: 50%;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    translate: -50% 0;
+    pointer-events: none;
+}
+
+.status-block {
+    display: grid;
+    align-content: center;
+    gap: 4px;
+    min-height: 56px;
+    padding: 7px 16px 8px;
+    background: var(--plate);
+}
+
+.status-block > small {
+    color: var(--paper-dim);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+}
+
+.status-cluster .health,
+.status-cluster .ammo,
+.status-cluster .ability-status {
+    position: static;
+    translate: none;
+    bottom: auto;
+    left: auto;
+}
+
+.status-cluster .health {
+    display: flex;
+    gap: 3px;
+}
+
+.status-cluster .health span {
+    width: 30px;
+    height: 12px;
+    border-radius: 0;
+    background: rgb(236 234 228 / 0.14);
+    transition: background var(--dur-2) var(--ease-out);
+}
+
+.status-cluster .health span[data-full='true'] {
+    background: var(--ok);
+    box-shadow: 0 0 10px rgb(62 230 156 / 0.35);
+}
+
+.status-cluster .health[data-low='true'] span[data-full='true'] {
+    background: var(--danger);
+    box-shadow: 0 0 12px rgb(255 77 94 / 0.55);
+    animation: hp-low 0.9s ease-in-out infinite;
+}
+
+@keyframes hp-low {
+    50% {
+        opacity: 0.55;
+    }
+}
+
+.status-cluster .health span.lost {
+    animation: hp-lost var(--dur-4) var(--ease-out);
+}
+
+@keyframes hp-lost {
+    0% {
+        background: #fff;
+        scale: 1.25 1.6;
+    }
+}
+
+.status-cluster .health span.gained {
+    animation: hp-gained var(--dur-4) var(--ease-back);
+}
+
+@keyframes hp-gained {
+    0% {
+        scale: 0.4 1;
+        background: #fff;
+    }
+}
+
+.status-cluster .ammo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 12px;
+}
+
+.status-cluster .ammo-icons {
+    display: flex;
+    gap: 4px;
+}
+
+.status-cluster .ammo-icons i {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgb(236 234 228 / 0.28);
+    border-radius: 50%;
+    background: none;
+    transition:
+        background var(--dur-2) var(--ease-out),
+        border-color var(--dur-2) var(--ease-out);
+}
+
+.status-cluster .ammo-icons i[data-full='true'] {
+    border-color: var(--paper);
+    background: radial-gradient(circle, var(--paper) 0 32%, transparent 36%);
+}
+
+.status-cluster .ammo-icons i.added {
+    animation: ammo-added var(--dur-4) var(--ease-back);
+}
+
+@keyframes ammo-added {
+    0% {
+        scale: 1.9;
+        border-color: var(--skill-creation);
+    }
+}
+
+.status-cluster .ammo #ammo-text {
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.status-cluster .ammo[data-empty='true'] #ammo-text {
+    color: var(--danger);
+    font-family: var(--font-ui);
+    font-size: 12px;
+}
+
+.status-cluster .skill-block[data-empty='true'] {
+    display: none;
+}
+
+/* ---------- centre: popup, medals, the big moment ---------- */
+
+.popup {
+    top: calc(50% + 30px);
+    left: 50%;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    translate: -50% 0;
+}
+
+.popup[data-kind='me'] {
+    top: 30%;
+}
+
+.medals {
+    position: absolute;
+    top: calc(50% + 62px);
+    left: 50%;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    translate: -50% 0;
+    pointer-events: none;
+}
+
+.medal {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 18px 6px 10px;
+    background: linear-gradient(90deg, rgb(11 15 20 / 0.86), rgb(11 15 20 / 0.5));
+    clip-path: var(--cut-shape);
+    animation: medal-in var(--dur-4) var(--ease-back);
+}
+
+.medal i {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    background: var(--medal-colour, var(--paper));
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+    color: #071012;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.medal b {
+    color: var(--medal-colour, var(--paper));
+    font-size: 17px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+}
+
+.medal small {
+    grid-column: 2;
+    margin-top: -4px;
+    color: var(--paper-dim);
+    font-size: 11px;
+}
+
+.medal[data-tier='rare'] {
+    --medal-colour: var(--accent);
+}
+
+.medal[data-tier='legend'] {
+    --medal-colour: var(--gold);
+}
+
+.medal.leave {
+    opacity: 0;
+    translate: 0 -10px;
+    transition:
+        opacity var(--dur-3) var(--ease-in),
+        translate var(--dur-3) var(--ease-in);
+}
+
+@keyframes medal-in {
+    0% {
+        opacity: 0;
+        scale: 1.6;
+        filter: brightness(2.2);
+    }
+    60% {
+        opacity: 1;
+    }
+}
+
+.broadcast {
+    top: 20%;
+    padding: 10px 40px;
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+    background: linear-gradient(90deg, transparent, rgb(11 15 20 / 0.86) 18%, rgb(11 15 20 / 0.86) 82%, transparent);
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+}
+
+.broadcast.show {
+    animation: moment-in var(--dur-4) var(--ease-out);
+}
+
+@keyframes moment-in {
+    from {
+        opacity: 0;
+        clip-path: inset(0 50% 0 50%);
+        letter-spacing: 0.4em;
+    }
+    to {
+        clip-path: inset(0 0 0 0);
+    }
+}
+
+/* ---------- prompts and toasts ---------- */
+
+.interaction {
+    padding: 7px 16px 7px 12px;
+    border: 0;
+    border-left: 2px solid var(--accent);
+    border-radius: 0;
+    background: var(--plate);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+}
+
+.toast {
+    top: calc(var(--gutter) + 100px);
+    padding: 6px 16px;
+    border-radius: 0;
+    background: var(--plate);
+    color: var(--paper);
+    font-size: 13px;
+    backdrop-filter: none;
+}
+
+.toast:not([hidden]) {
+    animation: feed-in var(--dur-2) var(--ease-out);
+}
+
+/* Key hints only when they help: the first moments of play, or while the map is open. */
+.hints {
+    opacity: 0;
+    transition: opacity var(--dur-3) var(--ease-out);
+}
+
+#app-ui[data-hints='show'] .hints,
+#app-ui[data-map='open'] .hints {
+    opacity: 1;
+}
+
+.chat-log li {
+    font-size: 13px;
+}
+
+.latency {
+    border-radius: 0;
+    background: rgb(11 15 20 / 0.6);
+    font-family: var(--font-display);
+    letter-spacing: 0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .killfeed li,
+    .feed li,
+    .medal,
+    .broadcast.show,
+    .status-cluster .health span.lost,
+    .status-cluster .health span.gained,
+    .status-cluster .ammo-icons i.added {
+        animation: none;
+    }
+}
+
+/* ---------- Skill acquired card & cast flash ---------- */
+.skill-acquired {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--gutter, 20px) + 118px);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 260px;
+    padding: 10px 18px 10px 12px;
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--skill-colour, var(--accent)) 26%, rgb(11 15 20 / 0.92)),
+        rgb(11 15 20 / 0.86)
+    );
+    border-left: 3px solid var(--skill-colour, var(--accent));
+    transform: translate(-50%, 16px);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        transform var(--dur-3) var(--ease-out),
+        opacity var(--dur-2) var(--ease-out);
+}
+.skill-acquired.show {
+    transform: translate(-50%, 0);
+    opacity: 1;
+    animation: skill-card-glint 900ms var(--ease-out) both;
+}
+.skill-acquired-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    color: var(--skill-colour, var(--accent));
+    border: 1.5px solid currentColor;
+    animation: skill-icon-pop 520ms var(--ease-back) both;
+}
+.skill-acquired-icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.skill-acquired small {
+    display: block;
+    font: 600 11px/1 var(--font-display);
+    letter-spacing: 0.18em;
+    color: var(--skill-colour, var(--accent));
+}
+.skill-acquired b {
+    display: block;
+    margin: 3px 0 2px;
+    font: 700 20px/1.1 var(--font-ui);
+    color: var(--paper);
+}
+.skill-acquired span {
+    font: 500 12px/1.2 var(--font-ui);
+    color: rgb(236 234 228 / 0.72);
+}
+@keyframes skill-card-glint {
+    0% {
+        filter: brightness(2.2);
+    }
+    100% {
+        filter: none;
+    }
+}
+@keyframes skill-icon-pop {
+    0% {
+        transform: scale(0.3) rotate(-45deg);
+        opacity: 0;
+    }
+    100% {
+        transform: none;
+        opacity: 1;
+    }
+}
+.skill-block.gained {
+    animation: skill-block-gain 700ms var(--ease-out);
+}
+@keyframes skill-block-gain {
+    0% {
+        box-shadow: 0 0 0 0 var(--accent);
+    }
+    40% {
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 0 transparent;
+    }
+}
+.skill-flash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: inset 0 0 120px 20px var(--skill-colour, var(--accent));
+}
+.skill-flash.cast {
+    animation: skill-flash 700ms var(--ease-out);
+}
+@keyframes skill-flash {
+    0% {
+        opacity: 0.85;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+.feed li.leave,
+.medal.leave {
+    opacity: 0;
+    transform: translateX(12px);
+    transition:
+        opacity 200ms var(--ease-in),
+        transform 200ms var(--ease-in);
+}
+.medal.leave {
+    transform: translate(0, -8px) scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+    .skill-acquired,
+    .skill-acquired.show,
+    .skill-acquired-icon,
+    .skill-flash.cast,
+    .skill-block.gained {
+        animation: none;
+        transition: none;
+    }
+}
+
+/* ====================================================================
+   Home screen — esports
+   ==================================================================== */
+.screen-title .plan {
+    filter: grayscale(0.6) brightness(0.55) contrast(1.15);
+}
+.screen-title .title-shade {
+    background:
+        linear-gradient(
+            100deg,
+            rgb(11 15 20 / 0.97) 0%,
+            rgb(11 15 20 / 0.86) 38%,
+            rgb(11 15 20 / 0.35) 70%,
+            rgb(11 15 20 / 0.7) 100%
+        ),
+        linear-gradient(0deg, rgb(11 15 20 / 0.95) 0%, transparent 32%);
+}
+/* A slanted accent band behind the hero — the one decorative gesture. */
+.screen-title::before {
+    content: '';
+    position: absolute;
+    top: -10%;
+    bottom: -10%;
+    left: 58%;
+    width: 14vw;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+    transform: skewX(-14deg);
+    pointer-events: none;
+    animation: band-in 900ms var(--ease-out) both;
+}
+@keyframes band-in {
+    from {
+        opacity: 0;
+        translate: 6vw 0;
+    }
+}
+.screen-title .scanlines {
+    opacity: 0.25;
+}
+
+.brand {
+    gap: 10px;
+    align-items: center;
+}
+.brand-mark {
+    padding: 4px 10px 3px;
+    background: var(--accent);
+    color: var(--ink);
+    font: 700 13px/1 var(--font-display);
+    letter-spacing: 0.08em;
+    clip-path: var(--cut-shape);
+}
+.brand b {
+    font: 700 22px/1 var(--font-display);
+    letter-spacing: 0.12em;
+}
+.brand span:last-child {
+    font: 600 12px/1 var(--font-display);
+    letter-spacing: 0.32em;
+    color: rgb(236 234 228 / 0.55);
+}
+
+.title-tabs {
+    gap: 2px;
+}
+.title-tabs button {
+    position: relative;
+    padding: 10px 16px;
+    background: transparent;
+    color: rgb(236 234 228 / 0.6);
+    font: 700 15px/1 var(--font-ui);
+    letter-spacing: 0.06em;
+    transition:
+        color var(--dur-2) var(--ease-out),
+        background var(--dur-2) var(--ease-out);
+}
+.title-tabs button:hover {
+    color: var(--paper);
+    background: rgb(236 234 228 / 0.06);
+}
+.title-tabs button[aria-selected='true'] {
+    color: var(--paper);
+}
+.title-tabs button[aria-selected='true']::after {
+    left: 16px;
+    right: 16px;
+    bottom: 0;
+    height: 3px;
+    background: var(--accent);
+    animation: tab-bar var(--dur-3) var(--ease-out);
+}
+@keyframes tab-bar {
+    from {
+        transform: scaleX(0);
+    }
+}
+.title-status {
+    font: 600 13px/1 var(--font-ui);
+}
+
+.tab-panel:not([hidden]) {
+    animation: panel-in var(--dur-3) var(--ease-out) both;
+}
+@keyframes panel-in {
+    from {
+        opacity: 0;
+        translate: -12px 0;
+    }
+}
+
+.mode-tag {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px 6px 6px;
+    background: rgb(236 234 228 / 0.06);
+    border-left: 3px solid var(--accent);
+    font: 600 13px/1 var(--font-ui);
+}
+.mode-tag span {
+    padding: 3px 7px;
+    background: var(--accent);
+    color: var(--ink);
+    font: 700 11px/1 var(--font-display);
+    letter-spacing: 0.14em;
+}
+.title-left h1 {
+    margin: 4px 0 0;
+    font: 700 clamp(56px, 8.4vw, 116px)/0.86 var(--font-display);
+    letter-spacing: 0.005em;
+    text-transform: uppercase;
+    animation: hero-in 700ms var(--ease-out) both 120ms;
+}
+@keyframes hero-in {
+    from {
+        opacity: 0;
+        translate: 0 18px;
+        clip-path: inset(0 0 100% 0);
+    }
+    to {
+        clip-path: inset(0 0 -10% 0);
+    }
+}
+.match-facts {
+    font: 500 13px/1.4 var(--font-ui);
+}
+.match-facts dt {
+    color: var(--accent);
+    font: 700 11px/1 var(--font-display);
+    letter-spacing: 0.18em;
+}
+
+/* Player card */
+.operator {
+    padding: 16px 18px;
+    background: linear-gradient(135deg, rgb(20 27 35 / 0.92), rgb(11 15 20 / 0.86));
+    border: 1px solid rgb(236 234 228 / 0.09);
+    border-top: 2px solid var(--accent);
+    clip-path: var(--cut-shape);
+    backdrop-filter: blur(6px);
+}
+.operator .field span {
+    font: 700 11px/1 var(--font-display);
+    letter-spacing: 0.16em;
+    color: rgb(236 234 228 / 0.55);
+}
+.operator .field input {
+    border: 0;
+    border-bottom: 2px solid rgb(236 234 228 / 0.18);
+    border-radius: 0;
+    background: rgb(236 234 228 / 0.04);
+    color: var(--paper);
+    font: 600 16px/1.2 var(--font-ui);
+    transition:
+        border-color var(--dur-2) var(--ease-out),
+        background var(--dur-2) var(--ease-out);
+}
+.operator .field input:focus {
+    outline: none;
+    border-bottom-color: var(--accent);
+    background: rgb(46 230 214 / 0.06);
+}
+.operator-hint {
+    font: 500 12px/1.5 var(--font-ui);
+    color: rgb(236 234 228 / 0.6);
+}
+.operator-avatar {
+    border-radius: 0;
+    clip-path: var(--cut-shape);
+    background: var(--accent);
+}
+#account-name {
+    font: 700 20px/1 var(--font-ui);
+}
+.operator-stats dt {
+    font: 700 11px/1 var(--font-display);
+    letter-spacing: 0.14em;
+    color: rgb(236 234 228 / 0.55);
+}
+.operator-stats dd {
+    font: 700 28px/1 var(--font-display);
+    font-variant-numeric: tabular-nums;
+}
+
+.king-card {
+    border-right-width: 3px;
+    background: linear-gradient(270deg, rgb(255 194 26 / 0.18), rgb(11 15 20 / 0.7));
+}
+.king-label {
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.24em;
+}
+.king-name {
+    font: 700 clamp(26px, 3vw, 40px)/1 var(--font-display);
+}
+
+/* Primary call to action */
+.play-button {
+    position: relative;
+    overflow: hidden;
+    min-width: 300px;
+    padding: 18px 34px 16px;
+    background: var(--accent);
+    color: var(--ink);
+    border: 0;
+    border-radius: 0;
+    clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+    transition:
+        transform var(--dur-2) var(--ease-out),
+        filter var(--dur-2) var(--ease-out);
+}
+.play-button .play-label {
+    font: 900 26px/1 var(--font-ui);
+    letter-spacing: 0.08em;
+    color: var(--ink);
+}
+.play-button small {
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.36em;
+    color: rgb(11 15 20 / 0.7);
+}
+.play-button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.55) 50%, transparent 65%);
+    translate: -110% 0;
+}
+.play-button:not(:disabled):hover {
+    transform: translateY(-2px);
+    filter: brightness(1.08);
+}
+.play-button:not(:disabled):hover::after {
+    translate: 110% 0;
+    transition: translate 620ms var(--ease-out);
+}
+.play-button:not(:disabled):active {
+    transform: translateY(1px) scale(0.99);
+}
+.play-button:disabled {
+    background: rgb(236 234 228 / 0.12);
+    color: rgb(236 234 228 / 0.5);
+}
+.play-button:disabled .play-label,
+.play-button:disabled small {
+    color: rgb(236 234 228 / 0.55);
+}
+.stages li {
+    border-radius: 0;
+}
+.stage-label,
+.fine-print {
+    font-family: var(--font-ui);
+}
+
+/* ====================================================================
+   Esc menu — esports
+   ==================================================================== */
+.screen-pause {
+    background: linear-gradient(90deg, rgb(11 15 20 / 0.97) 0%, rgb(11 15 20 / 0.92) 40%, rgb(11 15 20 / 0.45) 100%);
+    backdrop-filter: blur(3px) saturate(0.7);
+}
+#app-ui[data-screen='paused'] .screen-pause {
+    animation: pause-in var(--dur-3) var(--ease-out);
+}
+@keyframes pause-in {
+    from {
+        opacity: 0;
+    }
+}
+.pause-column {
+    max-width: 620px;
+    gap: 18px;
+    padding: calc(var(--gutter) + 12px) var(--gutter) var(--gutter) calc(var(--gutter) + 16px);
+    animation: panel-in var(--dur-3) var(--ease-out) both;
+}
+.pause-head {
+    display: grid;
+    gap: 14px;
+}
+.pause-column h2 {
+    font: 700 var(--step-4, 56px)/0.9 var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+}
+.pause-column h2::before {
+    content: 'PAUSED';
+    display: block;
+    margin-bottom: 6px;
+    color: var(--accent);
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.4em;
+}
+.pause-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid rgb(236 234 228 / 0.12);
+}
+.pause-tabs button {
+    position: relative;
+    padding: 10px 16px 12px;
+    background: transparent;
+    border: 0;
+    color: rgb(236 234 228 / 0.55);
+    font: 700 14px/1 var(--font-ui);
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition:
+        color var(--dur-2) var(--ease-out),
+        background var(--dur-2) var(--ease-out);
+}
+.pause-tabs button:hover {
+    color: var(--paper);
+    background: rgb(236 234 228 / 0.05);
+}
+.pause-tabs button[aria-selected='true'] {
+    color: var(--paper);
+}
+.pause-tabs button[aria-selected='true']::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 3px;
+    background: var(--accent);
+    animation: tab-bar var(--dur-3) var(--ease-out);
+}
+.pause-panel {
+    display: grid;
+    gap: 18px;
+    animation: panel-in var(--dur-3) var(--ease-out) both;
+}
+.pause-panel[hidden] {
+    display: none;
+}
+.pause-actions {
+    grid-template-columns: 1fr 1fr;
+}
+.pause-actions .primary {
+    grid-column: 1 / -1;
+    padding: 16px;
+    font-size: 18px;
+}
+.screen-pause fieldset {
+    gap: 0;
+    padding: 4px 16px 8px;
+    background: rgb(236 234 228 / 0.035);
+    border-left: 2px solid rgb(236 234 228 / 0.12);
+}
+.screen-pause legend {
+    float: left;
+    width: 100%;
+    margin: 0;
+    padding: 12px 0 6px;
+    color: var(--accent);
+    font: 700 12px/1 var(--font-display);
+    letter-spacing: 0.24em;
+}
+/* Settings as rows: name left, control right, a hover highlight across the row. */
+.screen-pause .slider,
+.screen-pause .check-row {
+    display: grid;
+    grid-template-columns: 1fr minmax(180px, 46%) 48px;
+    align-items: center;
+    gap: 12px;
+    min-height: 46px;
+    margin: 0 -16px;
+    padding: 0 16px;
+    font: 500 14px/1.2 var(--font-ui);
+    border-top: 1px solid rgb(236 234 228 / 0.05);
+    transition: background var(--dur-1) var(--ease-out);
+}
+.screen-pause .slider:hover,
+.screen-pause .check-row:hover {
+    background: rgb(46 230 214 / 0.06);
+}
+.screen-pause .slider output {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: right;
+    color: var(--paper);
+    font: 600 15px/1 var(--font-display);
+}
+.screen-pause .slider input,
+.screen-pause .slider select {
+    grid-column: 2;
+    grid-row: 1;
+}
+.screen-pause .slider select {
+    padding: 8px 10px;
+    border: 1px solid rgb(236 234 228 / 0.16);
+    border-radius: 0;
+    background: rgb(11 15 20 / 0.8);
+    font: 600 14px/1 var(--font-ui);
+    cursor: pointer;
+}
+.screen-pause .slider select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.screen-pause .check-row {
+    grid-template-columns: 1fr auto;
+}
+.screen-pause .check-row input {
+    order: 2;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+/* Custom range track */
+.screen-pause input[type='range'] {
+    appearance: none;
+    height: 22px;
+    background: transparent;
+    cursor: pointer;
+}
+.screen-pause input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent) var(--fill, 50%), rgb(236 234 228 / 0.16) var(--fill, 50%));
+}
+.screen-pause input[type='range']::-moz-range-track {
+    height: 4px;
+    background: rgb(236 234 228 / 0.16);
+}
+.screen-pause input[type='range']::-moz-range-progress {
+    height: 4px;
+    background: var(--accent);
+}
+.screen-pause input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 20px;
+    margin-top: -8px;
+    background: var(--paper);
+    clip-path: polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%);
+    transition:
+        background var(--dur-1) var(--ease-out),
+        transform var(--dur-1) var(--ease-out);
+}
+.screen-pause input[type='range']:hover::-webkit-slider-thumb {
+    background: var(--accent);
+    transform: scale(1.1);
+}
+.screen-pause input[type='range']::-moz-range-thumb {
+    width: 12px;
+    height: 20px;
+    border: 0;
+    border-radius: 0;
+    background: var(--paper);
+}
+.pause-panel .controls {
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+.pause-panel .controls > div {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    align-items: center;
+    min-height: 40px;
+    border-top: 1px solid rgb(236 234 228 / 0.05);
+    font: 500 14px/1.3 var(--font-ui);
+}
+.pause-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgb(236 234 228 / 0.5);
+    font: 500 12px/1 var(--font-ui);
+}
+@media (max-width: 720px) {
+    .pause-actions {
+        grid-template-columns: 1fr;
+    }
+    .screen-pause .slider {
+        grid-template-columns: 1fr 40px;
+    }
+    .screen-pause .slider input,
+    .screen-pause .slider select {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+    .screen-pause .slider output {
+        grid-column: 2;
+    }
+    .play-button {
+        min-width: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .screen-title::before,
+    .title-left h1,
+    .tab-panel:not([hidden]),
+    .pause-column,
+    .pause-panel,
+    #app-ui[data-screen='paused'] .screen-pause {
+        animation: none;
+    }
+}
+
+/* ---------- Shape language: square plates; the cut corner is reserved for medals ---------- */
+.round-bar {
+    clip-path: none;
+    border-bottom: 2px solid var(--accent);
+}
+.leaderboard {
+    border-top: 2px solid rgb(236 234 228 / 0.18);
+}
+.status-block {
+    border-top: 2px solid rgb(236 234 228 / 0.14);
+}
+.status-block.hp-block {
+    border-top-color: var(--ok);
+}
+.status-block.ammo-block {
+    border-top-color: var(--paper);
+}
+.status-block.skill-block:not([data-empty='true']) {
+    border-top-color: var(--accent);
+}
+.interaction,
+.toast {
+    border-left: 3px solid var(--accent);
+}
+.skill-acquired-icon {
+    border-radius: 50%;
+}
+
+/* ---------- Home details: loading bar and the enter button ---------- */
+#app-ui .stages {
+    position: relative;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    transition: gap 420ms var(--ease-out);
+}
+#app-ui .stages li {
+    height: 3px;
+    transition: background var(--dur-3) var(--ease-out);
+}
+#app-ui .stages[data-complete='true'] {
+    gap: 0;
+}
+#app-ui .stages[data-complete='true'] li {
+    animation: none;
+    background: var(--signal);
+}
+/* Once merged, a light runs along the finished bar. */
+#app-ui .stages[data-complete='true']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.9), transparent);
+    background-size: 30% 100%;
+    background-repeat: no-repeat;
+    animation: bar-glint 900ms var(--ease-out) 420ms both;
+}
+@keyframes bar-glint {
+    from {
+        background-position: -40% 0;
+    }
+    to {
+        background-position: 140% 0;
+    }
+}
+
+.play-button {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'label arrow' 'sub arrow';
+    align-items: center;
+    column-gap: 18px;
+    text-align: left;
+}
+.play-button .play-label {
+    grid-area: label;
+    transition: letter-spacing var(--dur-3) var(--ease-out);
+}
+.play-button small {
+    grid-area: sub;
+}
+.play-arrow {
+    grid-area: arrow;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    color: var(--ink);
+    opacity: 0.35;
+    transition:
+        transform var(--dur-3) var(--ease-out),
+        opacity var(--dur-2) var(--ease-out);
+}
+.play-arrow svg {
+    width: 26px;
+    height: 26px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.6;
+    stroke-linecap: square;
+}
+.play-button:disabled .play-arrow {
+    color: rgb(236 234 228 / 0.5);
+}
+/* Ready: a slow breathing light so the eye finds it. */
+.play-button:not(:disabled) {
+    animation: play-breathe 2.8s ease-in-out infinite;
+}
+@keyframes play-breathe {
+    50% {
+        background: #5ff2e6;
+    }
+}
+/* Hover: lift, brighten, tracking opens up, arrow slides in, light sweeps across. */
+.play-button:not(:disabled):hover {
+    animation: none;
+    background: #7ff7ec;
+    transform: translateY(-3px);
+}
+.play-button:not(:disabled):hover .play-label {
+    letter-spacing: 0.16em;
+}
+.play-button:not(:disabled):hover .play-arrow {
+    opacity: 1;
+    transform: translateX(6px);
+    animation: arrow-nudge 900ms var(--ease-out) 300ms infinite;
+}
+@keyframes arrow-nudge {
+    50% {
+        transform: translateX(10px);
+    }
+}
+.play-button:not(:disabled):active {
+    transform: translateY(0) scale(0.98);
+    background: var(--accent);
+}
+.play-button:focus-visible {
+    outline: 2px solid var(--paper);
+    outline-offset: 4px;
+}
+/* Hover frame: two corner ticks outside the button (the button itself clips its own overflow). */
+.title-bottom {
+    position: relative;
+}
+.title-bottom:has(.play-button:not(:disabled):hover)::after {
+    content: '';
+    position: absolute;
+    right: -8px;
+    bottom: -8px;
+    width: 26px;
+    height: 26px;
+    border-right: 2px solid var(--accent);
+    border-bottom: 2px solid var(--accent);
+    grid-area: play;
+    pointer-events: none;
+    animation: tick-in var(--dur-2) var(--ease-out);
+}
+@keyframes tick-in {
+    from {
+        opacity: 0;
+        translate: -6px -6px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .play-button:not(:disabled),
+    .play-button:not(:disabled):hover .play-arrow,
+    #app-ui .stages[data-complete='true']::after {
+        animation: none;
+    }
+}

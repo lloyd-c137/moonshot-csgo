@@ -32,7 +32,7 @@ import { setLook } from '../player/playerController';
 import { box, merge, place, torus } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
 import { killIcons } from '../ui/killFeed';
-import type { Ui } from '../ui/shell';
+import type { EventIcon, Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
 import type { SeatSlot } from '../world/stadiumLayout';
 
@@ -71,6 +71,7 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
+import { createMedalTracker } from './medals';
 import type { PickupAssetLoader } from './pickupAssetLoader';
 import { createPickupVisual } from './pickupVisuals';
 import { nearBreaker, powerOut, powerPhase } from './power';
@@ -111,6 +112,18 @@ const globalExecution = (finisher: GlobalFinisher): Execution => ({
     variant: finisher.variant
 });
 
+
+type SkillKind = 'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'coach';
+const SKILL_KINDS = ['revive', 'frc', 'eye', 'stealth', 'creation', 'coach'] as const;
+/** How each skill looks and reads when someone gets it. */
+const SKILL_META: Record<SkillKind, { name: string; detail: string; colour: string; rgb: [number, number, number]; icon: EventIcon; has: (p: PlayerSummary) => boolean }> = {
+    revive: { name: '复活甲', detail: '被淘汰时满血复活一次', colour: '#3ee69c', rgb: [0.24, 0.9, 0.61], icon: 'revive', has: (p) => p.hasReviveArmor === true },
+    frc: { name: 'FRC 飞盘', detail: 'Enter 切换红色科技盘', colour: '#ff4d5e', rgb: [1, 0.3, 0.37], icon: 'frc', has: (p) => p.hasFrc === true },
+    eye: { name: '监控室之眼', detail: '全场玩家位置已标记', colour: '#2ee6d6', rgb: [0.18, 0.9, 0.84], icon: 'eye', has: (p) => p.hasEye === true },
+    stealth: { name: '静止之力', detail: 'Enter 发动 · 隐身 3 秒', colour: '#a070ff', rgb: [0.63, 0.44, 1], icon: 'stealth', has: (p) => p.hasStealth === true },
+    creation: { name: '创造之力', detail: '每 30 秒自动补充一张飞盘', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'creation', has: (p) => p.hasCreation === true },
+    coach: { name: '飞盘天赋', detail: '携带上限提升至 5', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'coach', has: (p) => p.coachGift === true }
+};
 export const createMatch = ({
     app,
     player,
@@ -572,8 +585,10 @@ export const createMatch = ({
         stripeMaterial.update();
         tintGhosts(hue);
     };
-    const skillActivationFeedback = (label: string, colour: [number, number, number]) => {
+    const skillActivationFeedback = (label: string, colour: [number, number, number], kind: 'pulse' | 'stealth' | 'still' | 'power' = 'power') => {
         ui.popup(label, 'gold');
+        sound.skillUse(kind);
+        ui.skillCast(`rgb(${colour.map((c) => Math.round(c * 255)).join(' ')})`);
         const p = player.getPosition();
         const at: V3 = [p.x, p.y - PLAYER.height * 0.45, p.z];
         effects.ring(at, colour, 0.24, 0.5, 2.2);
@@ -586,6 +601,21 @@ export const createMatch = ({
     let caught = false;
 
     const selfId = () => net.id ?? 'local';
+    const medalTracker = createMedalTracker(selfId);
+    ui.uiSounds({ hover: sound.uiHover, click: sound.uiClick, tab: sound.uiTab, medal: sound.medal });
+    /** A skill landing in your hands: a card, a rising sound and a coloured burst at your feet. */
+    const skillGained = (kind: SkillKind) => {
+        const meta = SKILL_META[kind];
+        ui.skillAcquired({ name: meta.name, detail: meta.detail, colour: meta.colour, icon: meta.icon });
+        sound.skillPickup();
+        const p = player.getPosition();
+        const at: V3 = [p.x, p.y - PLAYER.height * 0.45, p.z];
+        effects.ring(at, meta.rgb, 0.2, 0.45, 1.8);
+        for (let i = 0; i < 16; i++) {
+            const angle = (i * Math.PI) / 8;
+            effects.mote(at, meta.rgb, [Math.cos(angle) * 0.5, 1.4 + (i % 4) * 0.3, Math.sin(angle) * 0.5], 0.02, 0.7);
+        }
+    };
     const nameOf = (id: string) =>
         id === 'guard' ? '保安' : id === labTargetId ? '固定测试人偶' : (roster.get(id)?.name ?? '某人');
     simulateDummyHit = (scenario) => {
@@ -794,7 +824,7 @@ export const createMatch = ({
             else {
                 localStealthUntil = roomNow() + ITEM_RULES.stealthDurationMs;
                 localStealthCooldownUntil = roomNow() + ITEM_RULES.stealthCooldownMs;
-                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
+                skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1], 'still');
             }
             return true;
         }
@@ -957,6 +987,17 @@ export const createMatch = ({
         },
         items: applyWorldItems,
         ability: (id, next, item) => {
+            const before = roster.get(id);
+            for (const kind of SKILL_KINDS) {
+                if (!SKILL_META[kind].has(next) || (before && SKILL_META[kind].has(before))) continue;
+                if (!before && id !== selfId()) continue; // a fresh roster entry is not a pickup
+                if (id === selfId()) skillGained(kind);
+                else {
+                    const meta = SKILL_META[kind];
+                    ui.event({ icon: meta.icon, who: next.name, text: ` 获得了 ${meta.name}`, colour: meta.colour });
+                    sound.feedTick();
+                }
+            }
             roster.set(id, next);
             avatars.setReviveArmor(id, next.hasReviveArmor === true);
             if (id === selfId()) {
@@ -983,7 +1024,7 @@ export const createMatch = ({
                     ui.notify('已切回普通飞盘');
                 }
                 if (localStealthUntil > previousStealthUntil && localStealthUntil > roomNow())
-                    skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1]);
+                    skillActivationFeedback('静止之力发动 · 隐身 3 秒', [0.56, 0.28, 1], 'still');
             }
             refreshBoard();
         },
@@ -996,12 +1037,18 @@ export const createMatch = ({
                 ui.popup('复活甲生效', 'gold');
                 ui.feed('复活甲生效 · 满血复活，短暂无敌', 'mine');
                 sound.respawn();
+                sound.skillUse('heal');
+                ui.skillCast(SKILL_META.revive.colour);
                 effects.ring(at, [0.3, 0.95, 0.85], 0.3, 1.5, 1.3);
                 localAbilities.revive = false;
                 localAbilities.reviveUsed = true;
                 localAbilities.reviveTaken = true;
             }
             const entry = roster.get(id);
+            if (id !== selfId() && entry) {
+                ui.event({ icon: 'revive', who: entry.name, text: ' 的复活甲生效了', colour: SKILL_META.revive.colour });
+                sound.feedTick();
+            }
             if (entry) Object.assign(entry, { hp: MAX_HP, alive: true, spectating: false, hasReviveArmor: false });
             avatars.setReviveArmor(id, false);
         },
@@ -1186,9 +1233,26 @@ export const createMatch = ({
                 });
                 const tone = target === me ? 'me' : by === me ? 'mine' : 'neutral';
                 if (presentation.showHud) ui.killFeed(nameOf(by), nameOf(target), icons, shot?.range ?? null, tone);
+                let leader: string | null = null;
+                let best = 0;
+                for (const [key, entry] of roster) if ((entry.kills ?? 0) > best) [leader, best] = [key, entry.kills ?? 0];
+                medalTracker.setLeader(leader);
+                const awards = medalTracker.kill({
+                    time: now / 1000,
+                    killer: by,
+                    victim: target,
+                    head,
+                    bank: shot?.bank === true,
+                    golden,
+                    execution,
+                    frc,
+                    distance: shot?.range ?? undefined,
+                    aliveAfter: final ? [...roster].filter(([key, player]) => key !== target && player.alive && !player.spectating).length : undefined
+                });
                 if (by === me) {
                     if (presentation.showHud) ui.killBanner(streak, nameOf(target), icons);
                     sound.streak(streak);
+                    if (presentation.showHud && awards.length) ui.medals(awards);
                 }
                 killMarks.push({ at: [...(positionOf(target) ?? at)] as V3, until: now + 3000 });
                 if (killMarks.length > 8) killMarks.shift();
@@ -1549,7 +1613,7 @@ export const createMatch = ({
             localAmmoCapacity = 5;
             ammo = Math.min(localAmmoCapacity, ammo + 2);
             ui.ammo(ammo, localAmmoCapacity);
-            ui.popup('飞盘天赋 · 携带上限提升至 5', 'gold');
+            skillGained('coach');
             return;
         }
         if (target.id === 'mark') {
@@ -1566,7 +1630,7 @@ export const createMatch = ({
                 power.at = [local[0], Math.max(0.02, local[1] - 0.9), local[2]];
                 applyWorldItems(worldItems);
             }
-            ui.popup('获得创造之力 · 每 30 秒补充一张飞盘', 'gold');
+            skillGained('creation');
             return;
         }
         const item = worldItems.find((entry) => entry.id === target.id);
@@ -1586,8 +1650,7 @@ export const createMatch = ({
         item.at = [local[0], Math.max(0.02, local[1] - 0.9), local[2]];
         if (item.kind === 'frc') localFrcCooldownUntil = Math.max(localFrcCooldownUntil, item.cooldownUntil);
         applyWorldItems(worldItems);
-        ui.popup(`拾取${item.name}`, 'gold');
-        sound.pickup();
+        skillGained(item.kind);
     };
     window.addEventListener('mousedown', (event) => {
         // Right button while charging or aiming: stand down without throwing.

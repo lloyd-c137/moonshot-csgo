@@ -1,7 +1,10 @@
 import type { MatchDebug } from '../gameplay/match';
+import type { Ui } from '../ui/shell';
 
 // Development-only hooks used by the browser tests (installed when import.meta.env.DEV). Not in production builds.
 export type DebugHooks = {
+    /** The interface, for visual checks of feeds, medals and skill cards. */
+    ui: Ui;
     /** Shader programs linked so far and total compile time (ms): a rise mid-game is a hitch. */
     perf: () => { shadersLinked: number; compileMs: number; shaders: string[]; drawCallsPerFrame: number };
     position: () => number[];

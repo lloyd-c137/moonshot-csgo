@@ -11,7 +11,14 @@ import type { MapMarkers } from './minimap';
 import { roundResultCopy } from './roundResult';
 import type { Settings } from './settings';
 import { SETTING_RANGES } from './settings';
+import '@fontsource/barlow-condensed/latin-500.css';
+import '@fontsource/barlow-condensed/latin-600.css';
+import '@fontsource/barlow-condensed/latin-700.css';
+import '@fontsource/noto-sans-sc/chinese-simplified-500.css';
+import '@fontsource/noto-sans-sc/chinese-simplified-700.css';
+import '@fontsource/noto-sans-sc/chinese-simplified-900.css';
 import './theme.css';
+import './esports.css';
 
 export type LoadStage = 'physics' | 'campus' | 'structure' | 'dressing' | 'characters';
 const STAGES: [LoadStage, string][] = [
@@ -37,6 +44,54 @@ type Actions = {
     avatarUrl: (id: string, version: string) => string | null;
     setLocalTestAvatar: (image: Blob | null) => Promise<void>;
 };
+
+export type FeedEvent = {
+    text: string;
+    tone?: 'neutral' | 'mine' | 'me';
+    icon?: EventIcon;
+    colour?: string;
+    who?: string;
+};
+export type EventIcon =
+    'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'coach' | 'gold' | 'gate' | 'drop' | 'power';
+export type Medal = { name: string; badge: string; tier: 'normal' | 'rare' | 'legend'; detail?: string };
+export type UiSoundCues = {
+    hover: () => void;
+    click: () => void;
+    tab: () => void;
+    medal: (tier: Medal['tier']) => void;
+};
+/** 16 × 16 line icons for the event lane (stroke = currentColor). */
+const EVENT_ICON_SVG: Record<EventIcon, string> = {
+    revive: '<path d="M8 2.5 13 4.5v4c0 3-2.2 4.7-5 5.5-2.8-.8-5-2.5-5-5.5v-4z"/><path d="M8 6v4M6 8h4"/>',
+    frc: '<ellipse cx="8" cy="8" rx="6" ry="2.6"/><path d="M3 10.5c1.2 1.2 3 1.8 5 1.8s3.8-.6 5-1.8"/>',
+    eye: '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+    stealth: '<path d="M8 1.5 13 8l-5 6.5L3 8z"/><path d="M8 5v6"/>',
+    creation:
+        '<circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>',
+    coach: '<circle cx="8" cy="5" r="2.5"/><path d="M3 14c.6-3 2.6-4.5 5-4.5s4.4 1.5 5 4.5"/>',
+    gold: '<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
+    gate: '<path d="M3 14V3h10v11"/><path d="M8 3v11M5.5 8.5h0M10.5 8.5h0"/>',
+    drop: '<path d="M8 2v8M4.5 6.5 8 10l3.5-3.5"/><path d="M3 13.5h10"/>',
+    power: '<path d="M9 1.5 4 9h4l-1 5.5L12 7H8z"/>'
+};
+
+const CONTROLS_HTML = `
+            <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
+            <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
+            <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
+            <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
+            <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
+            <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
+            <div><dt><span class="kbd">V</span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
+            <div><dt><span class="kbd">Enter</span></dt><dd>发动当前主动技能；聊天中发送消息</dd></div>
+            <div><dt><span class="kbd">T</span></dt><dd>世界聊天</dd></div>
+            <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
+            <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
+            <div><dt><span class="kbd">G</span></dt><dd>脱离卡死（出现提示时）</dd></div>
+            <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
+            <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>`;
 
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
@@ -99,23 +154,7 @@ const MARKUP = `
         </section>
         <section class="tab-panel" data-panel="help" hidden>
           <h2 class="panel-title">操作说明</h2>
-          <dl class="controls">
-            <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
-            <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
-            <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
-            <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
-            <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
-            <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
-            <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
-            <div><dt><span class="kbd">V</span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
-            <div><dt><span class="kbd">Enter</span></dt><dd>发动当前主动技能；聊天中发送消息</dd></div>
-            <div><dt><span class="kbd">T</span></dt><dd>世界聊天</dd></div>
-            <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
-            <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
-            <div><dt><span class="kbd">G</span></dt><dd>脱离卡死（出现提示时）</dd></div>
-            <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
-            <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>
-          </dl>
+          <dl class="controls">${CONTROLS_HTML}</dl>
         </section>
       </div>
       <aside class="title-right">
@@ -134,7 +173,7 @@ const MARKUP = `
       </div>
       <p class="load-error" id="load-error" role="alert" hidden></p>
       <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
-      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">ENTER THE ARENA</small></button>
+      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">ENTER THE ARENA</small><i class="play-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7"/></svg></i></button>
       <p class="fine-print">账号只保存用户名、加密后的密码和战绩，不收集其他个人信息 · 场景由 FF-01 平面图推导，并非实地测量</p>
     </footer>
   </section>
@@ -165,7 +204,6 @@ const MARKUP = `
     </div>
     <div class="spectate" id="spectate" hidden><strong>观战中</strong><span id="spectate-detail"></span><small>点击左键切换观看对象</small></div>
     <span class="latency" id="latency" data-quality="none">离线</span>
-    <div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div>
     <p class="watch-warning" id="watch-warning" hidden><b>纪老师在附近</b>禁止打飞盘</p>
     <div class="gold-kill" id="gold-kill" hidden>
       <small>金飞盘击杀</small>
@@ -194,7 +232,6 @@ const MARKUP = `
     <svg class="kill-burst" id="kill-burst" viewBox="-30 -30 60 60" aria-hidden="true"><circle class="kill-burst-ring" r="15" /><g class="kill-burst-chevrons"><path d="M-21 -11 -11 -11 -11 -21" /><path d="M21 -11 11 -11 11 -21" /><path d="M21 11 11 11 11 21" /><path d="M-21 11 -11 11 -11 21" /></g><circle class="kill-burst-core" r="2.4" /></svg>
     <span class="popup" id="popup" aria-hidden="true"></span>
     <p class="interaction" id="interaction" hidden></p>
-    <div class="ability-status" id="ability-status" hidden><i class="ability-ring"><b></b></i><span id="ability-label"></span></div>
     <div class="xray-pings" id="xray-pings" aria-hidden="true"></div>
     <div class="chat" id="chat" data-open="false">
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
@@ -206,10 +243,19 @@ const MARKUP = `
     <div class="arena-transition" id="arena-transition" aria-hidden="true"><span>莲花球场 · 最终对决</span></div>
     <div class="name-tags" id="name-tags" aria-hidden="true"></div>
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
-    <div class="health" id="health" aria-label="生命"></div>
+    <div class="status-cluster" id="status-cluster">
+      <div class="status-block hp-block"><small>生命</small><div class="health" id="health" aria-label="生命"></div></div>
+      <div class="status-block ammo-block"><small>飞盘</small><div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div></div>
+      <div class="status-block skill-block" id="skill-block" data-empty="true"><small>技能</small><div class="ability-status" id="ability-status" hidden><i class="ability-ring"><b></b></i><span id="ability-label"></span></div></div>
+    </div>
     <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd">G</span>好像卡住了？脱离卡死</button>
-    <ol class="killfeed" id="killfeed" aria-live="polite"></ol>
-    <ol class="feed" id="feed" aria-live="polite"></ol>
+    <div class="feed-stack" id="feed-stack">
+      <ol class="killfeed" id="killfeed" aria-live="polite"></ol>
+      <ol class="feed" id="feed" aria-live="polite"></ol>
+    </div>
+    <ol class="medals" id="medals" aria-live="polite"></ol>
+    <div class="skill-acquired" id="skill-acquired" hidden><i class="skill-acquired-icon"></i><div><small>获得技能</small><b></b><span></span></div></div>
+    <div class="skill-flash" id="skill-flash" aria-hidden="true"></div>
     <div class="kill-banner" id="kill-banner" hidden><div class="kill-pips" id="kill-pips"></div><strong id="kill-banner-title"></strong><span id="kill-banner-detail"></span></div>
     <div class="kill-marks" id="kill-marks" aria-hidden="true"></div>
     <div class="scoreboard" id="scoreboard" hidden>
@@ -246,7 +292,16 @@ const MARKUP = `
 
   <section class="screen screen-pause" aria-labelledby="pause-heading">
     <div class="pause-column">
-      <h2 id="pause-heading">已暂停</h2>
+      <header class="pause-head">
+        <h2 id="pause-heading">已暂停</h2>
+        <nav class="pause-tabs" role="tablist" aria-label="暂停菜单">
+          <button type="button" role="tab" data-pause-tab="game" aria-selected="true">游戏</button>
+          <button type="button" role="tab" data-pause-tab="video" aria-selected="false">画面与操作</button>
+          <button type="button" role="tab" data-pause-tab="audio" aria-selected="false">音频</button>
+          <button type="button" role="tab" data-pause-tab="keys" aria-selected="false">按键</button>
+        </nav>
+      </header>
+      <div class="pause-panel" data-pause-panel="game">
       <div class="pause-actions">
         <button class="primary" id="resume-button" type="button">继续游戏</button>
         <button class="secondary" id="recover-button" type="button">脱离卡死 · 回到南入口</button>
@@ -262,8 +317,10 @@ const MARKUP = `
           <output id="avatar-status" role="status" aria-live="polite"></output>
         </div>
       </fieldset>
+      </div>
+      <div class="pause-panel" data-pause-panel="video" hidden>
       <fieldset>
-        <legend>设置</legend>
+        <legend>操作</legend>
         <label class="slider">鼠标灵敏度<output id="sensitivity-value"></output>
           <input id="sensitivity" type="range" /></label>
         <label class="slider">视野<output id="fov-value"></output>
@@ -277,6 +334,8 @@ const MARKUP = `
           <select id="effects-quality"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
         <label class="check-row"><input id="reduced-flashes" type="checkbox" />减少闪光</label>
       </fieldset>
+      </div>
+      <div class="pause-panel" data-pause-panel="audio" hidden>
       <fieldset>
         <legend>音量</legend>
         <label class="slider">总音量<output id="master-volume-value"></output>
@@ -286,6 +345,11 @@ const MARKUP = `
         <label class="slider">确认音量<output id="confirmation-volume-value"></output>
           <input id="confirmation-volume" type="range" /></label>
       </fieldset>
+      </div>
+      <div class="pause-panel" data-pause-panel="keys" hidden>
+        <dl class="controls">${CONTROLS_HTML}</dl>
+      </div>
+      <footer class="pause-foot"><span class="kbd">Esc</span>继续游戏</footer>
     </div>
   </section>
 </div>`;
@@ -331,6 +395,97 @@ export const createUi = () => {
     // The execute button is a real hold: pressing starts it, releasing (or sliding off) ends it.
     let executeHold: { begin: () => void; end: () => void } | null = null;
     let introTyping = 0;
+    let uiSoundCues: UiSoundCues | null = null;
+    let skillCardTimer = 0;
+    // Range sliders paint their filled part through --fill.
+    const paintRange = (input: HTMLInputElement) => {
+        const min = Number(input.min || 0),
+            max = Number(input.max || 100);
+        input.style.setProperty('--fill', `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
+    };
+    document.addEventListener('input', (event) => {
+        if (event.target instanceof HTMLInputElement && event.target.type === 'range') paintRange(event.target);
+    });
+    requestAnimationFrame(() => document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(paintRange));
+    // Esc menu tabs.
+    for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-pause-tab]'))
+        tab.addEventListener('click', () => {
+            const name = tab.dataset.pauseTab!;
+            for (const other of document.querySelectorAll<HTMLButtonElement>('[data-pause-tab]'))
+                other.setAttribute('aria-selected', String(other === tab));
+            for (const panel of document.querySelectorAll<HTMLElement>('[data-pause-panel]'))
+                panel.hidden = panel.dataset.pausePanel !== name;
+        });
+    // Event lane: newest first, at most four, each leaving with a short slide.
+    const pushEvent = ({ text, tone = 'neutral', icon, colour, who }: FeedEvent) => {
+        const list = $('#feed');
+        const item = document.createElement('li');
+        item.dataset.tone = tone;
+        if (icon) {
+            const glyph = document.createElement('i');
+            glyph.className = 'event-icon';
+            glyph.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${EVENT_ICON_SVG[icon]}</svg>`;
+            if (colour) item.style.setProperty('--event-colour', colour);
+            item.append(glyph);
+        }
+        if (who) {
+            const name = document.createElement('b');
+            name.textContent = who;
+            item.append(name);
+        }
+        item.append(document.createTextNode(text));
+        list.prepend(item);
+        while (list.children.length > 4) list.lastElementChild!.remove();
+        window.setTimeout(() => item.classList.add('leave'), 4200);
+        window.setTimeout(() => item.remove(), 4500);
+    };
+    // Medals: one at a time, 1.4 s each, at most three waiting.
+    const medalQueue: Medal[] = [];
+    let medalTimer = 0;
+    const showNextMedal = () => {
+        const next = medalQueue.shift();
+        const list = $('#medals');
+        if (!next) {
+            medalTimer = 0;
+            return;
+        }
+        while (medalQueue.length > 3) medalQueue.pop();
+        const item = document.createElement('li');
+        item.className = 'medal';
+        item.dataset.tier = next.tier;
+        const badge = document.createElement('i');
+        badge.textContent = next.badge;
+        const name = document.createElement('b');
+        name.textContent = next.name;
+        item.append(badge, name);
+        if (next.detail) {
+            const detail = document.createElement('small');
+            detail.textContent = next.detail;
+            item.append(detail);
+        }
+        list.replaceChildren(item);
+        uiSoundCues?.medal(next.tier);
+        medalTimer = window.setTimeout(() => {
+            item.classList.add('leave');
+            medalTimer = window.setTimeout(showNextMedal, 220);
+        }, 1400);
+    };
+    // Interface sounds: hover and click on any button or tab (hover throttled so a sweep is not a buzz).
+    let lastHover = 0;
+    document.addEventListener('pointerover', (event) => {
+        const target = (event.target as HTMLElement | null)?.closest(
+            'button, [role="tab"], select, input[type="range"]'
+        );
+        if (!target || performance.now() - lastHover < 60) return;
+        lastHover = performance.now();
+        uiSoundCues?.hover();
+    });
+    document.addEventListener('click', (event) => {
+        const target = (event.target as HTMLElement | null)?.closest('button, [role="tab"]');
+        if (!target) return;
+        if (target.getAttribute('role') === 'tab') uiSoundCues?.tab();
+        else uiSoundCues?.click();
+    });
     const executeButton = $('#execute-button');
     executeButton.addEventListener('pointerdown', (event) => {
         event.preventDefault();
@@ -341,6 +496,7 @@ export const createUi = () => {
         executeButton.addEventListener(type, () => executeHold?.end());
     $('#execute-button').addEventListener('mousedown', (event) => event.stopPropagation());
     const root = $('#app-ui');
+    let hintsShown = false;
     const stagesList = $<HTMLOListElement>('.stages');
     for (const [stage, label] of STAGES) {
         const item = document.createElement('li');
@@ -356,7 +512,11 @@ export const createUi = () => {
     let broadcastTimer = 0;
     let arenaTransitionTimer = 0;
 
-    const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => (root.dataset.screen = screen);
+    const setScreen = (screen: 'loading' | 'ready' | 'play' | 'paused' | 'error') => {
+        root.dataset.screen = screen;
+        if (screen === 'paused')
+            document.querySelectorAll<HTMLInputElement>('.screen-pause input[type="range"]').forEach(paintRange);
+    };
 
     // ---------- title: tabs, identity, board ----------
     let signedIn = false;
@@ -517,6 +677,8 @@ export const createUi = () => {
                 : '支持 JPG、PNG、WebP，原图最大 8 MiB。图片会覆盖人偶整个头部，并向其他玩家显示。';
             renderAccount(currentAccount);
             for (const item of stagesList.querySelectorAll<HTMLElement>('li')) item.dataset.state = 'done';
+            // All segments full: they close their gaps and become one bar.
+            stagesList.dataset.complete = 'true';
             $('#stage-label').textContent = '准备就绪';
             enterButton.disabled = false;
             $('#enter-label').textContent = '进入校园';
@@ -673,7 +835,15 @@ export const createUi = () => {
             const needsSignIn = !signedIn && $('#operator').dataset.accounts !== 'false';
             (needsSignIn ? $('#auth-name') : enterButton).focus();
         },
-        playing: () => setScreen('play'),
+        playing: () => {
+            setScreen('play');
+            // Key hints show for the first moments of play only.
+            if (!hintsShown) {
+                hintsShown = true;
+                root.dataset.hints = 'show';
+                window.setTimeout(() => (root.dataset.hints = 'hide'), 20_000);
+            }
+        },
         paused: () => {
             root.dataset.map = 'closed';
             setScreen('paused');
@@ -965,14 +1135,19 @@ export const createUi = () => {
         },
         health: (hp: number, max: number) => {
             const health = $('#health');
+            const before = Number(health.dataset.hp ?? hp);
             health.replaceChildren(
                 ...Array.from({ length: max }, (_, index) => {
                     const pip = document.createElement('span');
                     if (index < hp) pip.dataset.full = 'true';
+                    // A lost segment flashes out; a restored one snaps back in.
+                    if (index >= hp && index < before) pip.className = 'lost';
+                    if (index < hp && index >= before) pip.className = 'gained';
                     return pip;
                 })
             );
-            health.dataset.low = String(hp <= 1);
+            health.dataset.hp = String(hp);
+            health.dataset.low = String(hp <= 1 && max > 1);
         },
         hitPrediction: (throwId: number) => {
             const marker = $('#hitmarker');
@@ -1095,6 +1270,7 @@ export const createUi = () => {
         abilityStatus: (label: string | null, progress = 1) => {
             const root = $('#ability-status');
             root.hidden = label === null;
+            $('#skill-block').dataset.empty = String(label === null);
             if (label === null) return;
             $('#ability-label').textContent = label;
             root.style.setProperty('--ability-progress', `${Math.round(Math.max(0, Math.min(1, progress)) * 360)}deg`);
@@ -1260,13 +1436,16 @@ export const createUi = () => {
                       ? '没有飞盘 · 去捡回或到体育组办公室'
                       : `飞盘 ${count}/${max}`;
             const icons = $('#ammo-icons');
+            const before = Number(icons.dataset.count ?? count ?? 0);
             icons.replaceChildren(
                 ...Array.from({ length: count === null ? 0 : max }, (_, index) => {
                     const icon = document.createElement('i');
                     icon.dataset.full = String(count !== null && index < count);
+                    if (count !== null && index < count && index >= before) icon.className = 'added';
                     return icon;
                 })
             );
+            icons.dataset.count = String(count ?? 0);
         },
         /** 纪老师's circle: a standing warning while you are inside it. */
         watchWarning: (show: boolean) => {
@@ -1322,14 +1501,50 @@ export const createUi = () => {
             const stage = fraction >= 1 ? 'full' : fraction >= 0.5 ? 'mid' : 'low';
             if (charge.dataset.stage !== stage) charge.dataset.stage = stage;
         },
-        feed: (text: string, tone: 'neutral' | 'mine' | 'me' = 'neutral') => {
-            const list = $('#feed');
-            const item = document.createElement('li');
-            item.dataset.tone = tone;
-            item.textContent = text;
-            list.prepend(item);
-            while (list.children.length > 5) list.lastElementChild!.remove();
-            window.setTimeout(() => item.remove(), 6000);
+        feed: (text: string, tone: 'neutral' | 'mine' | 'me' = 'neutral') => pushEvent({ text, tone }),
+        /** The event lane under the kill feed: an icon, a bold name and what happened (pickups, drops, revives…). */
+        event: (entry: FeedEvent) => pushEvent(entry),
+        /** Personal medals under the crosshair (double kill, revenge…), one after another. */
+        medals: (list: readonly Medal[]) => {
+            medalQueue.push(...list);
+            if (!medalTimer) showNextMedal();
+        },
+        /** A skill card that slides in above the status cluster when you pick something up. */
+        skillAcquired: ({
+            name,
+            detail,
+            colour,
+            icon
+        }: {
+            name: string;
+            detail: string;
+            colour: string;
+            icon: EventIcon;
+        }) => {
+            const card = $('#skill-acquired');
+            card.style.setProperty('--skill-colour', colour);
+            card.querySelector('.skill-acquired-icon')!.innerHTML =
+                `<svg viewBox="0 0 16 16" aria-hidden="true">${EVENT_ICON_SVG[icon]}</svg>`;
+            card.querySelector('b')!.textContent = name;
+            card.querySelector('span')!.textContent = detail;
+            card.hidden = false;
+            replay(card, 'show');
+            window.clearTimeout(skillCardTimer);
+            skillCardTimer = window.setTimeout(() => {
+                card.classList.remove('show');
+                skillCardTimer = window.setTimeout(() => (card.hidden = true), 260);
+            }, 2600);
+            replay($('#skill-block'), 'gained');
+        },
+        /** A coloured pulse around the screen edge when a skill fires. */
+        skillCast: (colour: string) => {
+            const flash = $('#skill-flash');
+            flash.style.setProperty('--skill-colour', colour);
+            replay(flash, 'cast');
+        },
+        /** Sounds for interface interactions (hover, click, tab), supplied by the game's sound engine. */
+        uiSounds: (cues: UiSoundCues) => {
+            uiSoundCues = cues;
         },
         scoreboard: (rows: { name: string; kills: number; deaths: number; me: boolean }[] | null) => {
             const board = $('#scoreboard');

@@ -405,6 +405,93 @@ export const createSound = () => {
                 hiss(audio, out, at(0.9), 0.18, 0.06, 700, 1500, 1.4);
                 tone(audio, out, 'square', 380, 260, at(0.99), 0.04, 0.035);
             }),
+        /** Interface hover: a very short, quiet tick. */
+        uiHover: () =>
+            play((audio, now) => {
+                tone(audio, bus(), 'triangle', 2400, 2200, now, 0.025, 0.018);
+            }, 'ui'),
+        /** Interface confirm: a two-step click upward. */
+        uiClick: () =>
+            play((audio, now) => {
+                tone(audio, bus(), 'square', 900, 860, now, 0.02, 0.03);
+                tone(audio, bus(), 'triangle', 1500, 1700, now + 0.025, 0.06, 0.04);
+            }, 'ui'),
+        /** Interface tab change: a soft paper-like slide. */
+        uiTab: () =>
+            play((audio, now) => {
+                hiss(audio, bus(), now, 0.07, 0.04, 2800, 5200, 1.6);
+                tone(audio, bus(), 'triangle', 1200, 1300, now + 0.01, 0.04, 0.025);
+            }, 'ui'),
+        /** Interface back / close: the confirm click turned downward. */
+        uiBack: () =>
+            play((audio, now) => {
+                tone(audio, bus(), 'triangle', 1500, 1000, now, 0.07, 0.035);
+            }, 'ui'),
+        /** Event-lane tick for a pickup, revive or drop elsewhere on the map. */
+        feedTick: () =>
+            play((audio, now) => {
+                tone(audio, bus(), 'sine', 1320, 1320, now, 0.05, 0.03);
+                tone(audio, bus(), 'sine', 1760, 1760, now + 0.05, 0.07, 0.022);
+            }, 'ui'),
+        /** Medal reveal: brighter and longer for rare and legendary medals. */
+        medal: (tier: 'normal' | 'rare' | 'legend') =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    const notes =
+                        tier === 'legend' ? [659, 988, 1319, 1976] : tier === 'rare' ? [784, 1175, 1568] : [880, 1320];
+                    notes.forEach((freq, index) =>
+                        tone(audio, out, 'triangle', freq, freq, now + index * 0.055, 0.22, 0.07)
+                    );
+                    hiss(audio, out, now, tier === 'legend' ? 0.5 : 0.25, 0.05, 5000, 9000, 2);
+                    if (tier === 'legend') tone(audio, out, 'sine', 110, 55, now, 0.6, 0.25);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.hit
+            ),
+        /** Picking up a skill item: a rising shimmer with a solid lock at the top. */
+        skillPickup: () =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    tone(audio, out, 'sawtooth', 220, 880, now, 0.28, 0.06);
+                    tone(audio, out, 'triangle', 660, 1320, now + 0.04, 0.3, 0.08);
+                    hiss(audio, out, now, 0.3, 0.08, 1500, 7000, 1.8);
+                    tone(audio, out, 'square', 1760, 1700, now + 0.3, 0.04, 0.05);
+                    tone(audio, out, 'sine', 1320, 1320, now + 0.32, 0.4, 0.05);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.hit
+            ),
+        /** Using a skill: a charged release; `kind` picks the colour of the sound. */
+        skillUse: (kind: 'heal' | 'pulse' | 'stealth' | 'still' | 'power') =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    if (kind === 'heal') {
+                        [523, 659, 784, 1047].forEach((f, i) =>
+                            tone(audio, out, 'sine', f, f, now + i * 0.06, 0.5, 0.06)
+                        );
+                    } else if (kind === 'pulse') {
+                        tone(audio, out, 'sine', 90, 45, now, 0.6, 0.35);
+                        tone(audio, out, 'triangle', 1760, 880, now, 0.5, 0.06);
+                        hiss(audio, out, now, 0.6, 0.1, 400, 3000, 1.2);
+                    } else if (kind === 'stealth') {
+                        hiss(audio, out, now, 0.5, 0.12, 6000, 600, 1.4);
+                        tone(audio, out, 'sine', 880, 220, now, 0.5, 0.05);
+                    } else if (kind === 'still') {
+                        tone(audio, out, 'sine', 1200, 300, now, 0.9, 0.08);
+                        tone(audio, out, 'sine', 60, 40, now, 1, 0.3);
+                        hiss(audio, out, now, 0.15, 0.2, 3000, 800, 0.8);
+                    } else {
+                        tone(audio, out, 'sawtooth', 110, 440, now, 0.25, 0.12);
+                        tone(audio, out, 'square', 880, 1760, now + 0.08, 0.2, 0.05);
+                        hiss(audio, out, now, 0.3, 0.14, 1200, 6000, 1.5);
+                    }
+                },
+                'combat',
+                AUDIO_PRIORITY.hit
+            ),
         /** Starting to aim: a soft mechanical slide that rises with the zoom. */
         scopeIn: () =>
             play((audio, now) => {

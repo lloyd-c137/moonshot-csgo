@@ -8,6 +8,7 @@ import { Entity, Vec3 } from 'playcanvas';
 import type { AppBase, Mesh, RigidBodyComponentSystem } from 'playcanvas';
 
 import type { CharacterAssetLoader } from '../characters/CharacterAssetLoader';
+import { novaDisc } from '../render/novaDisc';
 
 import { hueColour } from './discs';
 import { executionProgress } from './execution';
@@ -157,7 +158,7 @@ export const createExecutionView = (
             target.character.playAt('Finisher_Toss_Victim', 1.15);
             // Both disc finishes too, so their glowing material's shader is compiled before the first real move.
             const discs = [false, true].map((gold) => {
-                const disc = new FinisherDiscController(discMesh, attacker, target, gold);
+                const disc = new FinisherDiscController(gold ? novaDisc(app).mesh : discMesh, attacker, target, gold);
                 disc.attach(app.root);
                 disc.update(0.3);
                 return disc;
@@ -173,7 +174,12 @@ export const createExecutionView = (
             const attacker = acquire(record.attacker.colour);
             const target = acquire(record.target.colour);
             const disc = global
-                ? new FinisherDiscController(discMesh, attacker, target, record.variant === 'THE_BOOMERANG_GOLD')
+                ? new FinisherDiscController(
+                      record.variant === 'THE_BOOMERANG_GOLD' ? novaDisc(app).mesh : discMesh,
+                      attacker,
+                      target,
+                      record.variant === 'THE_BOOMERANG_GOLD'
+                  )
                 : null;
             if (disc) disc.attach(app.root);
             scenes.set(record.id, {

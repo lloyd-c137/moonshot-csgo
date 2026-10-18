@@ -1,10 +1,11 @@
 // The 金飞盘 (golden disc) in the world: lying where it spawned or fell — big, hovering, spinning, throwing off
 // sparks under a tall beam of light with a slow ground ring — or carried, when the beam follows its holder.
-// Pooled meshes and the shared spark pool; no textures.
-import type { AppBase, Entity as EntityType, Mesh as MeshType } from 'playcanvas';
+// The disc itself is the NOVA DISC 24K model (render/novaDisc.ts); pooled meshes and the shared spark pool.
+import type { AppBase, Entity as EntityType, Texture } from 'playcanvas';
 import { BLEND_ADDITIVE, Color, CULLFACE_NONE, Entity, Mesh, MeshInstance, StandardMaterial } from 'playcanvas';
 
 import type { GoldState } from '../net/protocol';
+import { novaDisc } from '../render/novaDisc';
 import { cylinder, place, torus } from '../render/shapes';
 import type { Shape } from '../render/shapes';
 
@@ -23,14 +24,19 @@ const meshOf = (app: AppBase, shape: Shape) => {
     return mesh;
 };
 
-/** Polished gold that also glows (the scene has no environment map, so real metal would read as black). */
-export const createGoldMaterial = () => {
+/**
+ * Polished gold that also glows (the scene has no environment map, so real metal would read as black). The label
+ * (pinstripes, wordmark) tints both the colour and the glow, so it stays legible as the glow pulses.
+ */
+export const createGoldMaterial = (label: Texture | null = null) => {
     const material = new StandardMaterial();
     material.name = 'gold-disc';
-    material.diffuse = new Color(1, 0.74, 0.2);
+    material.diffuse = label ? new Color(1, 1, 1) : new Color(1, 0.74, 0.2);
+    if (label) material.diffuseMap = label;
     material.specular = new Color(1, 0.9, 0.6);
     material.gloss = 0.92;
-    material.emissive = new Color(1, 0.62, 0.12);
+    material.emissive = label ? new Color(0.85, 0.7, 0.45) : new Color(1, 0.62, 0.12);
+    if (label) material.emissiveMap = label;
     material.emissiveIntensity = 0.55;
     material.update();
     return material;
@@ -49,10 +55,11 @@ const glow = (colour: [number, number, number], intensity: number) => {
     return material;
 };
 
-export const createGold = (app: AppBase, discMesh: MeshType, effects: Effects) => {
-    const material = createGoldMaterial();
+export const createGold = (app: AppBase, effects: Effects) => {
+    const nova = novaDisc(app);
+    const material = createGoldMaterial(nova.label);
     const disc = new Entity('gold-disc');
-    disc.addComponent('render', { meshInstances: [new MeshInstance(discMesh, material)], castShadows: false });
+    disc.addComponent('render', { meshInstances: [new MeshInstance(nova.mesh, material)], castShadows: false });
     disc.setLocalScale(1.7, 1.7, 1.7);
     // Beam: a tall soft column (two nested cylinders) marking the disc — or its holder — from across the floor.
     const beam = new Entity('gold-beam');
@@ -81,6 +88,8 @@ export const createGold = (app: AppBase, discMesh: MeshType, effects: Effects) =
     let beamHidden = false;
     return {
         material,
+        /** The golden disc's mesh (for thrown, held and in-hand golden discs). */
+        mesh: nova.mesh,
         get state() {
             return state;
         },

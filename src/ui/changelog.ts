@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.33.0',
+        date: '2026.10.19',
+        title: '金飞盘新造型',
+        notes: [
+            '金飞盘换成 NOVA DISC 24K 纯金款：圆拱盘面、卷边盘缘，盘面带细金线和 NOVA ZERO 字样。',
+            '地上悬浮的金飞盘、手持视角、其他玩家手里、扔出去的金飞盘和金盘处决动画都使用新模型。'
+        ]
+    },
+    {
         version: 'v0.32.0',
         date: '2026.10.18',
         title: '东门手电筒',

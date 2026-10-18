@@ -16,6 +16,8 @@ import { hueColour } from './discs';
 type Avatar = {
     character: ReturnType<CharacterAssetLoader['create']>;
     disc: EntityType;
+    /** The golden disc model in the hand (child of `disc`, made on first hold). */
+    goldDisc: EntityType | null;
     root: EntityType;
     tag: HTMLElement;
     name: string;
@@ -91,11 +93,23 @@ export const createAvatars = (
     /** Hit flash per hue material: until (ms). */
     const flashes = new Map<number, number>();
     /** The golden disc replaces the in-hand disc of whoever holds it. */
+    let goldMesh: Mesh | null = null;
     const setGold = (holder: string | null) => {
         goldHolder = holder;
         for (const [id, avatar] of avatars) {
-            const material = id === holder && goldMaterial ? goldMaterial : avatar.character.materials.get('M_Main')!;
-            for (const instance of avatar.disc.render!.meshInstances) instance.material = material;
+            const golden = id === holder && goldMaterial !== null && goldMesh !== null;
+            if (golden && !avatar.goldDisc) {
+                // The NOVA DISC model at its true size: a child of the in-hand disc (a scaled primitive cylinder),
+                // so it shows and hides with it; the parent's scale is undone here.
+                const model = new Entity(`avatar-gold-disc-${id}`);
+                model.addComponent('render', { meshInstances: [new MeshInstance(goldMesh!, goldMaterial!)], castShadows: false });
+                model.setLocalScale(1 / 0.25, 1 / 0.035, 1 / 0.25);
+                model.setLocalPosition(0, -0.5, 0);
+                avatar.disc.addChild(model);
+                avatar.goldDisc = model;
+            }
+            if (avatar.goldDisc) avatar.goldDisc.enabled = golden;
+            avatar.disc.render!.enabled = !golden;
         }
     };
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
@@ -216,6 +230,7 @@ export const createAvatars = (
             root,
             character,
             disc,
+            goldDisc: null,
             tag,
             name,
             hue,
@@ -420,6 +435,11 @@ export const createAvatars = (
         /** Material used for the golden disc attached to the holder's hand. */
         set goldMaterial(material: StandardMaterial) {
             goldMaterial = material;
+            setGold(goldHolder);
+        },
+        /** Mesh of the golden disc attached to the holder's hand. */
+        set goldMesh(mesh: Mesh) {
+            goldMesh = mesh;
             setGold(goldHolder);
         },
         /** Shows the struck player's remaining health pips over their head for a moment (gold flash on a head hit). */

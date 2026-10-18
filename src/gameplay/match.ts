@@ -433,8 +433,10 @@ export const createMatch = ({
     }
     let king: King | null = null;
     // The round, the golden disc and 纪老师.
-    const goldView = createGold(app, discs.mesh, effects);
+    const goldView = createGold(app, effects);
     discs.goldMaterial = goldView.material;
+    discs.goldMesh = goldView.mesh;
+    avatars.goldMesh = goldView.mesh;
     avatars.goldMaterial = goldView.material;
     const teacher = createTeacher(app, camera, ui.nameTagLayer(), characters);
     let roundState: RoundState | null = null;
@@ -806,7 +808,7 @@ export const createMatch = ({
             ghost.material.emissive.set(1, 0.62, 0.12);
             ghost.material.emissiveIntensity = 0.9;
             ghost.material.update();
-            ghost.entity.render!.meshInstances = [new MeshInstance(discs.mesh, ghost.material)];
+            ghost.entity.render!.meshInstances = [new MeshInstance(goldView.mesh, ghost.material)];
         }
     };
     const viewmodelWorld = (): V3 => {
@@ -817,7 +819,7 @@ export const createMatch = ({
         if (skin === viewmodelSkin && !force) return;
         viewmodelSkin = skin;
         if (skin === 'gold') {
-            viewmodel.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
+            viewmodel.render!.meshInstances = [new MeshInstance(goldView.mesh, goldView.material)];
             stripeMaterial.diffuse.set(0.95, 0.96, 0.97);
             stripeMaterial.emissive.set(0, 0, 0);
             stripeMaterial.emissiveIntensity = 0;
@@ -3132,7 +3134,7 @@ export const createMatch = ({
             ground.showAt(at[0], at[1] - 0.5, at[2]);
             teacher.root.setPosition(at[0], at[1] - 1, at[2]);
             guard.showAt(at[0] + 1, at[2]);
-            ghosts[0].entity.render!.meshInstances = [new MeshInstance(discs.mesh, goldView.material)];
+            ghosts[0].entity.render!.meshInstances = [new MeshInstance(goldView.mesh, goldView.material)];
             avatars.add('prewarm', '', colourFor('local'));
             // The finisher pair is pooled and drawn here once, so a real move starts without a hitch.
             const coolExecution = executionView.warm(at);

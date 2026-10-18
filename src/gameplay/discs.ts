@@ -103,6 +103,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
     };
 
     let goldMaterial: StandardMaterial | null = null;
+    let goldMesh: Mesh | null = null;
     const orientation = new Quat();
     const up = new Vec3(0, 1, 0);
     const normalVec = new Vec3();
@@ -145,7 +146,9 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             const visual = new Entity('disc-visual');
             visual.addComponent('render', {
                 meshInstances:
-                    options.gold && goldMaterial ? [new MeshInstance(mesh, goldMaterial)] : meshFor(options.frc ? 0 : options.hue),
+                    options.gold && goldMaterial
+                        ? [new MeshInstance(goldMesh ?? mesh, goldMaterial)]
+                        : meshFor(options.frc ? 0 : options.hue),
                 castShadows: false
             });
             visual.setLocalPosition(0, -0.008, 0);
@@ -303,6 +306,9 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             }
         },
         /** The golden disc's material, for discs its holder throws. */
+        set goldMesh(next: Mesh) {
+            goldMesh = next;
+        },
         set goldMaterial(material: StandardMaterial) {
             goldMaterial = material;
         },

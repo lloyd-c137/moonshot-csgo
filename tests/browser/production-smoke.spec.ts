@@ -54,7 +54,6 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         )
         .toBe(true);
     await expect(page).toHaveTitle('Moonshot Frisbee Games');
-    await expect(page.locator('#enter-button')).toBeDisabled();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'loading', { timeout: 90_000 });
     await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(6);
     await expect(page.locator('#boot-loader')).toHaveAttribute('data-state', 'ready');

@@ -94,7 +94,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect(page.locator('.title-top .brand')).toContainText('MOONSHOTFRISBEE GAMES');
     await expect
         .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()))
-        .toBe('#147bff');
+        .toBe('#00d7ff');
     await expect
         .poll(() =>
             page.evaluate(() => {
@@ -110,7 +110,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
                 return result;
             })
         )
-        .toEqual({ fill: 'rgb(20, 123, 255)', edge: 'rgb(41, 182, 255)', glow: expect.stringContaining('20, 123, 255') });
+        .toEqual({ fill: 'rgb(0, 215, 255)', edge: 'rgb(114, 242, 255)', glow: expect.stringContaining('0, 215, 255') });
     await expect
         .poll(() =>
             page.evaluate(() => {
@@ -122,7 +122,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
                 return colour;
             })
         )
-        .toBe('rgb(20, 123, 255)');
+        .toBe('rgb(0, 215, 255)');
     await expect
         .poll(() =>
             page.locator('#enter-button').evaluate((button) => {

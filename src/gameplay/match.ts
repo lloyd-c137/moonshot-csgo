@@ -15,7 +15,7 @@ import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
-import type { King, PlayerPose, PlayerSummary, RoundState, ThrowRecord, WorldItem } from '../net/protocol';
+import type { King, PlayerPose, PlayerSummary, RoundOutcome, RoundState, ThrowRecord, WorldItem } from '../net/protocol';
 import {
     colourFor,
     AMMO,
@@ -79,6 +79,7 @@ import {
     TOSS_AT
 } from './inspect';
 import { createMedalTracker } from './medals';
+import { createMvpView, MVP } from './mvp/mvpView';
 import type { PickupAssetLoader } from './pickupAssetLoader';
 import { createPickupVisual } from './pickupVisuals';
 import { nearBreaker, powerOut, powerPhase } from './power';
@@ -365,6 +366,23 @@ export const createMatch = ({
                     );
                     if (!presentation.accepted) return;
                     sound.roundEnd(mine, outcome);
+                    labMvp = {
+                        at: roomNow(),
+                        outcome,
+                        entry: {
+                            id: mine ? selfId() : 'mvp-stand-in',
+                            name: mine ? nickname || '你' : '测试对手',
+                            phase: 'playing',
+                            account: false,
+                            colour: mine ? colourFor('local') : 200,
+                            alive: true,
+                            hp: MAX_HP,
+                            score: 12,
+                            kills: 7,
+                            deaths: 2,
+                            hasReviveArmor: true
+                        }
+                    };
                     ui.roundEnd({
                         winner: outcome === 'draw' ? null : mine ? nickname || '你' : '测试对手',
                         mine,
@@ -443,6 +461,57 @@ export const createMatch = ({
     /** Test hook: a ceremony starting at this room time with these entrants (offline). */
     let labCeremony: { at: number; entrants: Entrant[] } | null = null;
     let shuttersShut = false;
+    // ---------- end-of-round MVP ----------
+    const mvpView = createMvpView(app, camera, characters, arenaCenter);
+    let mvpRun: { at: number } | null = null;
+    /** Test hook: an MVP sequence starting now for a stand-in result. */
+    let labMvp: { at: number; entry: PlayerSummary; outcome: RoundOutcome } | null = null;
+    const mvpResultLabel = (outcome: RoundOutcome) =>
+        outcome === 'golden-disc' ? '金飞盘胜利' : outcome === 'last-survivor' ? '最后的幸存者' : '本局最高分';
+    const startMvp = (at: number, entry: PlayerSummary, outcome: RoundOutcome) => {
+        mvpRun = { at };
+        const url = entry.avatarId && entry.avatarVersion ? auth.avatarUrl(entry.avatarId, entry.avatarVersion) : null;
+        mvpView.start(hueColour(entry.colour), avatars.headImage(entry.id));
+        if (url && !avatars.headImage(entry.id)) {
+            const image = new Image();
+            image.crossOrigin = 'anonymous';
+            image.src = url;
+            void image.decode().then(() => mvpView.setHead(image), () => undefined);
+        }
+        const skill = SKILL_KINDS.map((kind) => SKILL_META[kind]).find((meta) => meta.has(entry))?.name ?? '—';
+        ui.mvp({
+            name: entry.id === selfId() ? `${entry.name}（你）` : entry.name,
+            colour: `hsl(${entry.colour} 75% 52%)`,
+            result: mvpResultLabel(outcome),
+            avatar: url,
+            stats: [
+                { label: '淘汰', value: String(entry.kills) },
+                { label: '被淘汰', value: String(entry.deaths) },
+                { label: '得分', value: String(entry.score) },
+                { label: '技能', value: skill }
+            ],
+            others: [...roster.values()]
+                .filter((other) => other.id !== entry.id && other.phase === 'playing')
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3)
+                .map((other) => ({ name: other.name, value: `${other.kills} 淘汰 · ${other.score} 分` }))
+        });
+        sound.ceremonyRing(2);
+        inputPaused = true;
+        chargingSince = null;
+        ui.charge(null);
+        const script = controller();
+        if (script) script.enabled = false;
+    };
+    const stopMvp = () => {
+        mvpRun = null;
+        mvpView.stop();
+        ui.mvp(null);
+        ui.ceremony.fade(0);
+        inputPaused = false;
+        const script = controller();
+        if (script) script.enabled = alive && !executionFrozen && !spectating;
+    };
     // ---------- event cutscenes (lights out, breaker pulled) ----------
     const cutsceneView = createCutsceneView(app, camera);
     let cutsceneRun: { kind: CutsceneKind; at: number; skipped: boolean; lastPerf: number; beats: Set<string> } | null = null;
@@ -2568,6 +2637,30 @@ export const createMatch = ({
         // Round clock, golden disc status and end-of-round banner.
         const roomMs = roomNow();
         const current = roundState;
+        // The MVP sequence opens the intermission for everyone.
+        const mvpAt =
+            labMvp?.at ??
+            (net.state === 'online' && current?.phase === 'ended'
+                ? current.nextAt - ROUND.intermissionSeconds * 1000
+                : null);
+        const mvpT = mvpAt === null ? -1 : (roomMs - mvpAt) / 1000;
+        if (!mvpRun && started && !ceremonyRun && mvpAt !== null && mvpT >= 0 && mvpT < MVP.seconds - 1) {
+            const ended = current?.phase === 'ended' ? current : null;
+            const entry =
+                labMvp?.entry ??
+                (ended?.winnerId ? roster.get(ended.winnerId) : undefined) ??
+                [...roster.values()].filter((p) => p.phase === 'playing').sort((a, b) => b.score - a.score)[0];
+            if (entry) startMvp(mvpAt, entry, labMvp?.outcome ?? ended?.outcome ?? 'draw');
+        }
+        if (mvpRun) {
+            const t = (roomMs - mvpRun.at) / 1000;
+            mvpView.update(t);
+            ui.ceremony.fade(t > MVP.seconds - MVP.fadeOut ? (t - (MVP.seconds - MVP.fadeOut)) / MVP.fadeOut : 0);
+            if (t >= MVP.seconds || mvpAt !== mvpRun.at) {
+                stopMvp();
+                if (labMvp) labMvp = null;
+            }
+        }
         if (net.state === 'online' && current) {
             if (current.phase === 'playing') {
                 ui.roundClock(Math.max(0, (current.endsAt - roomMs) / 1000));
@@ -2810,7 +2903,7 @@ export const createMatch = ({
             // The practice finisher also runs as a global finisher, so its end must be checked before the early return.
             finishPracticeFinisher();
             if (globalFinisher) {
-                avatars.update(poses, now, ceremonyRun ? new Set(roster.keys()) : executionView.hiddenIds());
+                avatars.update(poses, now, ceremonyRun || mvpRun ? new Set(roster.keys()) : executionView.hiddenIds());
                 executionView.update(realRoomNow(), selfId());
                 const progress = executionProgress(globalExecution(globalFinisher), realRoomNow());
                 ui.executionPrompt(null);
@@ -2843,10 +2936,14 @@ export const createMatch = ({
             if (chargingSince === null) chargeFullPlayed = false;
             updateCombatFeel(now);
             stands.update(
-                [...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
-                (id) => roster.get(id)?.colour ?? 0,
-                inFinalMinute(),
-                now
+                [
+                    ...[...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
+                    ...(labCeremony && ceremonyRun ? Array.from({ length: 14 }, (_, i) => `lab-fan-${i}`) : [])
+                ],
+                (id) => roster.get(id)?.colour ?? (id.startsWith('lab-fan-') ? (Number(id.slice(8)) * 53) % 360 : 0),
+                inFinalMinute() || !!ceremonyRun,
+                now,
+                !!ceremonyRun
             );
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
             if (net.state === 'online' && alive && !executionView.hasActor(selfId())) {
@@ -2878,7 +2975,7 @@ export const createMatch = ({
                 else poses.delete(labTargetId);
                 labUi?.dummy(labHp, Math.max(0, (labRespawnAt - now) / 1000));
             }
-            avatars.update(poses, now, ceremonyRun ? new Set(roster.keys()) : executionView.hiddenIds());
+            avatars.update(poses, now, ceremonyRun || mvpRun ? new Set(roster.keys()) : executionView.hiddenIds());
             animateFeel(deltaTime, now);
             updateRound(now);
             effects.update(now < hitStopUntil ? 0 : deltaTime);

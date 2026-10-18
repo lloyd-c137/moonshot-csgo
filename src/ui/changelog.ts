@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.25.0',
+        date: '2026.10.18',
+        title: 'MVP 结算与头像入口',
+        notes: [
+            '对局结束时全场同步播放 MVP 结算：获胜玩家（平局时为最高分）在聚光灯下走上球场挥手庆祝，左侧依次弹出 MVP 名牌、头像、胜利方式、淘汰 / 被淘汰 / 得分 / 技能，以及其他前三名。',
+            '首页玩家卡片新增头像：显示当前头像，点击头像或“上传头像”即可更换；未登录时会提示登录后可上传。',
+            'Final 入场仪式期间，看台上的观众（已出局的玩家）也会出现，站起来向入场的选手挥手。'
+        ]
+    },
+    {
         version: 'v0.24.0',
         date: '2026.10.18',
         title: '重大事件过场',

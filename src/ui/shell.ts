@@ -131,9 +131,9 @@ const MARKUP = `
               <label class="field" for="auth-password"><span>密码</span><input id="auth-password" type="password" maxlength="64" autocomplete="current-password" placeholder="至少 6 位" /></label>
               <button type="submit" hidden></button>
             </form>
-            <p class="operator-hint" id="operator-hint">输入用户名和密码即可进入；新用户名会自动注册，战绩永久保存。</p>
+            <p class="operator-hint" id="operator-hint">输入用户名和密码即可进入；新用户名会自动注册，战绩永久保存。登录后可以上传头像，贴在你的角色头部。</p>
             <div class="operator-signed">
-              <div class="operator-id"><span class="operator-avatar" aria-hidden="true"></span><b id="account-name"></b><button class="link" id="logout-button" type="button">退出登录</button></div>
+              <div class="operator-id"><button class="operator-avatar" id="home-avatar" type="button" title="上传头像"><i id="home-avatar-initial"></i><em>更换</em></button><div class="operator-who"><b id="account-name"></b><span><button class="link" id="home-avatar-change" type="button">上传头像</button> · <button class="link" id="logout-button" type="button">退出登录</button></span><small id="home-avatar-status">头像会贴在你的角色头部，其他玩家都能看到</small></div></div>
               <dl class="operator-stats">
                 <div><dt>累计淘汰</dt><dd id="account-kills">0</dd></div>
                 <div><dt>胜场</dt><dd id="account-wins">0</dd></div>
@@ -264,6 +264,13 @@ const MARKUP = `
       <div class="ceremony-card" id="ceremony-card"><small id="ceremony-order"></small><b id="ceremony-name"></b><span id="ceremony-facts"></span></div>
       <div class="ceremony-title" id="ceremony-title"><small>FINAL</small><b>最终对决</b><span>入口已封闭 · 60 秒</span></div>
       <div class="cutscene-caption" id="cutscene-caption"><b id="cutscene-title"></b><span id="cutscene-sub"></span><small>空格 跳过</small></div>
+      <div class="mvp-card" id="mvp-card">
+        <div class="mvp-kicker"><b>MVP</b><span id="mvp-result"></span></div>
+        <div class="mvp-portrait" id="mvp-portrait"><img id="mvp-avatar" alt="" hidden /><i id="mvp-initial"></i></div>
+        <strong class="mvp-name" id="mvp-name"></strong>
+        <dl class="mvp-stats" id="mvp-stats"></dl>
+        <ol class="mvp-others" id="mvp-others"></ol>
+      </div>
       <div class="ceremony-fade" id="ceremony-fade" aria-hidden="true"></div>
     </div>
     <div class="kill-banner" id="kill-banner" hidden><div class="kill-pips" id="kill-pips"></div><strong id="kill-banner-title"></strong><span id="kill-banner-detail"></span></div>
@@ -581,6 +588,13 @@ export const createUi = () => {
         }
         const preview = $<HTMLImageElement>('#avatar-preview');
         const hasImage = localTestAvatar ? localTestAvatarSet : !!(account?.avatarId && account.avatarVersion);
+        // The home card shows the face part of the head picture (the texture wraps the head, face in the middle).
+        const homeAvatar = $('#home-avatar');
+        const homeUrl = account?.avatarId && account.avatarVersion ? makeAvatarUrl(account.avatarId, account.avatarVersion) : null;
+        homeAvatar.style.backgroundImage = homeUrl ? `url("${homeUrl}")` : '';
+        homeAvatar.dataset.empty = String(!homeUrl);
+        $('#home-avatar-initial').textContent = homeUrl ? '' : (account?.name ?? '?').slice(0, 1).toUpperCase();
+        $('#home-avatar-change').textContent = homeUrl ? '更换头像' : '上传头像';
         if (hasImage) {
             if (!localTestAvatar && account)
                 preview.src = makeAvatarUrl(account.avatarId!, account.avatarVersion!) ?? '';
@@ -755,6 +769,12 @@ export const createUi = () => {
                 if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
                 avatarPreviewUrl = null;
             };
+            // The home card's avatar and button use the same picker; its status line mirrors the editor's.
+            for (const id of ['#home-avatar', '#home-avatar-change'])
+                $(id).addEventListener('click', () => avatarChoose.click());
+            new MutationObserver(() => {
+                if (avatarStatus.textContent) $('#home-avatar-status').textContent = avatarStatus.textContent;
+            }).observe(avatarStatus, { childList: true, characterData: true, subtree: true });
             avatarChoose.addEventListener('click', () => {
                 if (!signedIn && !localTestAvatar) {
                     avatarStatus.textContent = '请先登录账号，再保存头像。';
@@ -1607,6 +1627,63 @@ export const createUi = () => {
             fade(alpha: number) {
                 $('#ceremony-fade').style.opacity = String(Math.max(0, Math.min(1, alpha)));
             }
+        },
+        /** The end-of-round MVP card (left of the winner's walk-out), or null to close it. */
+        mvp(card: {
+            name: string;
+            colour: string;
+            result: string;
+            avatar: string | null;
+            stats: { label: string; value: string }[];
+            others: { name: string; value: string }[];
+        } | null) {
+            const overlay = $('#ceremony');
+            const box = $('#mvp-card');
+            if (!card) {
+                if (overlay.dataset.mode === 'mvp') {
+                    overlay.hidden = true;
+                    root.dataset.ceremony = 'off';
+                    overlay.dataset.mode = '';
+                }
+                box.classList.remove('show');
+                return;
+            }
+            overlay.dataset.mode = 'mvp';
+            overlay.hidden = false;
+            root.dataset.ceremony = 'on';
+            box.style.setProperty('--mvp', card.colour);
+            $('#mvp-result').textContent = card.result;
+            $('#mvp-name').textContent = card.name;
+            const image = $<HTMLImageElement>('#mvp-avatar');
+            image.hidden = !card.avatar;
+            if (card.avatar) image.src = card.avatar;
+            $('#mvp-initial').textContent = card.avatar ? '' : card.name.slice(0, 1).toUpperCase();
+            $('#mvp-stats').replaceChildren(
+                ...card.stats.map(({ label, value }, index) => {
+                    const row = document.createElement('div');
+                    row.style.setProperty('--i', String(index));
+                    const dt = document.createElement('dt');
+                    dt.textContent = label;
+                    const dd = document.createElement('dd');
+                    dd.textContent = value;
+                    row.append(dt, dd);
+                    return row;
+                })
+            );
+            $('#mvp-others').replaceChildren(
+                ...card.others.map(({ name, value }, index) => {
+                    const item = document.createElement('li');
+                    item.style.setProperty('--i', String(index));
+                    const label = document.createElement('span');
+                    label.textContent = name;
+                    const score = document.createElement('b');
+                    score.textContent = value;
+                    item.append(label, score);
+                    return item;
+                })
+            );
+            box.classList.remove('show');
+            replay(box, 'show');
         },
         /** Event cutscene overlay (letterbox and a caption), or null to close it. */
         cutscene(caption: { title: string; sub: string } | null) {

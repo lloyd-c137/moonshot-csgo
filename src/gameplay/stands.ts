@@ -59,7 +59,14 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
          * Seats the current spectators while `active` (the final minute) and hides the crowd otherwise.
          * `colourOf` gives each player's hue.
          */
-        update(spectatorIds: readonly string[], colourOf: (id: string) => number, active: boolean, now: number) {
+        update(
+            spectatorIds: readonly string[],
+            colourOf: (id: string) => number,
+            active: boolean,
+            now: number,
+            /** The final entrance ceremony: everyone on their feet, waving to the players walking in. */
+            waving = false
+        ) {
             assignment = active ? seatAssignment(spectatorIds, seats.length) : new Map();
             const used = new Set(assignment.values());
             for (const [id, index] of assignment) {
@@ -72,12 +79,14 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
                 }
                 fan.character.root.enabled = true;
                 // Seated pose on the tread; standing up while cheering.
-                fan.character.root.setPosition(seat.x, seat.y + (fan.emote === 'cheer' ? 0 : -0.05), seat.z);
+                fan.character.root.setPosition(seat.x, seat.y + (fan.emote === 'cheer' || waving ? 0 : -0.05), seat.z);
                 fan.character.root.setEulerAngles(0, seat.yaw, 0);
                 if (fan.emote && now >= fan.emoteUntil) fan.emote = null;
                 fan.stick.enabled = fan.emote === 'stick';
                 fan.character.play(
-                    fan.emote === 'cheer'
+                    waving && !fan.emote
+                        ? 'Idle_Wave_Loop'
+                        : fan.emote === 'cheer'
                         ? 'Dance_Loop'
                         : fan.emote === 'stick'
                           ? 'Spell_Simple_Idle_Loop'

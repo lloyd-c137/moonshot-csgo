@@ -1057,9 +1057,17 @@ export class Room {
         return at !== null && now >= at;
     }
 
+    /** The final entrance ceremony window (just before the final minute), when nobody can act. */
+    private inCeremony(now: number) {
+        if (this.round?.phase !== 'playing') return false;
+        const left = this.round.endsAt - this.matchNow(now);
+        return left <= (ROUND.finalSecondsLeft + ROUND.ceremonySeconds) * 1000 && left > ROUND.finalSecondsLeft * 1000;
+    }
+
     /** The guard's flashlight caught a player (checked against walls on their client; the room checks reach). */
     private spotted(player: Player, now: number) {
         if (player.phase !== 'playing' || !player.alive || !player.pose || !this.blackout(now)) return;
+        if (this.inCeremony(now)) return; // everyone is frozen for the final entrance ceremony
         const guard = guardAt(now, this.blackoutAt(), this.power);
         if (Math.hypot(player.pose.p[0] - guard.x, player.pose.p[2] - guard.z) > GUARD.range + 4) return;
         this.cancelExecutionFor(player.id, '被保安淘汰');
@@ -1207,7 +1215,9 @@ export class Room {
         if (
             this.globalFinisher ||
             this.round?.phase !== 'playing' ||
-            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft].some((seconds) => seconds * 1000 === remainingMs)
+            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
+                (seconds) => seconds * 1000 === remainingMs
+            )
         )
             return false;
         const round = this.round;

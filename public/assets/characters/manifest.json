@@ -10,9 +10,9 @@
     },
     "runtime": {
         "path": "public/assets/characters/moonshot-humanoid.glb",
-        "sha256": "7aad3cfa821f2f731095e5040e470ba5d484d3654f7883f05df5033dad5b8b22",
-        "bytes": 3850540,
-        "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14 + tools/authorFinisherToss.ts",
+        "sha256": "03c0659f066a21f3de155b98a5e0a329b8853a071511928f857c8a53e405e52c",
+        "bytes": 4081284,
+        "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14 + tools/authorFinisherToss.ts + tools/authorWaveClips.ts",
         "headMaterial": "M_Head",
         "headUv": "cylindrical, seam at the back"
     },
@@ -42,7 +42,7 @@
     "verified": {
         "triangles": 13743,
         "joints": 65,
-        "animationClips": 47,
+        "animationClips": 49,
         "heightMeters": 1.829,
         "skinInfluencesPerVertex": 4
     },
@@ -55,6 +55,18 @@
         "durationSeconds": 2.6,
         "fps": 30,
         "generator": "tools/authorFinisherToss.ts (blend of Walk_Loop, Idle_Loop and the Boomerang key poses; no Blender)",
+        "rootTranslation": false
+    },
+    "wave": {
+        "actions": [
+            "Walk_Wave_Loop",
+            "Idle_Wave_Loop"
+        ],
+        "durationSeconds": {
+            "walk": 1.0666667222976685,
+            "idle": 2
+        },
+        "generator": "tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body with the Boomerang overhead pose pumped on the right arm; no Blender)",
         "rootTranslation": false
     }
 }

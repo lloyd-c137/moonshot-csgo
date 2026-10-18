@@ -501,6 +501,57 @@ export const createSound = () => {
                 hiss(audio, out, at(0.9), 0.18, 0.06, 700, 1500, 1.4);
                 tone(audio, out, 'square', 380, 260, at(0.99), 0.04, 0.035);
             }),
+        /** Ceremony: a low rumble as the arena goes dark. */
+        ceremonyDark: () =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    tone(audio, out, 'sine', 55, 38, now, 2.6, 0.32);
+                    hiss(audio, out, now, 2.2, 0.06, 300, 120, 0.6);
+                },
+                'environment',
+                AUDIO_PRIORITY.hit
+            ),
+        /** Ceremony: a roof spotlight striking on — a heavy relay clunk and a mains hum. */
+        ceremonySpot: () =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    tone(audio, out, 'square', 140, 60, now, 0.08, 0.22);
+                    hiss(audio, out, now, 0.06, 0.3, 3000, 900, 0.8);
+                    tone(audio, out, 'sawtooth', 100, 100, now + 0.04, 0.9, 0.035);
+                },
+                'environment',
+                AUDIO_PRIORITY.hit
+            ),
+        /** Ceremony: an entrance shutter rattling down and slamming shut. */
+        ceremonyShutter: () =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    for (let i = 0; i < 8; i++)
+                        tone(audio, out, 'square', 260 + (i % 2) * 60, 200, now + i * 0.07, 0.03, 0.05);
+                    hiss(audio, out, now, 0.6, 0.08, 2400, 800, 1.2);
+                    tone(audio, out, 'sine', 90, 40, now + 0.6, 0.45, 0.6);
+                    hiss(audio, out, now + 0.6, 0.18, 0.35, 1800, 400, 0.6);
+                },
+                'environment',
+                AUDIO_PRIORITY.hit
+            ),
+        /** Ceremony: a ring of lamps striking on — a stadium-light boom, deeper and wider ring by ring. */
+        ceremonyRing: (ring: number) =>
+            play(
+                (audio, now) => {
+                    const out = bus();
+                    const depth = 1 + ring * 0.12;
+                    tone(audio, out, 'sine', 110 / depth, 34, now, 0.9 + ring * 0.1, 0.55);
+                    tone(audio, out, 'triangle', 220 / depth, 80, now, 0.25, 0.18);
+                    hiss(audio, out, now, 0.9 + ring * 0.15, 0.22, 5000, 600, 0.5);
+                    tone(audio, out, 'sawtooth', 60, 60, now + 0.05, 1.2, 0.03 + ring * 0.005);
+                },
+                'confirmation',
+                AUDIO_PRIORITY.elimination
+            ),
         /** Interface hover: a very short, quiet tick. */
         uiHover: () =>
             play((audio, now) => {

@@ -262,6 +262,7 @@ const boot = async () => {
         auth,
         pickupAssets,
         arenaCenter: derivedWorld.arena.center as [number, number],
+        arenaOutline: derivedWorld.arena.outline,
         characters,
         mirrors: dressing.mirrors,
         mirrorLayer: dressing.mirrorLayer,

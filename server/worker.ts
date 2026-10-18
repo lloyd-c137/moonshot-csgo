@@ -227,7 +227,11 @@ export class World extends DurableObject<Env> {
             const remainingSeconds = body.remainingSeconds;
             if (
                 typeof remainingSeconds !== 'number' ||
-                ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft].some((seconds) => seconds === remainingSeconds)
+                ![
+                    ROUND.blackoutSecondsLeft,
+                    ROUND.finalSecondsLeft,
+                    ROUND.finalSecondsLeft + ROUND.ceremonySeconds
+                ].some((seconds) => seconds === remainingSeconds)
             )
                 return json({ error: '无效的回合测试时间' }, 400);
             return this.room.setTestRoundRemaining(now, remainingSeconds * 1000)

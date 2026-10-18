@@ -1505,3 +1505,133 @@ body {
         animation: none;
     }
 }
+
+/* ---------- Final-minute entrance ceremony ---------- */
+#app-ui[data-ceremony='on'] .screen-hud > :not(#ceremony) {
+    visibility: hidden;
+}
+.ceremony {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.ceremony[hidden] {
+    display: none;
+}
+.ceremony-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 9vh;
+    background: #000;
+    animation: bar-in 600ms var(--ease-out) both;
+}
+.ceremony-bar.bottom {
+    top: auto;
+    bottom: 0;
+}
+@keyframes bar-in {
+    from {
+        transform: scaleY(0);
+    }
+}
+.ceremony-bar {
+    transform-origin: top;
+}
+.ceremony-bar.bottom {
+    transform-origin: bottom;
+}
+.ceremony-card {
+    position: absolute;
+    left: 6vw;
+    bottom: calc(9vh + 5vh);
+    display: grid;
+    gap: 6px;
+    padding: 0 0 0 18px;
+    border-left: 4px solid var(--entrant, var(--accent));
+    opacity: 0;
+    transform: translateX(-30px);
+}
+.ceremony-card.show {
+    animation: card-in 2.4s var(--ease-out) both;
+}
+@keyframes card-in {
+    0% {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    12% {
+        opacity: 1;
+        transform: none;
+    }
+    82% {
+        opacity: 1;
+        transform: none;
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(12px);
+    }
+}
+.ceremony-card small {
+    color: var(--entrant, var(--accent));
+    font: 700 13px/1 var(--font-display);
+    letter-spacing: 0.32em;
+}
+.ceremony-card b {
+    font: 700 clamp(44px, 6vw, 84px)/0.9 var(--font-display);
+    letter-spacing: 0.02em;
+    text-shadow: 0 4px 30px rgb(0 0 0 / 0.6);
+}
+.ceremony-card span {
+    color: rgb(236 234 228 / 0.8);
+    font: 600 15px/1.2 var(--font-ui);
+}
+.ceremony-title {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.15);
+    transition:
+        opacity 500ms var(--ease-out),
+        transform 900ms var(--ease-out);
+}
+.ceremony-title.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+.ceremony-title small {
+    color: var(--danger);
+    font: 700 18px/1 var(--font-display);
+    letter-spacing: 0.8em;
+    padding-left: 0.8em;
+}
+.ceremony-title b {
+    font: 900 clamp(60px, 9vw, 128px)/0.95 var(--font-ui);
+    letter-spacing: 0.12em;
+    text-shadow: 0 6px 40px rgb(0 0 0 / 0.7);
+}
+.ceremony-title span {
+    color: rgb(236 234 228 / 0.85);
+    font: 600 16px/1 var(--font-ui);
+    letter-spacing: 0.2em;
+}
+.ceremony-fade {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .ceremony-bar,
+    .ceremony-card.show {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+}

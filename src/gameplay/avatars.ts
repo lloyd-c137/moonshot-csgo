@@ -73,6 +73,7 @@ export const createAvatars = (
     glintMaterial.update();
 
     const avatars = new Map<string, Avatar>();
+    const heads = new Map<string, HTMLImageElement | HTMLCanvasElement>();
     let goldHolder: string | null = null;
     let goldMaterial: StandardMaterial | null = null;
     /** Hit flash per hue material: until (ms). */
@@ -97,6 +98,7 @@ export const createAvatars = (
         avatar.avatarVersion = avatarVersion;
         const request = ++avatar.avatarRequest;
         if (!avatarId || !avatarVersion) {
+            heads.delete(id);
             avatar.character.setHeadImage(null);
             return;
         }
@@ -113,11 +115,16 @@ export const createAvatars = (
                     avatar.avatarRequest === request &&
                     avatar.avatarId === avatarId &&
                     avatar.avatarVersion === avatarVersion
-                )
+                ) {
+                    heads.set(id, image);
                     avatar.character.setHeadImage(image);
+                }
             })
             .catch(() => {
-                if (avatars.get(id) === avatar && avatar.avatarRequest === request) avatar.character.setHeadImage(null);
+                if (avatars.get(id) === avatar && avatar.avatarRequest === request) {
+                    heads.delete(id);
+                    avatar.character.setHeadImage(null);
+                }
             });
     };
 
@@ -320,8 +327,12 @@ export const createAvatars = (
         add,
         setAvatar,
         setHeadImage(id: string, image: HTMLImageElement | HTMLCanvasElement | null) {
+            if (image) heads.set(id, image);
+            else heads.delete(id);
             avatars.get(id)?.character.setHeadImage(image);
         },
+        /** The custom head picture a player is wearing, if any (the ceremony's stand-ins wear it too). */
+        headImage: (id: string) => heads.get(id) ?? null,
         remove,
         update,
         setScale(id: string, scale: number) {

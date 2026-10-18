@@ -259,6 +259,12 @@ const MARKUP = `
     <ol class="medals" id="medals" aria-live="polite"></ol>
     <div class="skill-acquired" id="skill-acquired" hidden><i class="skill-acquired-icon"></i><div><small>获得技能</small><b></b><span></span></div></div>
     <div class="skill-flash" id="skill-flash" aria-hidden="true"></div>
+    <div class="ceremony" id="ceremony" hidden>
+      <div class="ceremony-bar" aria-hidden="true"></div><div class="ceremony-bar bottom" aria-hidden="true"></div>
+      <div class="ceremony-card" id="ceremony-card"><small id="ceremony-order"></small><b id="ceremony-name"></b><span id="ceremony-facts"></span></div>
+      <div class="ceremony-title" id="ceremony-title"><small>FINAL</small><b>最终对决</b><span>入口已封闭 · 60 秒</span></div>
+      <div class="ceremony-fade" id="ceremony-fade" aria-hidden="true"></div>
+    </div>
     <div class="kill-banner" id="kill-banner" hidden><div class="kill-pips" id="kill-pips"></div><strong id="kill-banner-title"></strong><span id="kill-banner-detail"></span></div>
     <div class="kill-marks" id="kill-marks" aria-hidden="true"></div>
     <div class="scoreboard" id="scoreboard" hidden>
@@ -1562,6 +1568,43 @@ export const createUi = () => {
         medals: (list: readonly Medal[]) => {
             medalQueue.push(...list);
             if (!medalTimer) showNextMedal();
+        },
+        /** The final-minute entrance ceremony overlay: letterbox, the current entrant's card, the closing title. */
+        ceremony: {
+            show(on: boolean) {
+                $('#ceremony').hidden = !on;
+                root.dataset.ceremony = on ? 'on' : 'off';
+                if (!on) {
+                    $('#ceremony-card').classList.remove('show');
+                    $('#ceremony-title').classList.remove('show');
+                }
+            },
+            card(
+                entry: {
+                    name: string;
+                    order: number;
+                    total: number;
+                    kills: number;
+                    skill?: string;
+                    colour: string;
+                } | null
+            ) {
+                const card = $('#ceremony-card');
+                if (!entry) return card.classList.remove('show');
+                card.style.setProperty('--entrant', entry.colour);
+                $('#ceremony-order').textContent =
+                    `入场 ${String(entry.order).padStart(2, '0')} / ${String(entry.total).padStart(2, '0')}`;
+                $('#ceremony-name').textContent = entry.name;
+                $('#ceremony-facts').textContent = [`本局淘汰 ${entry.kills}`, entry.skill].filter(Boolean).join(' · ');
+                card.classList.remove('show');
+                replay(card, 'show');
+            },
+            title(on: boolean) {
+                $('#ceremony-title').classList.toggle('show', on);
+            },
+            fade(alpha: number) {
+                $('#ceremony-fade').style.opacity = String(Math.max(0, Math.min(1, alpha)));
+            }
         },
         /** A skill card that slides in above the status cluster when you pick something up. */
         skillAcquired: ({

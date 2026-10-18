@@ -72,7 +72,12 @@ export const ROUND = {
     goldBurst: 5,
     goldCooldown: 3,
     /** With this long left everyone still in the game is brought to the 莲花球场 for the final showdown. */
-    finalSecondsLeft: 60
+    finalSecondsLeft: 60,
+    /**
+     * The entrance ceremony plays in the seconds just before the final minute (gameplay/ceremony): everyone is frozen
+     * and walks in on screen; nobody can be caught or hit during it.
+     */
+    ceremonySeconds: 26
 } as const;
 /**
  * Disc ammunition: a thrown disc stays where it lands and has to be picked up again (walk within `pickupRadius`).

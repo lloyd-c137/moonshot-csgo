@@ -35,10 +35,29 @@ test('every bowl aisle ramp runs over its steps and stays walkable', () => {
         }
         for (let i = 1; i < line.length; i++) {
             const slope = Math.atan2(line[i][1] - line[i - 1][1], line[i][0] - line[i - 1][0]);
-            assert.ok(slope <= (37 * Math.PI) / 180, `aisle ramp too steep: ${((slope * 180) / Math.PI).toFixed(1)}°`);
+            assert.ok(Math.abs(slope) <= (37 * Math.PI) / 180, `aisle ramp too steep: ${((slope * 180) / Math.PI).toFixed(1)}°`);
+            assert.notEqual(line[i][0], line[i - 1][0], 'aisle ramp has a vertical collision edge');
         }
         assert.equal(line[0][1], STADIUM.fasciaTop);
-        assert.equal(line.at(-1)[1], tierHeight(STADIUM.tiers - 1) + STADIUM.tierRise / 2);
+        assert.ok(Math.abs(line.at(-1)[1] - tierHeight(STADIUM.tiers - 1)) < 1e-9);
+    }
+});
+
+test('the upper cross-aisle stays level and both adjacent ramps meet it continuously', () => {
+    const angle = aisleAngles()[0];
+    const treads = aisleTreads(radii, angle);
+    const walkwayStart = 1 + STADIUM.walkwayTier * 2;
+    const walkway = treads.slice(walkwayStart, walkwayStart + 2);
+    assert.ok(Math.abs(walkway[0].y - tierHeight(STADIUM.walkwayTier)) < 1e-9);
+    assert.ok(Math.abs(walkway[1].y - tierHeight(STADIUM.walkwayTier)) < 1e-9);
+
+    const line = nosingLine(treads);
+    const walkwayEnd = walkway[1].r1;
+    const walkwayEndPoint = line.find(([r]) => r === walkwayEnd);
+    assert.ok(walkwayEndPoint);
+    assert.ok(Math.abs(walkwayEndPoint[1] - tierHeight(STADIUM.walkwayTier)) < 1e-9);
+    for (let i = 1; i < line.length; i++) {
+        assert.notEqual(line[i][0], line[i - 1][0], 'aisle ramp has a vertical edge beside the cross-aisle');
     }
 });
 

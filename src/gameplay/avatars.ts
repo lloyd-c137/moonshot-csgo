@@ -38,6 +38,9 @@ type Avatar = {
     avatarRequest: number;
     avatarId: string | null;
     avatarVersion: string | null;
+    flashlight: boolean;
+    flashlightProp: EntityType;
+    flashlightLight: EntityType;
 };
 
 const meshOf = (app: AppBase, shape: Shape) => {
@@ -71,6 +74,15 @@ export const createAvatars = (
     glintMaterial.emissive = new Color(1, 0.78, 0.25);
     glintMaterial.cull = CULLFACE_NONE;
     glintMaterial.update();
+    const flashlightMaterial = new StandardMaterial();
+    flashlightMaterial.diffuse = new Color(0.12, 0.15, 0.18);
+    flashlightMaterial.update();
+    const flashlightLensMaterial = new StandardMaterial();
+    flashlightLensMaterial.useLighting = false;
+    flashlightLensMaterial.diffuse = new Color(1, 0.94, 0.72);
+    flashlightLensMaterial.emissive = new Color(1, 0.86, 0.5);
+    flashlightLensMaterial.emissiveIntensity = 1.2;
+    flashlightLensMaterial.update();
 
     const avatars = new Map<string, Avatar>();
     const heads = new Map<string, HTMLImageElement | HTMLCanvasElement>();
@@ -150,6 +162,27 @@ export const createAvatars = (
         });
         hand.addChild(disc);
         disc.setLocalScale(0.25, 0.035, 0.25);
+        const flashlightProp = new Entity(`avatar-flashlight-${id}`);
+        flashlightProp.addComponent('render', { type: 'cylinder', material: flashlightMaterial, castShadows: false });
+        flashlightProp.setLocalScale(0.065, 0.17, 0.065);
+        flashlightProp.setLocalPosition(0, 0.06, -0.04);
+        flashlightProp.setLocalEulerAngles(90, 0, 0);
+        hand.addChild(flashlightProp);
+        const flashlightLens = new Entity(`avatar-flashlight-lens-${id}`);
+        flashlightLens.addComponent('render', { type: 'sphere', material: flashlightLensMaterial, castShadows: false });
+        flashlightLens.setLocalScale(0.075, 0.035, 0.075);
+        flashlightLens.setLocalPosition(0, 0.085, -0.03);
+        flashlightProp.addChild(flashlightLens);
+        const flashlightLight = new Entity(`avatar-flashlight-beam-${id}`);
+        flashlightLight.addComponent('light', {
+            type: 'spot', color: new Color(1, 0.94, 0.75), intensity: 2.8, range: 14,
+            innerConeAngle: 20, outerConeAngle: 38, castShadows: false
+        });
+        flashlightLight.setLocalPosition(0.24, 0.2, -0.35);
+        flashlightLight.setLocalEulerAngles(90, 0, 0);
+        root.addChild(flashlightLight);
+        flashlightProp.enabled = false;
+        flashlightLight.enabled = false;
         root.enabled = false;
         app.root.addChild(root);
         const glint = new Entity('glint');
@@ -201,7 +234,10 @@ export const createAvatars = (
             heldUntil: 0,
             avatarRequest: 0,
             avatarId: null,
-            avatarVersion: null
+            avatarVersion: null,
+            flashlight: false,
+            flashlightProp,
+            flashlightLight
         });
         setAvatar(id, avatarId, avatarVersion);
         if (goldHolder === id) setGold(id);
@@ -269,6 +305,9 @@ export const createAvatars = (
             avatar.disc.enabled = now >= avatar.throwUntil;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);
             avatar.root.setEulerAngles(0, pose.yaw, 0);
+            avatar.flashlightProp.enabled = avatar.flashlight;
+            avatar.flashlightLight.enabled = avatar.flashlight;
+            if (avatar.flashlight) avatar.flashlightLight.setLocalEulerAngles(90 + pose.pitch, 0, 0);
             const delta = now - avatar.lastMovedAt;
             if (delta >= 100) {
                 const moved = Math.hypot(pose.p[0] - avatar.lastPosition.x, pose.p[2] - avatar.lastPosition.z);
@@ -325,6 +364,10 @@ export const createAvatars = (
 
     return {
         add,
+        setFlashlight(id: string, enabled: boolean) {
+            const avatar = avatars.get(id);
+            if (avatar) avatar.flashlight = enabled;
+        },
         setAvatar,
         setHeadImage(id: string, image: HTMLImageElement | HTMLCanvasElement | null) {
             if (image) heads.set(id, image);

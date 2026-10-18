@@ -105,6 +105,7 @@ type Player = Omit<PlayerSummary, 'account'> & {
     hasEye: boolean;
     hasStealth: boolean;
     hasCreation: boolean;
+    hasFlashlight: boolean;
     coachGift: boolean;
     ammoCapacity: number;
     frcSelected: boolean;
@@ -520,6 +521,7 @@ export class Room {
             hasEye: false,
             hasStealth: false,
             hasCreation: false,
+            hasFlashlight: false,
             coachGift: false,
             ammoCapacity: AMMO.max,
             frcSelected: false,
@@ -1210,6 +1212,7 @@ export class Room {
             player.hasEye = false;
             player.hasStealth = false;
             player.hasCreation = false;
+            player.hasFlashlight = false;
             player.coachGift = false;
             player.ammoCapacity = AMMO.max;
             player.frcSelected = false;
@@ -1451,7 +1454,8 @@ export class Room {
         if (!item || !item.available || Math.hypot(x - item.at[0], z - item.at[2]) > ITEM_RULES.pickupRadius || Math.abs(y - item.at[1]) > 1.8) return;
         if (item.kind === 'revive' && (player.hasReviveArmor || player.reviveTaken)) return;
         if ((item.kind === 'frc' && player.hasFrc) || (item.kind === 'eye' && player.hasEye) ||
-            (item.kind === 'stealth' && player.hasStealth) || (item.kind === 'creation' && player.hasCreation)) return;
+            (item.kind === 'stealth' && player.hasStealth) || (item.kind === 'creation' && player.hasCreation) ||
+            (item.kind === 'flashlight' && player.hasFlashlight)) return;
         this.dropHeldItems(player, now);
         item.holder = player.id;
         item.available = false;
@@ -1468,6 +1472,7 @@ export class Room {
         if (item.kind === 'eye') player.hasEye = true;
         if (item.kind === 'stealth') player.hasStealth = true;
         if (item.kind === 'creation') player.hasCreation = true;
+        if (item.kind === 'flashlight') player.hasFlashlight = true;
         player.creationNextAt = now + ITEM_RULES.creationRefillMs;
         this.broadcastItems();
         this.broadcastAbility(player, item);
@@ -1508,6 +1513,7 @@ export class Room {
             if (item.kind === 'eye') player.hasEye = false;
             if (item.kind === 'stealth') player.hasStealth = false;
             if (item.kind === 'creation') player.hasCreation = false;
+            if (item.kind === 'flashlight') player.hasFlashlight = false;
         }
         player.frcSelected = false;
         player.frcCooldownUntil = 0;
@@ -1687,6 +1693,7 @@ const summary = ({
     hasEye,
     hasStealth,
     hasCreation,
+    hasFlashlight,
     coachGift,
     ammoCapacity,
     stealthUntil,
@@ -1713,6 +1720,7 @@ const summary = ({
     hasEye,
     hasStealth,
     hasCreation,
+    hasFlashlight,
     coachGift,
     ammoCapacity,
     stealthUntil,

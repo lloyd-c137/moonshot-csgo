@@ -59,8 +59,12 @@ export const aisleTreads = (radii: readonly number[], angle: number): Tread[] =>
     for (let k = 0; k < STADIUM.tiers; k++) {
         const r0 = tierRadiusAt(radii, angle, k);
         const r1 = r0 + tierRun(k);
-        const y = tierHeight(k);
-        treads.push({ r0, r1: r1 - run, y }, { r0: r1 - run, r1, y: y + half });
+        // Keep the cross-aisle at its actual level. Above it, begin each stair one tier-rise below that
+        // seating row so the two half steps connect continuously to the next tier instead of leaving a
+        // vertical 0.31 m collision edge at every tier boundary.
+        const y = k > STADIUM.walkwayTier ? tierHeight(k) - STADIUM.tierRise : tierHeight(k);
+        const secondY = k === STADIUM.walkwayTier ? y : y + half;
+        treads.push({ r0, r1: r1 - run, y }, { r0: r1 - run, r1, y: secondY });
     }
     return treads;
 };
@@ -71,12 +75,13 @@ export const aisleTreads = (radii: readonly number[], angle: number): Tread[] =>
  */
 export const nosingLine = (treads: readonly Tread[]): Point2[] => {
     const points: Point2[] = [[treads[0].r0, treads[0].y]];
-    for (let i = 1; i < treads.length; i++) {
-        if (treads[i].y === treads[i - 1].y) continue;
-        points.push([treads[i].r0, treads[i].y]);
+    for (let i = 0; i < treads.length; i++) {
+        const next = treads[i + 1];
+        // A ramp rises over the tread, ending at the next tread's height. Placing the height change
+        // at the next tread's start creates a vertical, degenerate ramp face that catches the capsule.
+        const endY = next?.y ?? treads[i].y + STADIUM.tierRise / 2;
+        points.push([treads[i].r1, endY]);
     }
-    const last = treads[treads.length - 1];
-    points.push([last.r1, last.y]);
     return points;
 };
 

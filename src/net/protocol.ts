@@ -14,7 +14,7 @@ import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -147,6 +147,7 @@ export type PlayerSummary = {
     hasEye?: boolean;
     hasStealth?: boolean;
     hasCreation?: boolean;
+    hasFlashlight?: boolean;
     coachGift?: boolean;
     ammoCapacity?: number;
     stealthUntil?: number;
@@ -157,7 +158,7 @@ export type PlayerSummary = {
 
 export type WorldItem = {
     id: string;
-    kind: 'revive' | 'frc' | 'eye' | 'stealth' | 'creation';
+    kind: 'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'flashlight';
     name: string;
     at: Vec3Tuple;
     holder: string | null;

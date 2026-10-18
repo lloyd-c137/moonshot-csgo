@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "publication": {
+    "status": "OWNER_CONFIRMED_AUTHORIZED",
+    "date": "2026-10-18",
+    "basis": "Owner confirmed authorization for public game use on 2026-10-18. Original creator/license was not independently identified."
+  },
+  "sourceFile": "新裤子 - 你要跳舞吗(1).mp3",
+  "runtimeFile": "settlement-theme-newpants.mp3",
+  "durationSecondsEstimated": 193.462857,
+  "excerptSeconds": {
+    "start": 93,
+    "end": 105
+  },
+  "sizeBytes": 8052989,
+  "sha256": "01333dcd00309c72c6b2bde0eda42ae6f1f815ba374409e804d1ff4e9efacdd7",
+  "event": "end-of-round settlement; loops the authorized 12-second excerpt with a 1.2-second fade-in and fade-out"
+}

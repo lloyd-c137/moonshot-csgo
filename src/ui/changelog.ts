@@ -5,6 +5,18 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.32.0',
+        date: '2026.10.18',
+        title: '东门手电筒',
+        notes: ['东门每局刷新一支手电筒；拾取后会照亮玩家视线前方，并显示手持模型。', '持有人被淘汰时，手电筒会掉落在淘汰位置，其他存活玩家可以拾取。']
+    },
+    {
+        version: 'v0.31.0',
+        date: '2026.10.18',
+        title: '请假条技能道具',
+        notes: ['隐身技能更名为“请假条”，场景拾取物替换为带有填写线条的白色纸张造型。']
+    },
+    {
         version: 'v0.30.2',
         date: '2026.10.18',
         title: '加载提速',

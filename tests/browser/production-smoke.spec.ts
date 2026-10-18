@@ -68,7 +68,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     releaseHomepageAudio();
     await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);
     expect(assets['/ammo/ammo.wasm.wasm']).toBe(200);
-    for (const name of ['revive-medkit.glb', 'eye-monitor.glb', 'stealth-crystal.glb', 'creation-gear.glb']) {
+    for (const name of ['revive-medkit.glb', 'eye-monitor.glb', 'creation-gear.glb']) {
         expect(assets[`/assets/pickups/${name}`]).toBe(200);
     }
     for (const name of ['world.json', 'ceiling-mask.png', 'minimap.png']) {

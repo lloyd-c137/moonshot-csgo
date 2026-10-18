@@ -10,9 +10,14 @@ export type CampusLoadResult = {
     status: string;
 };
 
-export const loadCampus = (app: AppBase, onProgress: (progress: number) => void) =>
+export const loadCampus = (
+    app: AppBase,
+    onProgress: (progress: number) => void,
+    /** The GLB already fetched (gzip copy); null loads it from CAMPUS_ASSET_URL. */
+    contents: ArrayBuffer | null = null
+) =>
     new Promise<CampusLoadResult>((resolve, reject) => {
-        const asset = new Asset('FF-01 campus', 'container', { url: CAMPUS_ASSET_URL });
+        const asset = new Asset('FF-01 campus', 'container', contents ? { url: CAMPUS_ASSET_URL, contents } : { url: CAMPUS_ASSET_URL });
         asset.on('progress', (received: number, total: number) => {
             if (total > 0) onProgress(received / total);
         });

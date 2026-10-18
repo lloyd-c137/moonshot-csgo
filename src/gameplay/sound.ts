@@ -28,6 +28,13 @@ export const createSound = () => {
     let noise: AudioBuffer | null = null;
     const clips = new Map<string, AudioBuffer>();
     const pendingClipLoads = new Map<string, Promise<AudioBuffer | null>>();
+    /** Compressed bytes fetched ahead of time (music): decoded only when first played, then dropped. */
+    const prefetched = new Map<string, Promise<ArrayBuffer | null>>();
+    const fetchBytes = async (url: string) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Audio ${url}: HTTP ${response.status}`);
+        return response.arrayBuffer();
+    };
     let defeatVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
     const testClips = new Map<TestSoundCue, { buffer: AudioBuffer; gain: number; start: number; end: number }>();
     const testVersions = new Map<TestSoundCue, number>();
@@ -45,9 +52,10 @@ export const createSound = () => {
         if (pending) return pending;
         const loading = (async () => {
             try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`Audio ${name}: HTTP ${response.status}`);
-                const buffer = await audio.decodeAudioData(await response.arrayBuffer());
+                const early = prefetched.get(name);
+                prefetched.delete(name);
+                const bytes = (early && (await early)) || (await fetchBytes(url));
+                const buffer = await audio.decodeAudioData(bytes);
                 clips.set(name, buffer);
                 return buffer;
             } catch {
@@ -221,6 +229,9 @@ export const createSound = () => {
         { name: 'power-down', url: POWER_DOWN_AUDIO.url },
         ...Object.entries(COMBAT_AUDIO).map(([name, clip]) => ({ name, url: clip.url }))
     ];
+    /** Long music tracks: the phase themes and the in-match playlist. */
+    const isMusic = (name: string) =>
+        name.endsWith('-theme') || MATCH_PLAYLIST_AUDIO.some((track) => track.name === name);
     const optionalAudio = [
         { name: 'defeat', url: '/assets/audio/defeat.mp3' },
         { name: 'legacy-kill', url: '/assets/audio/kill.mp3' }
@@ -391,7 +402,9 @@ export const createSound = () => {
         async preload(onProgress?: (completed: number, total: number) => void) {
             const audio = ensure();
             if (!audio) throw new Error('浏览器不支持 Web Audio，无法准备游戏音效');
-            const all = [...requiredAudio, ...optionalAudio];
+            // Music (minutes of audio each) never holds up the title screen: it is fetched in the background
+            // after boot (prefetchMusic) and decoded the first time it plays.
+            const all = [...requiredAudio, ...optionalAudio].filter(({ name }) => !isMusic(name));
             let completed = 0;
             const failed: string[] = [];
             await Promise.all(
@@ -402,6 +415,20 @@ export const createSound = () => {
                 })
             );
             if (failed.length) throw new Error(`必需音频加载失败：${failed.join('、')}`);
+        },
+        /**
+         * Downloads every music track's compressed bytes one after another (title theme first) without
+         * decoding them, so each is ready when its moment comes but none delays loading or holds PCM in memory.
+         */
+        async prefetchMusic() {
+            const music = [...requiredAudio, ...optionalAudio].filter(({ name }) => isMusic(name));
+            music.sort((a, b) => Number(b.name === 'homepage-theme') - Number(a.name === 'homepage-theme'));
+            for (const { name, url } of music) {
+                if (clips.has(name) || pendingClipLoads.has(name) || prefetched.has(name)) continue;
+                const bytes = fetchBytes(url).catch(() => null);
+                prefetched.set(name, bytes);
+                await bytes;
+            }
         },
         /** Loop the owner-selected theme only while campus lighting is in its blackout state. */
         blackoutMusic: setBlackoutMusic,

@@ -23,7 +23,7 @@ import type { Entity, StandardMaterial, Texture } from 'playcanvas';
 import { installDebugHooks } from './app/debugHooks';
 import { browserStorage } from './app/storage';
 import { watchForUpdates } from './app/updates';
-import { CharacterAssetLoader } from './characters/CharacterAssetLoader';
+import { CHARACTER_ASSET_URL, CharacterAssetLoader } from './characters/CharacterAssetLoader';
 import { LABEL_ONLY_TRIGGER_RADIUS, PLAYER, SOUTH_GATE } from './config/gameplay';
 import { multiplayerUrl } from './config/multiplayer';
 import { CEILING_MASK_URL, DERIVED_WORLD_URL } from './config/presentation';
@@ -50,10 +50,11 @@ import { loadSettings, saveSettings } from './ui/settings';
 import type { Ui } from './ui/shell';
 import { createUi } from './ui/shell';
 import { buildAuthoredRoom } from './world/authoredRoom';
-import { loadCampus } from './world/campusLoader';
+import { CAMPUS_ASSET_URL, loadCampus } from './world/campusLoader';
 import { cutDoorwaysInto } from './world/doorwayCutter';
 import { arenaLocation, buildDressing, parseDerivedWorld } from './world/dressing';
 import { buildExterior } from './world/exterior';
+import { fetchGlb } from './world/glbBytes';
 import { applyWallHeightAdapter } from './world/presentation';
 import type { Point2 } from './world/roomIndex';
 import { createAnchorTriggers, parseCampusRooms, RoomTracker } from './world/roomIndex';
@@ -164,17 +165,26 @@ const boot = async () => {
         (import.meta.env.PROD || !query.has('noLobby') || query.has('server')) &&
         (!navigator.webdriver || query.has('lobby') || import.meta.env.PROD);
 
+    // Every download starts now, side by side: the big models (gzip copies), physics and the scene data.
+    const campusBytes = fetchGlb(CAMPUS_ASSET_URL);
+    const characterBytes = fetchGlb(CHARACTER_ASSET_URL);
+    const ammoReady = waitForAmmo();
+    // A failure is reported where it is awaited; until then it must not surface as an unhandled rejection.
+    ammoReady.catch(() => undefined);
+    const roomsJson = fetchJson('/assets/campus/rooms.json', '房间数据');
+    const worldJson = fetchJson(DERIVED_WORLD_URL, '场景布置数据');
+    worldJson.catch(() => undefined);
     // Room data first: the location plate and room tracker need it.
-    const rooms = parseCampusRooms(await fetchJson('/assets/campus/rooms.json', '房间数据'));
+    const rooms = parseCampusRooms(await roomsJson);
     // Names and division from the 2026-08-06 model over FF-01 geometry (geometry and dressing keep the FF-01 list).
     const namedRooms = applyRoomNaming(rooms.rooms, ROOM_NAMING);
-    const derivedWorld = parseDerivedWorld(await fetchJson(DERIVED_WORLD_URL, '场景布置数据'));
+    const derivedWorld = parseDerivedWorld(await worldJson);
     const arena = arenaLocation(derivedWorld);
     ui = createUi();
     const shell = ui;
 
     shell.stage('physics', 'active');
-    await waitForAmmo();
+    await ammoReady;
     shell.stage('physics', 'done');
 
     const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
@@ -201,7 +211,7 @@ const boot = async () => {
 
     shell.stage('campus', 'active');
     const [campus, ceilingMask] = await Promise.all([
-        loadCampus(app, () => undefined),
+        loadCampus(app, () => undefined, await campusBytes),
         loadTexture(app, CEILING_MASK_URL)
     ]);
     shell.stage('campus', 'done');
@@ -239,7 +249,10 @@ const boot = async () => {
     let gateLive = false;
     const safeSpot = () => (gateState === 'lobby' ? SOUTH_GATE.spawn : undefined);
     shell.stage('characters', 'active');
-    const [characters, pickupAssets] = await Promise.all([CharacterAssetLoader.load(app), PickupAssetLoader.load(app)]);
+    const [characters, pickupAssets] = await Promise.all([
+        characterBytes.then((bytes) => CharacterAssetLoader.load(app, bytes)),
+        PickupAssetLoader.load(app)
+    ]);
     shell.stage('characters', 'done');
     const atmosphere = setupAtmosphere(app, camera);
     const { sun, setNight } = atmosphere;
@@ -623,6 +636,8 @@ const boot = async () => {
         },
         settings
     );
+    // Music downloads in the background once the title screen is up (it never holds up loading).
+    void match.prefetchMusic();
 
     if (import.meta.env.PROD) watchForUpdates(__BUILD_ID__, () => shell.updateAvailable());
 

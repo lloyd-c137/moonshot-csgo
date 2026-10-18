@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <link rel="preload" as="image" href="/assets/ui/moonshot-loading.png" fetchpriority="high" />
+        <link rel="preload" as="image" href="/assets/ui/moonshot-loading.webp" fetchpriority="high" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="theme-color" content="#0b1422" />
         <title>Moonshot Frisbee Games</title>
@@ -26,7 +26,7 @@
             </div>
         </div>
         <style>
-            #boot-loader{position:fixed;inset:0;z-index:10000;display:grid;align-items:end;background:#06152d url('/assets/ui/moonshot-loading.png') center 47%/cover no-repeat;color:#f4f9ff;transition:opacity .35s ease,visibility .35s ease}
+            #boot-loader{position:fixed;inset:0;z-index:10000;display:grid;align-items:end;background:#06152d url('/assets/ui/moonshot-loading.webp') center 47%/cover no-repeat;color:#f4f9ff;transition:opacity .35s ease,visibility .35s ease}
             #boot-loader::before{position:absolute;inset:0;content:"";background:linear-gradient(180deg,rgba(3,11,29,.02) 46%,rgba(3,12,31,.1) 68%,rgba(2,9,24,.62) 100%),linear-gradient(90deg,rgba(2,10,28,.1),transparent 28%,transparent 72%,rgba(2,10,28,.1))}
             #boot-loader.is-hidden{opacity:0;visibility:hidden;pointer-events:none}
             .boot-card{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px 28px;width:100%;padding:12px clamp(20px,5vw,76px) max(12px,env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(3,14,36,.26),rgba(2,9,24,.78));border-top:1px solid rgba(41,145,255,.3);box-shadow:0 -12px 40px rgba(0,14,48,.16);backdrop-filter:blur(3px)}

@@ -7,6 +7,9 @@ const BUILD_ID = env.CF_PAGES_COMMIT_SHA?.slice(0, 12) || `local-${Date.now().to
 // https://vite.dev/config/
 export default defineConfig({
     define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
+    // Hashed build output lives apart from the hand-placed files in public/assets, so public/_headers can cache
+    // it forever without also freezing models and audio that keep their names between releases.
+    build: { assetsDir: 'build' },
     plugins: [
         {
             // Dev only: install the PlayCanvas Inspector before the app starts (press ` to toggle)

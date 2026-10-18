@@ -54,9 +54,14 @@ export class CharacterAssetLoader {
         this.device = device;
     }
 
-    static load(app: AppBase) {
+    /** `contents`: the GLB already fetched (gzip copy); null loads it from CHARACTER_ASSET_URL. */
+    static load(app: AppBase, contents: ArrayBuffer | null = null) {
         return new Promise<CharacterAssetLoader>((resolve, reject) => {
-            const asset = new Asset('Moonshot humanoid', 'container', { url: CHARACTER_ASSET_URL });
+            const asset = new Asset(
+                'Moonshot humanoid',
+                'container',
+                contents ? { url: CHARACTER_ASSET_URL, contents } : { url: CHARACTER_ASSET_URL }
+            );
             asset.once('error', (error: string) => reject(new Error(`Character GLB failed: ${error}`)));
             asset.once('load', () => {
                 const resource = asset.resource as

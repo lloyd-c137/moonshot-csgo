@@ -5,6 +5,7 @@
     "description": "Moonshot Frisbee Games: multiplayer frisbee FPS on the FF-01 campus",
     "type": "module",
     "scripts": {
+        "assets:compress": "node tools/compressAssetsCli.ts",
         "audit:nav": "node tools/navAuditCli.ts",
         "build": "vite build && wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir dist --output-routes-path dist/_routes.json && mv dist/index.js dist/_worker.js",
         "derive:rooms": "node tools/roomNamingCli.ts",

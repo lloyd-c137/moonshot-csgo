@@ -14,9 +14,11 @@ import { SETTING_RANGES } from './settings';
 import '@fontsource/barlow-condensed/latin-500.css';
 import '@fontsource/barlow-condensed/latin-600.css';
 import '@fontsource/barlow-condensed/latin-700.css';
-import '@fontsource/noto-sans-sc/chinese-simplified-500.css';
-import '@fontsource/noto-sans-sc/chinese-simplified-700.css';
-import '@fontsource/noto-sans-sc/chinese-simplified-900.css';
+// Unicode-range slices: the browser downloads only the slices holding characters on screen (tens of KB each),
+// not a whole 1.1 MB simplified-Chinese file per weight.
+import '@fontsource/noto-sans-sc/500.css';
+import '@fontsource/noto-sans-sc/700.css';
+import '@fontsource/noto-sans-sc/900.css';
 import './theme.css';
 import './esports.css';
 

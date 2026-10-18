@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.30.2',
+        date: '2026.10.18',
+        title: '加载提速',
+        notes: [
+            '进入游戏前需要下载的内容从约 60 MB 降到约 7 MB：背景音乐改为在标题界面出现后于后台下载，不再拖住加载。',
+            '校园和角色模型改为下载压缩版（7.2 MB → 1.2 MB、4.1 MB → 1.4 MB），所有资源同时开始下载。',
+            '加载背景图改为 WebP（2 MB → 0.17 MB）；中文字体按需只下载屏幕上用到的字。',
+            '音效、图片和物理引擎文件会在浏览器缓存一天，再次打开更快。'
+        ]
+    },
+    {
         version: 'v0.30.1',
         date: '2026.10.18',
         title: '性能优化',

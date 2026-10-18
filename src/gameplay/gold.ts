@@ -78,6 +78,7 @@ export const createGold = (app: AppBase, discMesh: MeshType, effects: Effects) =
 
     let state: GoldState | null = null;
     let sparkAt = 0;
+    let beamHidden = false;
     return {
         material,
         get state() {
@@ -99,6 +100,10 @@ export const createGold = (app: AppBase, discMesh: MeshType, effects: Effects) =
          * Places the visuals: a lying disc at its spot, or the beam over the holder (`holderAt`: their capsule centre,
          * or null when the holder is this player — no beam in their own face).
          */
+        /** Hides the beam (the cinematic exterior shots show the campus without it). */
+        hideBeam(hidden: boolean) {
+            beamHidden = hidden;
+        },
         update(now: number, holderAt: V3 | null, holderIsMe: boolean) {
             if (!state) {
                 disc.enabled = beam.enabled = ring.enabled = false;
@@ -108,7 +113,7 @@ export const createGold = (app: AppBase, discMesh: MeshType, effects: Effects) =
             const base: V3 | null = lying ? state.at : holderAt;
             disc.enabled = lying;
             ring.enabled = lying;
-            beam.enabled = base !== null && !(holderIsMe && !lying);
+            beam.enabled = base !== null && !(holderIsMe && !lying) && !beamHidden;
             const pulse = 0.5 + 0.5 * Math.sin(now / 260);
             material.emissiveIntensity = 0.45 + pulse * 0.35;
             material.update();

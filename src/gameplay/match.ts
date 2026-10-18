@@ -469,6 +469,8 @@ export const createMatch = ({
     });
     app.root.addChild(goldLight);
     let finalDone = false;
+    /** Set while the opening flyover plays (main.ts). */
+    let introBeamHidden = false;
     // ---------- final-minute entrance ceremony ----------
     const ceremony = createCeremonyView(
         app,
@@ -2654,9 +2656,9 @@ export const createMatch = ({
             }
         }
         const holderPosition = holder && !mine ? (positionOf(holder) ?? null) : null;
+        // The ceremony's night exterior (and the opening flyover) show the stadium alone: no golden-disc beam.
+        goldView.hideBeam(introBeamHidden || (!!ceremonyRun && ceremonyRun.t < CEREMONY.fade + CEREMONY.exterior));
         goldView.update(now, holderPosition, mine);
-        // The ceremony's night exterior shows the stadium alone: no golden-disc beam rising out of the campus.
-        if (ceremonyRun && ceremonyRun.t < CEREMONY.fade + CEREMONY.exterior) goldView.entities[1].enabled = false;
 
         const eyeEnabled = localAbilities.eye && started && alive && !spectating;
         ui.playerPings(
@@ -3204,6 +3206,10 @@ export const createMatch = ({
         chat: (text: string) => net.chat(text),
         /** Uses Enter for the currently held active skill; returns false when Enter may open chat. */
         activateActiveSkill,
+        /** Hides the golden-disc beam while the opening flyover plays. */
+        setIntroPlaying(playing: boolean) {
+            introBeamHidden = playing;
+        },
         /** Freezes movement and throwing while the chat box is open. */
         setInputPaused(paused: boolean) {
             if (globalFinisher) return;

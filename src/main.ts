@@ -502,7 +502,11 @@ const boot = async () => {
                 const query = new URLSearchParams(window.location.search);
                 if (!query.has('noIntro') && (!navigator.webdriver || query.has('intro'))) {
                     match.setInputPaused(true);
-                    intro.play(() => match.setInputPaused(false));
+                    match.setIntroPlaying(true);
+                    intro.play(() => {
+                        match.setIntroPlaying(false);
+                        match.setInputPaused(false);
+                    });
                 }
             }
             hasEntered = true;

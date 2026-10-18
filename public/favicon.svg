@@ -1,1 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#101b2b"/><path d="M13 46V18h7l12 15 12-15h7v28h-8V31L32 43 21 31v15z" fill="#b6e5e5"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="72%">
+      <stop offset="0" stop-color="#062d65" />
+      <stop offset="1" stop-color="#001027" />
+    </radialGradient>
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#29f6ff" />
+      <stop offset=".55" stop-color="#00d9ff" />
+      <stop offset="1" stop-color="#00a9ff" />
+    </linearGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+  </defs>
+  <rect width="100" height="100" fill="url(#bg)" />
+  <path d="M12 14 50 43 88 14v60L77 64V36L50 57 23 36v28L12 74Z" fill="url(#neon)" filter="url(#glow)" />
+  <path d="m24 44 19 15v11L31 61v18L24 85Zm52 0L57 59v11l12-9v18l7 6Z" fill="#001638" />
+</svg>

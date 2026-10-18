@@ -1,6 +1,44 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { enterHome } from './support';
+
+const clickGameFeature = async (page: Page, selector: string) => {
+    const panel = page.locator('.audio-lab');
+    if (!(await panel.isVisible())) await page.keyboard.press('p');
+    await expect(panel).toBeVisible();
+    await page.locator(selector).click();
+    await expect(panel).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
+};
+
+test('offline audio lab uses the production round duration and automatic phase thresholds', async ({ page }) => {
+    await page.goto('/?audioLab=1&offline=1&noIntro=1&noLobby=1');
+    await enterHome(page);
+    await page.getByRole('button', { name: /进入校园|继续游戏/ }).click();
+    await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
+    await expect(page.locator('#round-clock')).toHaveText(/^(10:00|09:\d{2})$/);
+
+    const initial = await page.evaluate(() => window.__MOONSHOT__!.match.state());
+    expect(initial.round?.phase).toBe('playing');
+    expect(initial.round!.endsAt - initial.roomNow!).toBeGreaterThan(570_000);
+    expect(initial.round!.endsAt - initial.roomNow!).toBeLessThanOrEqual(600_000);
+
+    await page.evaluate(() => window.__MOONSHOT__!.match.setRoundRemaining(240));
+    await expect(page.locator('#round-clock')).toHaveText(/^(04:00|03:\d{2})$/);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(true);
+
+    await page.evaluate(() => window.__MOONSHOT__!.match.setRoundRemaining(60));
+    await expect(page.locator('#round-clock')).toHaveText(/^(01:00|00:5\d)$/);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(true);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalRelocationResult))
+        .toBe('relocated');
+
+    await page.evaluate(() => window.__MOONSHOT__!.match.setRoundRemaining(0));
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().round?.phase)).toBe('ended');
+    await expect(page.locator('#round-clock')).toHaveText('00:00');
+});
 
 test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and golden-kill feedback', async ({
     page
@@ -22,7 +60,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     await expect(page.locator('.audio-lab')).toBeVisible();
 
     const cameraBeforeHit = await page.evaluate(() => window.__MOONSHOT__!.match.cameraPosition());
-    await page.locator('[data-scenario="body"]').click();
+    await clickGameFeature(page, '[data-scenario="body"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(2);
     await expect(page.locator('#popup')).toHaveText('人偶 · 身体命中（1/3）');
     await expect
@@ -41,7 +79,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         )
         .toBeLessThan(0.001);
 
-    await page.locator('[data-scenario="head"]').click();
+    await clickGameFeature(page, '[data-scenario="head"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 爆头淘汰');
     const headCuePlayed = await page.evaluate(() =>
@@ -59,7 +97,7 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
     const clipsBeforeGolden = await page.evaluate(
         () => (window as unknown as { __combatClipDurations: number[] }).__combatClipDurations.length
     );
-    await page.locator('[data-scenario="golden"]').click();
+    await clickGameFeature(page, '[data-scenario="golden"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp)).toBe(0);
     await expect(page.locator('#popup')).toHaveText('人偶 · 金飞盘击杀');
     await expect
@@ -74,6 +112,8 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         .toBe(true);
 
     const originalTuning = await page.evaluate(() => window.__MOONSHOT__!.match.state());
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab')).toBeVisible();
     await page.locator('[data-camera-kick]').evaluate((element: HTMLInputElement) => {
         element.value = '1.25';
         element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -129,14 +169,20 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().tracerSamples))
         .toBeGreaterThan(tracerSamples + 3);
     await page.screenshot({ path: 'test-results/combat-feel-lab-trail-live.png' });
-    await page.keyboard.press('p');
-    await expect(page.locator('.audio-lab')).toBeVisible();
-    await page.locator('[data-phase="blackout"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('本机触发终局夜晚');
+    await clickGameFeature(page, '[data-phase="gold-first"]');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.cutscene()?.kind)).toBe('gold-first');
+    await page.keyboard.press('Space');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.cutscene())).toBeNull();
+    await clickGameFeature(page, '[data-phase="blackout"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(true);
-    await page.locator('[data-phase="final"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('本机触发最终球场对决');
-    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(true);
+    await page.keyboard.press('p');
+    await expect(page.locator('[data-phase="ceremony"]')).toHaveCount(0);
+    await expect(page.locator('[data-phase="final"]')).toHaveText('最终对决（含入场仪式）');
+    await clickGameFeature(page, '[data-phase="final"]');
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.ceremony()?.entrants)).toBeGreaterThan(0);
+    await expect
+        .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown), { timeout: 35_000 })
+        .toBe(true);
     await expect
         .poll(
             () =>
@@ -150,19 +196,20 @@ test('combat feel lab presets drive the fixed dummy hit, headshot, respawn and g
         .toBe(true);
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalRelocationResult))
-        .toBe('relocated');
-    await page.locator('[data-phase="reset"]').click();
+        .toBe('ceremony');
+    await clickGameFeature(page, '[data-phase="reset"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(false);
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().finalShown)).toBe(false);
-    await page.locator('[data-phase="breaker"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('直接拉闸');
+    await clickGameFeature(page, '[data-phase="breaker"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.phase)).toBe('outbound');
-    await page.locator('[data-phase="reset"]').click();
+    await clickGameFeature(page, '[data-phase="reset"]');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(false);
-    await page.locator('[data-result="last-survivor"]').click();
+    await clickGameFeature(page, '[data-result="last-survivor"]');
     await expect(page.locator('#round-end')).toBeVisible();
     await expect(page.locator('#round-end')).toHaveAttribute('data-outcome', 'last-survivor');
     await expect(page.locator('#round-end-title')).toHaveText('测试对手 赢得本局');
+    await page.keyboard.press('p');
+    await expect(page.locator('.audio-lab')).toBeVisible();
     await page.locator('.audio-lab [data-action="reset-tuning"]').click();
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().cameraMotionScale))

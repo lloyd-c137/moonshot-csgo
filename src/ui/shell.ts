@@ -40,7 +40,6 @@ type Actions = {
     enter: () => void;
     logout: () => Promise<void>;
     loadBoard: () => Promise<BoardView>;
-    recover: () => void;
     settingsChanged: (settings: Settings) => void;
     uploadAvatar: (image: Blob) => Promise<AccountView>;
     deleteAvatar: () => Promise<AccountView>;
@@ -108,7 +107,7 @@ const MARKUP = `
     <div class="title-shade" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
     <header class="title-top">
-      <div class="brand"><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
+      <div class="brand"><img class="brand-logo" src="/favicon.svg" alt="" /><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
       <nav class="title-tabs" role="tablist" aria-label="菜单">
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
@@ -321,7 +320,6 @@ const MARKUP = `
       <div class="pause-panel" data-pause-panel="game">
       <div class="pause-actions">
         <button class="primary" id="resume-button" type="button">继续游戏</button>
-        <button class="secondary" id="recover-button" type="button">脱离卡死 · 回到南入口</button>
       </div>
       <fieldset id="avatar-settings" hidden>
         <legend>自定义角色头像</legend>
@@ -760,7 +758,6 @@ export const createUi = () => {
             enterButton.addEventListener('click', actions.enter);
             bindTitle(actions);
             $('#resume-button').addEventListener('click', actions.enter);
-            $('#recover-button').addEventListener('click', actions.recover);
             const avatarInput = $<HTMLInputElement>('#avatar-file');
             const avatarStatus = $<HTMLOutputElement>('#avatar-status');
             const avatarChoose = $<HTMLButtonElement>('#avatar-choose');
@@ -1079,6 +1076,7 @@ export const createUi = () => {
                 $('#king-line-name').textContent = king.name;
                 $('#king-line-kills').textContent = `${king.kills} 淘汰`;
                 if (isNew) {
+                    replay(card, 'new');
                     replay(line, 'new');
                 }
             }
@@ -1607,7 +1605,10 @@ export const createUi = () => {
                     order: number;
                     total: number;
                     kills: number;
+                    deaths?: number;
+                    score?: number;
                     skill?: string;
+                    equipment?: string;
                     colour: string;
                 } | null
             ) {
@@ -1617,7 +1618,10 @@ export const createUi = () => {
                 $('#ceremony-order').textContent =
                     `入场 ${String(entry.order).padStart(2, '0')} / ${String(entry.total).padStart(2, '0')}`;
                 $('#ceremony-name').textContent = entry.name;
-                $('#ceremony-facts').textContent = [`本局淘汰 ${entry.kills}`, entry.skill].filter(Boolean).join(' · ');
+                $('#ceremony-facts').textContent = [
+                    `本局战绩  淘汰 ${entry.kills} · 出局 ${entry.deaths ?? 0} · 得分 ${entry.score ?? 0}`,
+                    `装备  ${[entry.equipment, entry.skill].filter(Boolean).join(' · ') || '普通飞盘'}`
+                ].join('\n');
                 card.classList.remove('show');
                 replay(card, 'show');
             },

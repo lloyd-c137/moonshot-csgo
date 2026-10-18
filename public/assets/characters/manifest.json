@@ -10,7 +10,7 @@
     },
     "runtime": {
         "path": "public/assets/characters/moonshot-humanoid.glb",
-        "sha256": "18f6787efc1dcb220d6413fbf238c645bf34195bb20349c18ca7d0207e655981",
+        "sha256": "11f61cfecbc6588d171fa2c1da0c67318f81aa2a9c551443bbf055517fc21b9e",
         "bytes": 4081284,
         "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14 + tools/authorFinisherToss.ts + tools/authorWaveClips.ts",
         "headMaterial": "M_Head",
@@ -66,8 +66,8 @@
             "walk": 1.0666667222976685,
             "idle": 2
         },
-        "handPose": "Open right palm from A_TPose; finger joints no longer inherit the curled locomotion pose",
-        "generator": "tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body, open right palm from A_TPose, Boomerang overhead pose pumped on the right arm; no Blender)",
+        "handPose": "Open right palm from A_TPose; raised arm uses Pistol_Aim_Up with the thumb turned toward the torso",
+        "generator": "tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body, open right palm from A_TPose, raised Pistol_Aim_Up arm pose; no Blender)",
         "rootTranslation": false
     }
 }

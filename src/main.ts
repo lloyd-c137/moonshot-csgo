@@ -601,10 +601,6 @@ const boot = async () => {
                 match.homepageMusic(true);
             },
             enter,
-            recover: () => {
-                recover();
-                enter();
-            },
             settingsChanged: (next) => {
                 applySettings(player, camera, next);
                 match.setView(next.fieldOfView, next.lookSensitivity);

@@ -198,7 +198,7 @@ test('ceremony wave clips keep all right-hand fingers in the authored open-palm 
         .map((node, index) => ({ name: node.name ?? '', index }))
         .filter(({ name }) => /^(thumb|index|middle|ring|pinky)_\d+_(?:leaf_)?r$/.test(name));
     assert.equal(fingerNodes.length, 20, 'includes every right-hand finger segment');
-    assert.equal(manifest.wave.handPose, 'Open right palm from A_TPose; finger joints no longer inherit the curled locomotion pose');
+    assert.equal(manifest.wave.handPose, 'Open right palm from A_TPose; raised arm uses Pistol_Aim_Up with the thumb turned toward the torso');
 
     for (const clipName of manifest.wave.actions) {
         const wave = gltf.animations.find((animation) => animation.name === clipName);

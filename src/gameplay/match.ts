@@ -39,7 +39,7 @@ import type { SeatSlot } from '../world/stadiumLayout';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
-import { CEREMONY, planCeremony } from './ceremony/ceremonyPlan';
+import { CEREMONY, featuredEntrantAt, planCeremony } from './ceremony/ceremonyPlan';
 import type { CeremonyPlan, Entrant } from './ceremony/ceremonyPlan';
 import { createCeremonyView } from './ceremony/ceremonyView';
 import {
@@ -282,6 +282,7 @@ export const createMatch = ({
     /** Room time the test panel turned the night on (the guard and the cutscene run from it). */
     let labNightAt: number | null = null;
     let labFinalOverride = false;
+    let labFinalAfterCeremony = false;
     let labPowerOverride: PowerState | null = null;
     let labMomentCutscene: MomentCutscene | null = null;
     const labTargetId = 'audio-lab-target';
@@ -340,13 +341,13 @@ export const createMatch = ({
                     labNightAt = roomNow();
                     return 'local';
                 },
-                simulateFinalMinute: async () => {
-                    if (await setRoundTestClock(ROUND.finalSecondsLeft)) return 'server';
-                    labFinalOverride = true;
-                    return 'local';
-                },
-                simulateCeremony: async () => {
-                    if (await setRoundTestClock(ROUND.finalSecondsLeft + CEREMONY.seconds)) return 'server';
+                simulateFinalShowdown: async () => {
+                    if (await setRoundTestClock(ROUND.finalSecondsLeft + CEREMONY.seconds)) {
+                        labFinalOverride = false;
+                        labFinalAfterCeremony = false;
+                        return 'server';
+                    }
+                    labFinalAfterCeremony = true;
                     playLabCeremony(4);
                     return 'local';
                 },
@@ -368,6 +369,7 @@ export const createMatch = ({
                     labNightOverride = false;
                     labNightAt = null;
                     labFinalOverride = false;
+                    labFinalAfterCeremony = false;
                     labPowerOverride = null;
                     labMomentCutscene = null;
                     finalRelocationResult = 'idle';
@@ -508,6 +510,7 @@ export const createMatch = ({
         if (player.rigidbody) player.rigidbody.enabled = false;
     };
     let ceremonyRun: { at: number; plan: CeremonyPlan; moved: boolean; lastPerf: number; t: number } | null = null;
+    let ceremonyCardId: string | null = null;
     /** Test hook: a ceremony starting at this room time with these entrants (offline). */
     let labCeremony: { at: number; entrants: Entrant[] } | null = null;
     let shuttersShut = false;
@@ -588,13 +591,19 @@ export const createMatch = ({
         labCeremony = {
             at: realRoomNow(),
             entrants: [
-                { id: selfId(), name: '你', kills: 2, colour: hueColour(colourFor('local')), skill: '复活甲' },
+                {
+                    id: selfId(), name: '你', kills: 2, deaths: 1, score: 240,
+                    colour: hueColour(colourFor('local')), skill: '复活甲', equipment: '普通飞盘'
+                },
                 ...names.slice(0, others).map((name, i) => ({
                     id: `ceremony-${name}`,
                     name,
                     kills: [5, 3, 1, 0, 4, 2][i % 6],
+                    deaths: i % 3,
+                    score: [420, 310, 180, 90][i % 4],
                     colour: hueColour((i * 67 + 20) % 360),
-                    skill: i % 3 === 0 ? 'FRC 飞盘' : undefined
+                    skill: i % 3 === 0 ? '复活甲' : undefined,
+                    equipment: i % 3 === 0 ? '普通飞盘 · FRC 飞盘' : '普通飞盘'
                 }))
             ]
         };
@@ -623,6 +632,12 @@ export const createMatch = ({
     const currentPower = () => labPowerOverride ?? power;
     const goldHolder = () => goldView.state?.holder ?? null;
     const holdingGold = () => goldHolder() === selfId();
+    const ceremonyLoadout = (entry: PlayerSummary) =>
+        [goldHolder() === entry.id ? '金飞盘' : '普通飞盘', ...(entry.hasFrc ? ['FRC 飞盘'] : [])].join(' · ');
+    const ceremonySkills = (entry: PlayerSummary) =>
+        SKILL_KINDS.filter((kind) => kind !== 'frc' && SKILL_META[kind].has(entry))
+            .map((kind) => SKILL_META[kind].name)
+            .join(' · ');
     /** The game moved the local player itself since the last pose sent (recovery, return to the arena…). */
     let teleportPending = false;
     /** Real server clock drives networking and cinematic seeking; match clock stops during a global finisher. */
@@ -1068,7 +1083,7 @@ export const createMatch = ({
                 avatars.clear();
                 for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, npc.hue);
                 // Back to offline practice: no round, and a local golden disc will be laid out again.
-                roundState = null;
+                if (!audioLab) roundState = null;
                 goldView.set(null);
                 avatars.setGold(null);
                 ground.set([]);
@@ -2252,9 +2267,45 @@ export const createMatch = ({
         return positionOf(state.holder) ?? null;
     };
     let roundEndSecond = -1;
+    const beginLocalTestRound = (now = roomNow()) => {
+        roundState = { phase: 'playing', endsAt: now + ROUND.roundSeconds * 1000 };
+        roundEndSecond = -1;
+    };
     /** Per frame: 纪老师, the golden disc, detention, the round clock and the on-screen gold marker. */
     const updateRound = (now: number) => {
         if (warming) return;
+        if (audioLab && started && roundState) {
+            const matchTime = roomNow();
+            if (roundState.phase === 'playing' && matchTime >= roundState.endsAt) {
+                const winnerId = holdingGold() ? selfId() : null;
+                roundState = {
+                    phase: 'ended',
+                    winner: winnerId ? nickname || '你' : null,
+                    winnerId,
+                    outcome: winnerId ? 'golden-disc' : 'draw',
+                    nextAt: matchTime + ROUND.intermissionSeconds * 1000
+                };
+                sound.roundEnd(winnerId === selfId(), winnerId ? 'golden-disc' : 'draw');
+                ui.notify(winnerId ? '回合结束 · 你守住了金飞盘' : '回合结束 · 无人持有金飞盘');
+            } else if (roundState.phase === 'ended' && matchTime >= roundState.nextAt) {
+                beginLocalTestRound(matchTime);
+                goldView.set(null);
+                goldThrowCount = 0;
+                goldCooldownUntil = 0;
+                power = { pulledAt: null };
+                labNightOverride = false;
+                labNightAt = null;
+                labFinalOverride = false;
+                labPowerOverride = null;
+                labMomentCutscene = null;
+                finalShown = false;
+                finalDone = false;
+                finalRelocationResult = 'idle';
+                shuttersShut = false;
+                sound.roundStart();
+                ui.notify('新一局开始！争夺金飞盘');
+            }
+        }
         if (net.state !== 'online') {
             let returned = false;
             for (const item of worldItems) {
@@ -2333,7 +2384,8 @@ export const createMatch = ({
         const activePower = currentPower();
         const outage = powerOut(time, activePower);
         const nightActive =
-            (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
+            ((net.state === 'online' || audioLab) && lightsOut !== null && time >= lightsOut) ||
+            (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
         // Event cutscenes: everyone sees the moment the lights go out / the breaker is pulled, frozen meanwhile.
         const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower, currentMomentCutscene ?? labMomentCutscene) : null;
@@ -2457,28 +2509,35 @@ export const createMatch = ({
         // The entrance ceremony in the CEREMONY.seconds before the final minute (same room clock on every client).
         const ceremonyAt =
             labCeremony?.at ??
-            (net.state === 'online' && roundState?.phase === 'playing'
+            ((net.state === 'online' || audioLab) && roundState?.phase === 'playing'
                 ? roundState.endsAt - (ROUND.finalSecondsLeft + CEREMONY.seconds) * 1000
                 : null);
-        const ceremonyT = ceremonyAt === null ? -1 : (realRoomNow() - ceremonyAt) / 1000;
+        const ceremonyT = ceremonyAt === null ? -1 : (roomNow() - ceremonyAt) / 1000;
         if (!ceremonyRun && started && ceremonyAt !== null && ceremonyT >= 0 && ceremonyT < CEREMONY.seconds - 1) {
             const entrants: Entrant[] =
                 labCeremony?.entrants ??
-                [...roster.values()]
-                    .filter((entry) => entry.phase === 'playing' && entry.alive && !entry.spectating)
-                    .map((entry) => ({
-                        id: entry.id,
-                        name: entry.name,
-                        kills: entry.kills,
-                        colour: hueColour(entry.colour),
-                        skill: SKILL_KINDS.map((kind) => SKILL_META[kind]).find((meta) => meta.has(entry))?.name
-                    }));
+                (audioLab && roster.size === 0
+                    ? [{ id: selfId(), name: nickname || '你', kills: 0, deaths: 0, score: 0, colour: hueColour(colourFor('local')), equipment: '普通飞盘' }]
+                    : [...roster.values()]
+                          .filter((entry) => entry.phase === 'playing' && entry.alive && !entry.spectating)
+                          .map((entry) => ({
+                              id: entry.id,
+                              name: entry.name,
+                              kills: entry.kills,
+                              deaths: entry.deaths,
+                              score: entry.score,
+                              colour: hueColour(entry.colour),
+                              equipment: ceremonyLoadout(entry),
+                              skill: ceremonySkills(entry) || undefined
+                          })));
             if (entrants.length) {
                 const plan = planCeremony(entrants, arenaCenter, ceremony.doors);
                 ceremonyRun = { at: ceremonyAt, plan, moved: false, lastPerf: performance.now(), t: ceremonyT };
                 // Fans in the stands watch it live from where they stand; everyone else gets the film.
                 const film = !fanMode;
                 ceremony.start(plan, (id) => avatars.headImage(id), film);
+                ceremonyCardId = null;
+                ui.ceremony.card(null);
                 sound.ceremonyDark();
                 if (film) {
                     ui.ceremony.show(true);
@@ -2494,7 +2553,7 @@ export const createMatch = ({
             const perfNow = performance.now();
             const dt = Math.min(0.1, (perfNow - ceremonyRun.lastPerf) / 1000);
             ceremonyRun.lastPerf = perfNow;
-            const t = (realRoomNow() - ceremonyRun.at) / 1000;
+            const t = (roomNow() - ceremonyRun.at) / 1000;
             ceremonyRun.t = t;
             const { plan } = ceremonyRun;
             const fadeOutAt = CEREMONY.seconds - CEREMONY.fadeOut;
@@ -2528,15 +2587,25 @@ export const createMatch = ({
             for (const entrant of events.entered) {
                 sound.ceremonySpot();
                 sound.crowd([entrant.to[0], 6, entrant.to[2]], 'cheer');
-                if (entrant.featured)
-                    ui.ceremony.card({
-                        name: entrant.id === selfId() ? `${entrant.name}（你）` : entrant.name,
-                        order: entrant.order + 1,
-                        total: plan.entrants.length,
-                        kills: entrant.kills,
-                        skill: entrant.skill,
-                        colour: `rgb(${entrant.colour.map((c) => Math.round(c * 255)).join(' ')})`
-                    });
+            }
+            const focusedEntrant = featuredEntrantAt(plan, t);
+            if (focusedEntrant?.id !== ceremonyCardId) {
+                ceremonyCardId = focusedEntrant?.id ?? null;
+                ui.ceremony.card(
+                    focusedEntrant
+                        ? {
+                              name: focusedEntrant.id === selfId() ? `${focusedEntrant.name}（你）` : focusedEntrant.name,
+                              order: focusedEntrant.order + 1,
+                              total: plan.entrants.length,
+                              kills: focusedEntrant.kills,
+                              deaths: focusedEntrant.deaths,
+                              score: focusedEntrant.score,
+                              equipment: focusedEntrant.equipment,
+                              skill: focusedEntrant.skill,
+                              colour: `rgb(${focusedEntrant.colour.map((c) => Math.round(c * 255)).join(' ')})`
+                          }
+                        : null
+                );
             }
             if (events.shut.length) sound.ceremonyShutter();
             for (const ring of events.struck) {
@@ -2554,6 +2623,11 @@ export const createMatch = ({
                 if (script) script.enabled = (alive && !executionFrozen && !spectating) || fanMode;
             }
         }
+        // In the offline test lab, the final showdown starts as soon as its entry ceremony completes.
+        if (audioLab && labFinalAfterCeremony && labCeremony && ceremonyT >= CEREMONY.seconds) {
+            labFinalOverride = true;
+            labFinalAfterCeremony = false;
+        }
         // The entrances stay shut (and the lamp rings lit) for the final minute.
         const finalFight =
             ceremonyAt !== null &&
@@ -2568,10 +2642,11 @@ export const createMatch = ({
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
         const finalNow =
-            (net.state === 'online' && finalAt !== null && roomNow() >= finalAt) || (audioLab && labFinalOverride);
+            (((net.state === 'online' || audioLab) && finalAt !== null && roomNow() >= finalAt) ||
+                (audioLab && labFinalOverride));
         const showdown = finalNow || !!ceremonyRun;
         sound.matchPlaylistMusic(
-            started && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !showdown
+            started && (!audioLab || roundState?.phase === 'playing') && (net.state !== 'online' || roundState?.phase === 'playing') && !dark && !showdown
         );
         sound.blackoutMusic(dark && !showdown);
         sound.finalShowdownMusic(started && showdown);
@@ -2597,7 +2672,7 @@ export const createMatch = ({
             finalRelocationResult = 'pending';
             ui.arenaTransition(() => {
                 const current = roundState;
-                const localTestFinal = audioLab && labFinalOverride;
+                const localTestFinal = audioLab && (labFinalOverride || (finalAt !== null && roomNow() >= finalAt));
                 if (
                     !alive ||
                     spectating ||
@@ -2734,7 +2809,7 @@ export const createMatch = ({
         // The MVP sequence opens the intermission for everyone.
         const mvpAt =
             labMvp?.at ??
-            (net.state === 'online' && current?.phase === 'ended'
+            ((net.state === 'online' || audioLab) && current?.phase === 'ended'
                 ? current.nextAt - ROUND.intermissionSeconds * 1000
                 : null);
         const mvpT = mvpAt === null ? -1 : (roomMs - mvpAt) / 1000;
@@ -2755,7 +2830,7 @@ export const createMatch = ({
                 if (labMvp) labMvp = null;
             }
         }
-        if (net.state === 'online' && current) {
+        if ((net.state === 'online' || audioLab) && current) {
             if (current.phase === 'playing') {
                 ui.roundClock(Math.max(0, (current.endsAt - roomMs) / 1000));
                 if (roundEndSecond !== -1) {
@@ -2953,6 +3028,7 @@ export const createMatch = ({
             viewmodel.enabled = true;
             refreshBoard();
             net.connect(name, auth.token, phase);
+            if (audioLab && phase === 'playing' && net.state !== 'online') beginLocalTestRound();
             refreshCount();
         },
         /** Client-side phase changes on the gate crossing; the room independently validates its latest pose. */
@@ -2965,8 +3041,10 @@ export const createMatch = ({
                 // Preserve WebSocket order: the room validates the exact gate-crossing pose first.
                 net.pose(pose(), true);
                 net.joinRound();
+            } else {
+                playerPhase = 'playing';
+                if (audioLab && !roundState) beginLocalTestRound();
             }
-            else playerPhase = 'playing';
         },
         update(deltaTime: number) {
             const now = performance.now();
@@ -3222,6 +3300,12 @@ export const createMatch = ({
             }
         },
         debug: {
+            /** Adjust only the developer audio-lab round clock so phase thresholds can be tested without waiting. */
+            setRoundRemaining: (seconds: number) => {
+                if (!audioLab || roundState?.phase !== 'playing' || !Number.isFinite(seconds)) return;
+                roundState = { phase: 'playing', endsAt: roomNow() + Math.max(0, seconds) * 1000 };
+                roundEndSecond = -1;
+            },
             /** Plays the final entrance ceremony now (offline test): you plus `others` stand-in players. */
             playCeremony: (others = 4) => playLabCeremony(others),
             ceremony: () => (ceremonyRun ? { t: ceremonyRun.t, entrants: ceremonyRun.plan.entrants.length } : null),

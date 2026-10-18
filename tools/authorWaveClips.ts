@@ -1,7 +1,8 @@
 // Authors the ceremony wave clips straight into the runtime character GLB, without Blender: Walk_Wave_Loop (walking
 // in while waving to the crowd) and Idle_Wave_Loop (standing on the mark, still waving). The body is the CC0 rig's
-// own Walk_Loop / Idle_Loop; the right arm pumps between a raised and a fully overhead version of the Boomerang
-// clip's overhead pose, while the right fingers use the open-hand A_TPose. In place (root translation zero); the
+// own Walk_Loop / Idle_Loop; the right arm pumps around the raised Pistol_Aim_Up pose, while the right fingers use
+// the open-hand A_TPose. The raised pose points the hand nearly vertically and turns the thumb toward the torso.
+// In place (root translation zero); the
 // runtime moves the actors.
 //
 // Usage: node tools/authorWaveClips.ts   (rewrites public/assets/characters/moonshot-humanoid.glb + manifest)
@@ -107,13 +108,11 @@ const clip = (suffix: string) => {
 const idle = clip('Idle_Loop');
 const walk = clip('Walk_Loop');
 const openPalm = clip('A_TPose');
-const boomerang = clip('Finisher_Boomerang_Attacker');
+const raisedArm = clip('Pistol_Aim_Up');
 const joints = gltf.skins[0].joints;
 const nodeName = (index: number) => gltf.nodes[index].name ?? '';
 const rootNode = joints.find((j) => nodeName(j) === 'root')!;
 
-/** Boomerang frame 14 (30 fps): the right hand held high overhead. */
-const OVERHEAD = (14 - 1) / 30;
 const FPS = 30;
 /** One walk cycle (looped), and an idle wave of two full waves. */
 const WALK_SECONDS = walk.duration;
@@ -122,15 +121,15 @@ const IDLE_SECONDS = 2;
 const WAVE_RATE = 1.6;
 /** How high the arm sits on the base→overhead arc (top and bottom of the wave), per bone. */
 const ARM: Record<string, [number, number]> = {
-    clavicle_r: [0.98, 0.76],
-    upperarm_r: [1, 0.7],
-    lowerarm_r: [0.96, 0.42],
-    hand_r: [0.82, 0.3]
+    clavicle_r: [0.98, 0.92],
+    upperarm_r: [1, 0.94],
+    lowerarm_r: [0.96, 0.9],
+    hand_r: [0.96, 0.88]
 };
 /** Keep the raised waving hand open instead of inheriting the relaxed, curled fingers. */
 const RIGHT_FINGER = /^(thumb|index|middle|ring|pinky)_\d+_(?:leaf_)?r$/;
-/** A little lean and a turn of the head toward the raised hand. */
-const TORSO: Record<string, number> = { spine_02: 0.2, spine_03: 0.26, neck_01: 0.18, Head: 0.12 };
+/** Carry the raised-arm shoulder line through the chest; keep the head near the crowd-facing body pose. */
+const TORSO: Record<string, number> = { spine_02: 0.82, spine_03: 0.9, neck_01: 0.18, Head: 0.12 };
 
 const author = (kind: 'walk' | 'idle') => {
     const seconds = kind === 'walk' ? WALK_SECONDS : IDLE_SECONDS;
@@ -147,7 +146,8 @@ const author = (kind: 'walk' | 'idle') => {
             const body = source.sample(node, 'rotation', local) as Quat;
             const bodyT = source.sample(node, 'translation', local) ?? [0, 0, 0];
             let q = body;
-            const high = boomerang.sample(node, 'rotation', OVERHEAD) as Quat | null;
+            const high = raisedArm.sample(node, 'rotation', 0) as Quat | null;
+            const torsoPose = raisedArm.sample(node, 'rotation', 0) as Quat | null;
             if (RIGHT_FINGER.test(name)) {
                 q = openPalm.sample(node, 'rotation', 0) as Quat;
             } else if (high && ARM[name]) {
@@ -156,7 +156,7 @@ const author = (kind: 'walk' | 'idle') => {
                 const phase = 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * t) / seconds);
                 const [top, bottom] = ARM[name];
                 q = slerp(body, high, bottom + (top - bottom) * phase);
-            } else if (high && TORSO[name]) q = slerp(body, high, TORSO[name]);
+            } else if (torsoPose && TORSO[name]) q = slerp(body, torsoPose, TORSO[name]);
             rotations.push(q);
             translations.push(node === rootNode ? [0, 0, 0] : bodyT);
         }
@@ -264,9 +264,9 @@ manifest.verified.animationClips = gltf.animations.length;
 manifest.wave = {
     actions: [NAMES.walk, NAMES.idle],
     durationSeconds: { walk: WALK_SECONDS, idle: IDLE_SECONDS },
-    handPose: 'Open right palm from A_TPose; finger joints no longer inherit the curled locomotion pose',
+    handPose: 'Open right palm from A_TPose; raised arm uses Pistol_Aim_Up with the thumb turned toward the torso',
     generator:
-        'tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body, open right palm from A_TPose, Boomerang overhead pose pumped on the right arm; no Blender)',
+        'tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body, open right palm from A_TPose, raised Pistol_Aim_Up arm pose; no Blender)',
     rootTranslation: false
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 4)}\n`);

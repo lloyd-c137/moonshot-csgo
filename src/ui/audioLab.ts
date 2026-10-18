@@ -27,9 +27,8 @@ type Options = {
     getSimulatedRtt: () => number;
     simulateDummyHit: (scenario: 'body' | 'head' | 'elimination' | 'golden' | 'execution') => void;
     simulateBlackout: () => Promise<'server' | 'local'>;
-    simulateFinalMinute: () => Promise<'server' | 'local'>;
-    /** The final entrance ceremony: on the server clock when connected, otherwise played locally with stand-ins. */
-    simulateCeremony: () => Promise<'server' | 'local'>;
+    /** Runs the final entry ceremony first, then starts the final showdown. */
+    simulateFinalShowdown: () => Promise<'server' | 'local'>;
     simulateBreaker: () => void;
     simulateMomentCutscene: (kind: MomentCutscene['kind']) => void;
     resetTestMechanics: () => void;
@@ -57,8 +56,7 @@ export const mountAudioLab = async ({
     getSimulatedRtt,
     simulateDummyHit,
     simulateBlackout,
-    simulateFinalMinute,
-    simulateCeremony,
+    simulateFinalShowdown,
     simulateBreaker,
     simulateMomentCutscene,
     resetTestMechanics,
@@ -81,7 +79,7 @@ export const mountAudioLab = async ({
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><button data-action="execution-demo" type="button">处决人偶测试</button><small>命中预设直接驱动固定人偶反馈；处决按钮会进入背后站位，再按 V 播放实际双角色动作。人偶死亡后原地复活。</small></div>
-        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终球场对决</button><button data-phase="ceremony" type="button">Final 入场仪式</button><button data-phase="gold-first" type="button">金盘首次争夺</button><button data-phase="last-two" type="button">最后两人对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>本地测试可以直接查看拉闸、终局夜晚、金盘争夺、最后两人对决与最终球场传送，不需跑图或等待倒计时；本机演示不改战绩、不影响其他玩家。连上开发测试服时，夜晚/最终对决优先使用服务器时钟。</small></div>
+        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终对决（含入场仪式）</button><button data-phase="gold-first" type="button">金盘首次争夺</button><button data-phase="last-two" type="button">最后两人对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>最终对决会先播放 Final 入场仪式，再切入球场对决；本机演示不改战绩、不影响其他玩家。连上开发测试服时按服务器时钟同步。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
@@ -164,45 +162,58 @@ export const mountAudioLab = async ({
         dummyHeight.value = `${height.toFixed(2)} m`;
         setDummyScale(height / 1.829);
     });
+    const resume = () => {
+        const screen = document.querySelector<HTMLElement>('#app-ui')?.dataset.screen;
+        if (!['ready', 'play', 'paused'].includes(screen ?? '')) {
+            status.textContent = '校园仍在加载，请稍候。';
+            return;
+        }
+        dialog.close();
+        void canvas.requestPointerLock().catch(() => {
+            status.textContent = '请点击游戏的进入 / 继续按钮。';
+        });
+    };
+    const runFeature = <T,>(action: () => T): T => {
+        const result = action();
+        // Request pointer lock in the same click gesture; async server-backed demos can finish afterward.
+        resume();
+        return result;
+    };
     host.querySelectorAll<HTMLButtonElement>('[data-scenario]').forEach((button) => {
-        button.addEventListener('click', () => simulateDummyHit(button.dataset.scenario as 'body' | 'head' | 'elimination' | 'golden' | 'execution'));
+        button.addEventListener('click', () =>
+            runFeature(() => simulateDummyHit(button.dataset.scenario as 'body' | 'head' | 'elimination' | 'golden' | 'execution'))
+        );
     });
     host.querySelector<HTMLButtonElement>('[data-phase="blackout"]')!.addEventListener('click', async () => {
-        const result = await simulateBlackout();
+        const result = await runFeature(simulateBlackout);
         status.textContent = result === 'server'
-            ? '已同步触发终局夜晚；关闭面板观察照明、保安和最终规则。'
-            : '已在本机触发终局夜晚；仅当前浏览器演示，不改变服务器回合。';
+            ? '已同步触发终局夜晚。'
+            : '已在本机触发终局夜晚；仅当前浏览器演示。';
     });
     host.querySelector<HTMLButtonElement>('[data-phase="final"]')!.addEventListener('click', async () => {
-        const result = await simulateFinalMinute();
+        const result = await runFeature(simulateFinalShowdown);
         status.textContent = result === 'server'
-            ? '已同步触发最终球场对决；关闭面板观察公告、遮罩、灯光与传送。'
-            : '已在本机触发最终球场对决；仅当前浏览器演示，不改变服务器回合。';
-    });
-    host.querySelector<HTMLButtonElement>('[data-phase="ceremony"]')!.addEventListener('click', async () => {
-        const result = await simulateCeremony();
-        status.textContent = result === 'server'
-            ? '已同步触发 Final 入场仪式；关闭面板观看入场、探照灯、封门与亮灯。'
-            : '已在本机播放 Final 入场仪式（你和 4 名替身）；仅当前浏览器演示。';
+            ? '已同步触发最终对决：入场仪式结束后进入球场对决。'
+            : '已在本机触发最终对决：入场仪式结束后进入球场对决。';
     });
     host.querySelector<HTMLButtonElement>('[data-phase="breaker"]')!.addEventListener('click', () => {
-        simulateBreaker();
+        runFeature(simulateBreaker);
         status.textContent = '已在本机直接拉闸；可观察灭灯、提示音、背景音乐和保安修闸路线。';
     });
     for (const kind of ['gold-first', 'last-two'] as const) {
         host.querySelector<HTMLButtonElement>(`[data-phase="${kind}"]`)!.addEventListener('click', () => {
-            simulateMomentCutscene(kind);
+            runFeature(() => simulateMomentCutscene(kind));
             status.textContent = kind === 'gold-first' ? '已触发金飞盘首次争夺过场。' : '已触发最后两人对决过场。';
         });
     }
     host.querySelector<HTMLButtonElement>('[data-phase="reset"]')!.addEventListener('click', () => {
-        resetTestMechanics();
+        runFeature(resetTestMechanics);
         status.textContent = '测试机制已复位。';
     });
     host.querySelectorAll<HTMLButtonElement>('[data-result]').forEach((button) => {
         button.addEventListener('click', () => {
             const outcome = button.dataset.result as 'golden-disc' | 'last-survivor' | 'draw';
-            simulateRoundResult(outcome, button.dataset.mine === 'true');
+            runFeature(() => simulateRoundResult(outcome, button.dataset.mine === 'true'));
             status.textContent = `已播放${button.textContent}卡片与回合提示音；仅本地演示，不记录战绩。`;
         });
     });
@@ -248,17 +259,6 @@ export const mountAudioLab = async ({
         rttRange.value = String(originalTuning.simulatedRtt);
         rttRange.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    const resume = () => {
-        const screen = document.querySelector<HTMLElement>('#app-ui')?.dataset.screen;
-        if (!['ready', 'play', 'paused'].includes(screen ?? '')) {
-            status.textContent = '校园仍在加载，请稍候。';
-            return;
-        }
-        dialog.close();
-        void canvas.requestPointerLock().catch(() => {
-            status.textContent = '请点击游戏的进入 / 继续按钮。';
-        });
-    };
     host.querySelector('[data-action="close"]')!.addEventListener('click', () => dialog.close());
     host.querySelector('[data-action="stop"]')!.addEventListener('click', stop);
     host.querySelector('[data-action="resume"]')!.addEventListener('click', resume);

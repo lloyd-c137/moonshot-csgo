@@ -36,6 +36,11 @@ declare global {
                     items?: { id: string; available: boolean }[];
                     stealthUntil?: number;
                     roomNow?: number;
+                    blackoutAt?: number | null;
+                    round?:
+                        | { phase: 'playing'; endsAt: number }
+                        | { phase: 'ended'; winner: string | null; nextAt: number }
+                        | null;
                     restroomMirror: {
                         activeRoom: string | null;
                         cameraEnabled: boolean;
@@ -49,6 +54,7 @@ declare global {
                 shutterProbes: () => { id: string; from: number[]; to: number[] }[];
                 ceremonyMetrics: () => { entrantActors: number; spotlights: number; seatedSpectators: number };
                 cutscene: () => { kind: string; skipped: boolean; camera: boolean } | null;
+                setRoundRemaining: (seconds: number) => void;
             };
         };
     }

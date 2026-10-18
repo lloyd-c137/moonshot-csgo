@@ -75,7 +75,16 @@ const TUNNEL_DEPTH = 2.2;
 /** Side offsets for the second, third… player on the same entrance. */
 const LANES = [0, 1.7, -1.7, 3.4, -3.4];
 
-export type Entrant = { id: string; name: string; kills: number; colour: [number, number, number]; skill?: string };
+export type Entrant = {
+    id: string;
+    name: string;
+    kills: number;
+    deaths?: number;
+    score?: number;
+    colour: [number, number, number];
+    skill?: string;
+    equipment?: string;
+};
 
 export type EntrantPlan = Entrant & {
     order: number;
@@ -176,6 +185,15 @@ export const entrantAt = (e: EntrantPlan, t: number) => {
     };
 };
 
+/** The entrant currently framed by the close-up camera, or null while it uses an aerial/establishing shot. */
+export const featuredEntrantAt = (plan: CeremonyPlan, t: number): EntrantPlan | null => {
+    const shutterStart = Math.min(...Object.values(plan.shutters));
+    if (t >= shutterStart - 0.6) return null;
+    return [...plan.entrants.filter((entrant) => entrant.featured)]
+        .reverse()
+        .find((entrant) => t >= entrant.start - 0.15) ?? null;
+};
+
 /** Shutter drop (0 open … 1 shut) at ceremony time t. */
 export const shutterAt = (plan: CeremonyPlan, id: string, t: number) => {
     const u = Math.max(0, Math.min(1, (t - plan.shutters[id]) / CEREMONY.shutterDrop));
@@ -238,7 +256,7 @@ export const shotAt = (plan: CeremonyPlan, center: Point2, t: number): Shot => {
             scene: 'crowd'
         };
     }
-    const current = [...featured].reverse().find((e) => t >= e.start - 0.15);
+    const current = featuredEntrantAt(plan, t);
     if (t >= shutterStart - 0.6 || !current) {
         // 2 (before the first entrant) and 5: aerial inside the roof ring's opening (it starts ~21 m out at 18.8 m
         // up). Before the entrants it sinks and drifts outward; from the shutters on it rises back up.

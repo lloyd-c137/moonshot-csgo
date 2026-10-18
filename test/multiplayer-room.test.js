@@ -538,6 +538,9 @@ test('players cannot be hit during spawn protection, and snapshots carry server 
     const { room, join, pose, inbox } = harness();
     join('a', 'A', 0);
     join('b', 'B', 10_000); // b just (re)spawned at t = 10 s
+    // The golden disc spawns at a random spawn point; keep it away so neither pose picks it up (that would start
+    // the gold-first cutscene, during which throws are refused).
+    room.gold = { holder: null, at: [500, 0.92, 500] };
     pose('a', [0, 0.9, 0], 10_000);
     pose('b', [6, 0.9, 0], 10_100);
     room.message('a', { type: 'throw', throw: { id: 1, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, 10_200);

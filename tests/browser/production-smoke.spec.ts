@@ -23,6 +23,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         if (
             response.url().includes('/assets/campus/') ||
             response.url().includes('/assets/pickups/') ||
+            response.url().includes('/assets/ui/moonshot-loading.png') ||
             response.url().includes('/ammo/') ||
             response.url().includes('/assets/audio/')
         ) {
@@ -40,6 +41,17 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     });
     await page.goto('/');
     await expect(page.locator('#boot-loader')).toBeVisible();
+    await expect
+        .poll(() => page.locator('#boot-loader').evaluate((loader) => getComputedStyle(loader).backgroundImage))
+        .toContain('moonshot-loading.png');
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const progress = document.querySelector('#boot-progress')?.getBoundingClientRect();
+                return !!progress && progress.bottom >= window.innerHeight - 40;
+            })
+        )
+        .toBe(true);
     await expect(page).toHaveTitle('Moonshot Frisbee Games');
     await expect(page.locator('#stage-label')).toContainText('音效');
     await expect(page.locator('#enter-button')).toBeDisabled();
@@ -52,6 +64,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect(page.locator('#enter-button')).toContainText('ENTER THE ARENA');
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
+    expect(assets['/assets/ui/moonshot-loading.png']).toBe(200);
     await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);
     expect(assets['/ammo/ammo.wasm.wasm']).toBe(200);
     for (const name of ['revive-medkit.glb', 'eye-monitor.glb', 'stealth-crystal.glb', 'creation-gear.glb']) {
@@ -74,9 +87,51 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect.poll(() => page.evaluate(() => (window as unknown as { __gameAudioContext?: AudioContext }).__gameAudioContext?.state)).toBe('running');
     await expect(page.locator('#boot-loader')).toBeHidden();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready');
+    await expect(page.locator('.title-top .brand-mark')).toHaveCount(0);
+    await expect(page.locator('.title-top .brand')).toContainText('MOONSHOTFRISBEE GAMES');
+    await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()))
+        .toBe('#147bff');
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const icons = document.createElement('span');
+                icons.className = 'ammo-icons';
+                const icon = document.createElement('i');
+                icon.dataset.full = 'true';
+                icons.append(icon);
+                document.body.append(icons);
+                const style = getComputedStyle(icon);
+                const result = { fill: style.backgroundColor, edge: style.borderTopColor, glow: style.boxShadow };
+                icons.remove();
+                return result;
+            })
+        )
+        .toEqual({ fill: 'rgb(20, 123, 255)', edge: 'rgb(41, 182, 255)', glow: expect.stringContaining('20, 123, 255') });
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const ping = document.createElement('div');
+                ping.className = 'xray-ping';
+                document.body.append(ping);
+                const colour = getComputedStyle(ping).borderTopColor;
+                ping.remove();
+                return colour;
+            })
+        )
+        .toBe('rgb(20, 123, 255)');
+    await expect
+        .poll(() =>
+            page.locator('#enter-button').evaluate((button) => {
+                const channels = getComputedStyle(button).backgroundColor.match(/\d+/g)?.map(Number);
+                return !!channels && channels[2] > channels[1] && channels[2] > channels[0];
+            })
+        )
+        .toBe(true);
     await page.getByRole('button', { name: '进入校园' }).click();
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
+    await page.screenshot({ path: 'test-results/hud-electric-blue.png' });
     for (const [file, duration] of [
         ['body-hit-v10.wav', 0.54299],
         ['kill-v12.wav', 0.74299],

@@ -51,7 +51,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.lineTo(-size * 0.7, -size * 0.62);
         g.closePath();
         g.fillStyle = '#ffc21a';
-        g.strokeStyle = '#1b2a3a';
+        g.strokeStyle = '#061a36';
         g.lineWidth = size * 0.22;
         g.fill();
         g.stroke();
@@ -64,7 +64,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.beginPath();
         g.arc(x, y, size, 0, Math.PI * 2);
         g.fillStyle = `hsl(${hue} 80% 55%)`;
-        g.strokeStyle = '#0b1422';
+        g.strokeStyle = '#061a36';
         g.lineWidth = size * 0.45;
         g.fill();
         g.stroke();
@@ -162,7 +162,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.beginPath();
         g.arc(w / 2, w / 2, w / 2, 0, Math.PI * 2);
         g.clip();
-        g.fillStyle = '#1b2a3a';
+        g.fillStyle = '#061a36';
         g.fillRect(0, 0, w, w);
         if (ready) {
             const [px, pz] = toPixel(x, z);
@@ -241,7 +241,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         full.style.height = `${image.height * scale}px`;
         const g = full.getContext('2d')!;
         g.setTransform(1, 0, 0, 1, 0, 0);
-        g.fillStyle = '#1b2a3a';
+        g.fillStyle = '#061a36';
         g.fillRect(0, 0, full.width, full.height);
         g.drawImage(image, 0, 0, full.width, full.height);
         for (const location of markers.specialLocations) {

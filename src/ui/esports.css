@@ -16,7 +16,9 @@
     --paper-dim: rgb(236 234 228 / 0.62);
     --line: rgb(236 234 228 / 0.32);
     /* Meaning */
-    --accent: #2ee6d6;
+    --accent: #147bff;
+    --accent-bright: #29b6ff;
+    --accent-halo: rgb(20 123 255 / 0.42);
     --ok: #3ee69c;
     --danger: #ff4d5e;
     --alert: #ff4d5e;
@@ -110,12 +112,40 @@ body {
 .primary {
     border: 0;
     background: var(--accent);
-    color: #04201d;
+    color: #f4f9ff;
     box-shadow: none;
 }
 
 .primary:hover {
-    background: #6ff3e7;
+    background: #368fff;
+}
+
+/* Keep legacy HUD indicators on the same electric-blue system as the loader. */
+.ammo-icons i[data-full='true'] {
+    border-color: var(--accent-bright);
+    background: var(--accent);
+    box-shadow: 0 0 7px var(--accent-halo);
+}
+
+.guard-tag {
+    border-left-color: var(--accent);
+    background: rgb(5 27 58 / 0.86);
+}
+
+.kill-icons i[data-icon='bank'],
+.kill-icons small {
+    color: var(--accent-bright);
+}
+
+.xray-ping {
+    border-color: var(--accent);
+    background: rgb(5 27 58 / 0.9);
+    box-shadow: 0 0 12px var(--accent-halo);
+    color: #eaf5ff;
+}
+
+.xray-ping small {
+    color: var(--accent-bright);
 }
 
 .primary:active,
@@ -219,7 +249,7 @@ body {
 }
 
 .leaderboard li[data-me='true'] {
-    background: linear-gradient(90deg, rgb(46 230 214 / 0.22), transparent);
+    background: linear-gradient(90deg, rgb(20 123 255 / 0.22), transparent);
 }
 
 /* ---------- HUD: top right — minimap, then the feeds stacked under it ---------- */
@@ -229,7 +259,7 @@ body {
     box-shadow:
         0 0 0 1px var(--hairline),
         0 0 0 4px rgb(11 15 20 / 0.55),
-        0 0 0 5px rgb(46 230 214 / 0.35);
+        0 0 0 5px rgb(20 123 255 / 0.35);
 }
 
 .feed-stack {
@@ -267,7 +297,7 @@ body {
 
 .killfeed li[data-tone='mine'] {
     box-shadow: inset 3px 0 0 var(--accent);
-    background: linear-gradient(90deg, rgb(46 230 214 / 0.28), rgb(11 15 20 / 0.7));
+    background: linear-gradient(90deg, rgb(20 123 255 / 0.28), rgb(11 15 20 / 0.7));
 }
 
 .killfeed li[data-tone='me'] {
@@ -855,24 +885,16 @@ body {
 }
 
 .brand {
-    gap: 10px;
+    gap: 14px;
     align-items: center;
 }
-.brand-mark {
-    padding: 4px 10px 3px;
-    background: var(--accent);
-    color: var(--ink);
-    font: 700 13px/1 var(--font-display);
-    letter-spacing: 0.08em;
-    clip-path: var(--cut-shape);
-}
 .brand b {
-    font: 700 22px/1 var(--font-display);
+    font: 700 30px/1 var(--font-display);
     letter-spacing: 0.12em;
 }
 .brand span:last-child {
-    font: 600 12px/1 var(--font-display);
-    letter-spacing: 0.32em;
+    font: 600 16px/1 var(--font-display);
+    letter-spacing: 0.24em;
     color: rgb(236 234 228 / 0.55);
 }
 
@@ -995,7 +1017,7 @@ body {
 .operator .field input:focus {
     outline: none;
     border-bottom-color: var(--accent);
-    background: rgb(46 230 214 / 0.06);
+    background: rgb(20 123 255 / 0.08);
 }
 .operator-hint {
     font: 500 12px/1.5 var(--font-ui);
@@ -1038,7 +1060,7 @@ body {
     min-width: 300px;
     padding: 18px 34px 16px;
     background: var(--accent);
-    color: var(--ink);
+    color: var(--paper);
     border: 0;
     border-radius: 0;
     clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
@@ -1049,12 +1071,12 @@ body {
 .play-button .play-label {
     font: 900 26px/1 var(--font-ui);
     letter-spacing: 0.08em;
-    color: var(--ink);
+    color: var(--paper);
 }
 .play-button small {
     font: 700 12px/1 var(--font-display);
     letter-spacing: 0.36em;
-    color: rgb(11 15 20 / 0.7);
+    color: rgb(244 249 255 / 0.78);
 }
 .play-button::after {
     content: '';
@@ -1210,7 +1232,7 @@ body {
 }
 .screen-pause .slider:hover,
 .screen-pause .check-row:hover {
-    background: rgb(46 230 214 / 0.06);
+    background: rgb(20 123 255 / 0.08);
 }
 .screen-pause .slider output {
     grid-column: 3;
@@ -1445,13 +1467,13 @@ body {
 }
 @keyframes play-breathe {
     50% {
-        background: #5ff2e6;
+        background: #368fff;
     }
 }
 /* Hover: lift, brighten, tracking opens up, arrow slides in, light sweeps across. */
 .play-button:not(:disabled):hover {
     animation: none;
-    background: #7ff7ec;
+    background: #368fff;
     transform: translateY(-3px);
 }
 .play-button:not(:disabled):hover .play-label {
@@ -1756,9 +1778,26 @@ body {
     transform: translateY(100%);
     transition: transform var(--dur-2) var(--ease-out);
 }
-#app-ui .operator-avatar:hover { transform: scale(1.05); box-shadow: 0 0 0 4px rgb(46 230 214 / 0.25); }
+#app-ui .operator-avatar:hover { transform: scale(1.05); box-shadow: 0 0 0 4px rgb(20 123 255 / 0.25); }
 #app-ui .operator-avatar:hover em { transform: none; }
 #app-ui .operator-who { display: grid; gap: 4px; min-width: 0; }
 #app-ui .operator-who > span { color: rgb(236 234 228 / 0.5); font: 500 12px/1 var(--font-ui); }
 #app-ui .operator-who .link { padding: 0; font: 600 12px/1 var(--font-ui); }
 #app-ui .operator-who small { color: rgb(236 234 228 / 0.5); font: 500 11px/1.3 var(--font-ui); }
+
+@media (max-width: 640px) {
+    .brand {
+        gap: 8px;
+        min-width: 0;
+    }
+    .brand b {
+        font-size: 20px;
+        letter-spacing: 0.08em;
+    }
+    .brand span:last-child {
+        display: inline;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        white-space: nowrap;
+    }
+}

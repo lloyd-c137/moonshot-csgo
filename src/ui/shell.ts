@@ -108,7 +108,7 @@ const MARKUP = `
     <div class="title-shade" aria-hidden="true"></div>
     <div class="scanlines" aria-hidden="true"></div>
     <header class="title-top">
-      <div class="brand"><span class="brand-mark">FF-01</span><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
+      <div class="brand"><b>MOONSHOT</b><span>FRISBEE GAMES</span></div>
       <nav class="title-tabs" role="tablist" aria-label="菜单">
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>

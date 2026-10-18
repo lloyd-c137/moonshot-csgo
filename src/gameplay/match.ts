@@ -351,6 +351,12 @@ export const createMatch = ({
                     playLabCeremony(4);
                     return 'local';
                 },
+                /** The final ceremony seen as a spectator: you are out, roaming the sealed stands with the crowd. */
+                simulateFanCeremony: () => {
+                    labFan = true;
+                    if (!spectating) startSpectating('测试：看台观众');
+                    playLabCeremony(4, true);
+                },
                 simulateBreaker: () => {
                     labPowerOverride = { pulledAt: roomNow() };
                 },
@@ -487,6 +493,7 @@ export const createMatch = ({
     /** From the start of the final ceremony to the end of the round. */
     const standsOpenNow = () =>
         !!ceremonyRun ||
+        labCeremony !== null ||
         inFinalMinute() ||
         (roundState?.phase === 'playing' &&
             roomNow() >= roundState.endsAt - (ROUND.finalSecondsLeft + CEREMONY.seconds) * 1000);
@@ -586,15 +593,17 @@ export const createMatch = ({
             event.preventDefault();
         }
     });
-    const playLabCeremony = (others = 4) => {
+    /** Test hook: watching the lab ceremony as a spectator in the stands (local only). */
+    let labFan = false;
+    const playLabCeremony = (others = 4, asFan = false) => {
         const names = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO'];
         labCeremony = {
             at: realRoomNow(),
             entrants: [
-                {
+                ...(asFan ? [] : [{
                     id: selfId(), name: '你', kills: 2, deaths: 1, score: 240,
                     colour: hueColour(colourFor('local')), skill: '复活甲', equipment: '普通飞盘'
-                },
+                }]),
                 ...names.slice(0, others).map((name, i) => ({
                     id: `ceremony-${name}`,
                     name,
@@ -2637,7 +2646,16 @@ export const createMatch = ({
             shuttersShut = finalFight;
             ceremony.setShuttersClosed(finalFight);
             ceremony.setRingsLit(finalFight);
-            if (!finalFight && labCeremony) labCeremony = null;
+            if (!finalFight && labCeremony) {
+                labCeremony = null;
+                // End of the stands test: back in the game where you stand.
+                if (labFan) {
+                    labFan = false;
+                    if (fanMode) leaveFanMode();
+                    stopSpectating();
+                    setAlive(true);
+                }
+            }
         }
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;

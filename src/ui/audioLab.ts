@@ -29,6 +29,8 @@ type Options = {
     simulateBlackout: () => Promise<'server' | 'local'>;
     /** Runs the final entry ceremony first, then starts the final showdown. */
     simulateFinalShowdown: () => Promise<'server' | 'local'>;
+    /** The final ceremony as a spectator roaming the sealed stands (local only). */
+    simulateFanCeremony: () => void;
     simulateBreaker: () => void;
     simulateMomentCutscene: (kind: MomentCutscene['kind']) => void;
     resetTestMechanics: () => void;
@@ -58,6 +60,7 @@ export const mountAudioLab = async ({
     simulateBlackout,
     simulateFinalShowdown,
     simulateBreaker,
+    simulateFanCeremony,
     simulateMomentCutscene,
     resetTestMechanics,
     simulateRoundResult
@@ -79,7 +82,7 @@ export const mountAudioLab = async ({
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><button data-action="execution-demo" type="button">处决人偶测试</button><small>命中预设直接驱动固定人偶反馈；处决按钮会进入背后站位，再按 V 播放实际双角色动作。人偶死亡后原地复活。</small></div>
-        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终对决（含入场仪式）</button><button data-phase="gold-first" type="button">金盘首次争夺</button><button data-phase="last-two" type="button">最后两人对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>最终对决会先播放 Final 入场仪式，再切入球场对决；本机演示不改战绩、不影响其他玩家。连上开发测试服时按服务器时钟同步。</small></div>
+        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终对决（含入场仪式）</button><button data-phase="ceremony-fan" type="button">以观众身份看 Final 仪式</button><button data-phase="gold-first" type="button">金盘首次争夺</button><button data-phase="last-two" type="button">最后两人对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>最终对决会先播放 Final 入场仪式，再切入球场对决；本机演示不改战绩、不影响其他玩家。连上开发测试服时按服务器时钟同步。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
@@ -195,6 +198,10 @@ export const mountAudioLab = async ({
         status.textContent = result === 'server'
             ? '已同步触发最终对决：入场仪式结束后进入球场对决。'
             : '已在本机触发最终对决：入场仪式结束后进入球场对决。';
+    });
+    host.querySelector<HTMLButtonElement>('[data-phase="ceremony-fan"]')!.addEventListener('click', () => {
+        runFeature(simulateFanCeremony);
+        status.textContent = '你现在是已出局的观众：关闭面板后在上层看台自由走动、按 1/2/3 欢呼，入场仪式在场内进行；看台与球场之间已封住。';
     });
     host.querySelector<HTMLButtonElement>('[data-phase="breaker"]')!.addEventListener('click', () => {
         runFeature(simulateBreaker);

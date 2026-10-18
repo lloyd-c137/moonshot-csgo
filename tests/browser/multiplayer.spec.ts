@@ -47,9 +47,8 @@ const enter = async (page: Page, name: string, password: string) => {
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().net), { timeout: 20_000 })
         .toBe('online');
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('lobby');
-    await page.keyboard.down('w');
-    await page.waitForTimeout(1_000);
-    await page.keyboard.up('w');
+    // Through the pillar turnstile into the round (walking there in real time depends on the frame rate).
+    await page.evaluate(() => window.__MOONSHOT__!.teleport(-8.25, 0.92, 52.9));
     await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('playing');
 };
 

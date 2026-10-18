@@ -2655,6 +2655,8 @@ export const createMatch = ({
         }
         const holderPosition = holder && !mine ? (positionOf(holder) ?? null) : null;
         goldView.update(now, holderPosition, mine);
+        // The ceremony's night exterior shows the stadium alone: no golden-disc beam rising out of the campus.
+        if (ceremonyRun && ceremonyRun.t < CEREMONY.fade + CEREMONY.exterior) goldView.entities[1].enabled = false;
 
         const eyeEnabled = localAbilities.eye && started && alive && !spectating;
         ui.playerPings(

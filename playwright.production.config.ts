@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/browser',
     testMatch: 'production-smoke.spec.ts',
-    timeout: 240_000,
+    timeout: 480_000,
     // Rendering is on here: CI's software WebGL takes seconds per frame with the full scene and post-processing.
     expect: { timeout: 60_000 },
     use: {

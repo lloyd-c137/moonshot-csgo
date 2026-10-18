@@ -3,18 +3,31 @@ import { Entity, Mesh, Vec3 } from 'playcanvas';
 
 import { SURFACE_RESTITUTION } from '../config/bounce';
 import { BARRIER_TOP_Y } from '../config/gameplay';
+import type { ColliderMesh } from '../world/arenaAccess';
+import {
+    bowlCollider,
+    standBlocks,
+    standBlocksCollider,
+    standStair,
+    standStairCollider,
+    tierRadiusAt,
+    underBowl
+} from '../world/arenaAccess';
+import type { Point2 } from '../world/stadiumLayout';
+import { STADIUM, intersectRadius, ringRadii  } from '../world/stadiumLayout';
+
 
 import type { Triangle, Vec3Tuple } from './boundaryBarriers';
-import { barrierMeshData, campusBarrierWalls, southGateBarriers } from './boundaryBarriers';
+import { barrierMeshData, campusBarrierWalls, clipUnderBowl, southGateBarriers } from './boundaryBarriers';
 
-export const COLLISION_SOURCE_NODES = [
-    'Floor_Slab',
-    'Walls',
-    'Glazing',
-    'Arena_Court',
-    'Arena_StandBase',
-    ...Array.from({ length: 8 }, (_, index) => `Arena_Seats_Row${String(index).padStart(2, '0')}`)
-];
+/**
+ * Source nodes that collide as triangle meshes. The court-level seat rows (Arena_Seats_Row00–07) do not: their
+ * pedestals left 0.33 m gaps that trapped the capsule, so they collide as solid stepped rows (world/arenaAccess).
+ */
+export const COLLISION_SOURCE_NODES = ['Floor_Slab', 'Walls', 'Glazing', 'Arena_Court', 'Arena_StandBase'];
+
+export const ARENA_ACCESS_ENTITY_NAME = 'GameplayAuthored_ArenaAccess';
+type Arena = { outline: readonly Point2[]; center: Point2 };
 
 export const BARRIER_ENTITY_NAME = 'GameplayAuthored_Barriers';
 
@@ -54,7 +67,8 @@ export const worldTriangles = (entity: Entity): Triangle[] => {
  * GAMEPLAY_AUTHORED invisible barriers derived from (not replacing) source geometry: the floor-slab outline and the
  * wall/glazing top outlines are extruded to BARRIER_TOP_Y as one static, unrendered triangle-mesh collider.
  */
-const addBarriers = (app: AppBase, campus: Entity) => {
+const addBarriers = (app: AppBase, campus: Entity, arena: Arena) => {
+    const radii = ringRadii(arena.outline, arena.center);
     // Preserve the source outer entrance, then create the new turnstile boundary at the pillar line.
     const walls = southGateBarriers(
         campusBarrierWalls(
@@ -66,6 +80,9 @@ const addBarriers = (app: AppBase, campus: Entity) => {
             BARRIER_TOP_Y
         )
     );
+    const clipped = clipUnderBowl(walls, (x, z) => underBowl(radii, arena.center, x, z), STADIUM.fasciaTop - 0.05);
+    walls.length = 0;
+    walls.push(...clipped);
     if (!walls.length) throw new Error('Barrier generation produced no walls');
     const { positions, indices } = barrierMeshData(walls);
     const mesh = new Mesh(app.graphicsDevice);
@@ -79,7 +96,45 @@ const addBarriers = (app: AppBase, campus: Entity) => {
     return walls.length;
 };
 
-export const addCampusCollisions = (app: AppBase, campus: Entity) => {
+const staticMesh = (app: AppBase, name: string, data: ColliderMesh) => {
+    const mesh = new Mesh(app.graphicsDevice);
+    mesh.setPositions(data.positions);
+    mesh.setIndices(data.indices);
+    mesh.update();
+    const entity = new Entity(name);
+    entity.addComponent('collision', { type: 'mesh', render: { meshes: [mesh] } });
+    entity.addComponent('rigidbody', { type: 'static', friction: 0.8, restitution: SURFACE_RESTITUTION.floor });
+    return entity;
+};
+
+const merge = (parts: readonly ColliderMesh[]): ColliderMesh => {
+    const out: ColliderMesh = { positions: [], indices: [] };
+    for (const part of parts) {
+        const base = out.positions.length / 3;
+        out.positions.push(...part.positions);
+        out.indices.push(...part.indices.map((index) => index + base));
+    }
+    return out;
+};
+
+/** Solid court-level stand rows, their two central stairs, and the upper bowl, as one static collider. */
+const addArenaAccess = (app: AppBase, campus: Entity, arena: Arena) => {
+    const radii = ringRadii(arena.outline, arena.center);
+    const [cx] = arena.center;
+    const parts: ColliderMesh[] = [bowlCollider(radii, arena.center)];
+    for (const [side, angle] of [
+        ['west', Math.PI],
+        ['east', 0]
+    ] as const) {
+        const wall = intersectRadius(arena.outline, arena.center, angle);
+        const dir = side === 'west' ? -1 : 1;
+        parts.push(standBlocksCollider(standBlocks(side, cx + dir * wall)));
+        parts.push(standStairCollider(standStair(side, arena.center, wall, tierRadiusAt(radii, angle, 0))));
+    }
+    campus.addChild(staticMesh(app, ARENA_ACCESS_ENTITY_NAME, merge(parts)));
+};
+
+export const addCampusCollisions = (app: AppBase, campus: Entity, arena: Arena) => {
     for (const name of COLLISION_SOURCE_NODES) {
         const entity = renderEntity(campus, name);
         entity.addComponent('collision', {
@@ -92,6 +147,7 @@ export const addCampusCollisions = (app: AppBase, campus: Entity) => {
             restitution: name === 'Walls' || name === 'Glazing' ? SURFACE_RESTITUTION.wall : SURFACE_RESTITUTION.floor
         });
     }
-    const barrierWalls = addBarriers(app, campus);
-    return { sourceBodies: COLLISION_SOURCE_NODES.length, barrierWalls };
+    addArenaAccess(app, campus, arena);
+    const barrierWalls = addBarriers(app, campus, arena);
+    return { sourceBodies: COLLISION_SOURCE_NODES.length + 1, barrierWalls };
 };

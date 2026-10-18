@@ -44,6 +44,7 @@ import {
     SAFE_SPAWN,
     setLook
 } from './player/playerController';
+import { createStepAssist } from './player/stepAssist';
 import { createLightPool, setupAtmosphere } from './render/atmosphere';
 import { loadSettings, saveSettings } from './ui/settings';
 import type { Ui } from './ui/shell';
@@ -215,7 +216,7 @@ const boot = async () => {
         cutDoorwaysInto(app, campus.root.findByName(name) as Entity, derivedWorld.doorways, reveals);
     }
     app.root.addChild(campus.root);
-    const collisions = addCampusCollisions(app, campus.root);
+    const collisions = addCampusCollisions(app, campus.root, derivedWorld.arena);
     shell.stage('structure', 'done');
 
     shell.stage('dressing', 'active');
@@ -229,6 +230,7 @@ const boot = async () => {
     buildExterior(app, campus.root, namedRooms);
     const turnstiles = buildTurnstiles(app, campus.root);
     const { player, camera } = createPlayer(app, useLobby ? SOUTH_GATE.spawn : SAFE_SPAWN);
+    const stepAssist = createStepAssist(app, player, camera);
     const intro = createIntro(app, camera, shell);
     // South gate: players wait in the indoor vestibule outside the turnstiles, then join by walking through.
     // Automated browsers can explicitly bypass this with ?noLobby=1 for deterministic in-world fixtures.
@@ -377,6 +379,7 @@ const boot = async () => {
             }
             if (match.phase === 'playing') gateState = 'inside';
         }
+        stepAssist.update(deltaTime);
         roomTracker.update([position.x, position.z], deltaTime);
         if (document.pointerLockElement === canvas && match.alive) {
             const isStuck = stuck.update(
@@ -667,7 +670,11 @@ const boot = async () => {
             raycast: (from: number[], to: number[]) =>
                 rigidbodySystem.raycastFirst(new Vec3(from[0], from[1], from[2]), new Vec3(to[0], to[1], to[2]))?.entity
                     .name ?? null,
-            spawn: [useLobby ? SOUTH_GATE.spawn.x : SAFE_SPAWN.x, useLobby ? SOUTH_GATE.spawn.y : SAFE_SPAWN.y, useLobby ? SOUTH_GATE.spawn.z : SAFE_SPAWN.z],
+            spawn: [
+                useLobby ? SOUTH_GATE.spawn.x : SAFE_SPAWN.x,
+                useLobby ? SOUTH_GATE.spawn.y : SAFE_SPAWN.y,
+                useLobby ? SOUTH_GATE.spawn.z : SAFE_SPAWN.z
+            ],
             roomId: () => roomTracker.current?.id ?? null,
             match: match.debug,
             sceneTransition: (relocate) => shell.arenaTransition(relocate),

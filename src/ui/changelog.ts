@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.21.0',
+        date: '2026.10.18',
+        title: '莲花球场看台可通行',
+        notes: [
+            '东西两侧看台中央各新增一道楼梯，从场地一直通到上层看台；上层每条过道都是可以走上去的台阶，最高能走到顶排。',
+            '修复在一层看台上走动会卡住：座椅之间的缝隙不再卡住玩家，看台按整排台阶处理。',
+            '新增迈台阶辅助：走向不高于半米的台阶会自动迈上去，不必再跳。',
+            '站在上层看台上可以向场内投掷，飞盘越过围墙时不会再被误判为被墙挡住。'
+        ]
+    },
+    {
         version: 'v0.20.0',
         date: '2026.10.18',
         title: '电竞风格界面与信息流',

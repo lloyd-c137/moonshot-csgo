@@ -81,10 +81,13 @@ export const contactNearCapsule = (contact: readonly number[], centre: readonly 
     coreDistance(contact, centre) <= PLAYER_HIT.radius + DISC.radius + CONTACT_TOLERANCE;
 
 const blocked = maskLookup(COMBAT_OCCLUSION);
+/** Above the arena parapet (STADIUM.fasciaTop 4.6 m) a disc clears every wall the 2D mask records. */
+const FLIGHT_CLEAR_ABOVE = 4.75;
 
 /** The disc's reported flight (origin, bounces…, contact) does not pass through a wall, glass or boundary barrier. */
 export const flightClear = (points: readonly (readonly number[])[]) => {
-    for (let i = 1; i < points.length; i++) if (!flightSegmentClear(blocked, points[i - 1], points[i])) return false;
+    for (let i = 1; i < points.length; i++)
+        if (!flightSegmentClear(blocked, points[i - 1], points[i], 0.15, 0.3, FLIGHT_CLEAR_ABOVE)) return false;
     return true;
 };
 

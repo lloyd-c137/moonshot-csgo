@@ -5,7 +5,7 @@ import type { AppBase, Texture } from 'playcanvas';
 import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, Layer, MeshInstance, StandardMaterial, Vec2 } from 'playcanvas';
 
 import { SURFACE_RESTITUTION } from '../config/bounce';
-import { ARENA_WALL_HEIGHT, DERIVED_GRID } from '../config/presentation';
+import { DERIVED_GRID } from '../config/presentation';
 import { worldTriangles } from '../physics/collisionWorld';
 import { MeshBuilder } from '../render/meshBuilder';
 import { createTexture } from '../render/textures';
@@ -289,8 +289,8 @@ export const buildDressing = (
     );
 
     // Tall perimeter wall around the open-air arena, standing on the source walls along the derived outline.
-    // The visible wall is now the stadium's lower-bowl fascia (to STADIUM.fasciaTop); the collider keeps the full
-    // ARENA_WALL_HEIGHT so the upper bowl built above it (world/stadium.ts) stays out of reach.
+    // The visible wall is the stadium's lower-bowl fascia; its collider stops at the same height (STADIUM.fasciaTop)
+    // so the stand stairs land on the bowl's first tier (physics/collisionWorld adds the bowl's colliders).
     const arenaWall = new MeshBuilder();
     const arenaWallCollider = new MeshBuilder();
     const arenaCoping = new MeshBuilder();
@@ -325,7 +325,7 @@ export const buildDressing = (
             mz + nz * 0.12,
             length + 0.35,
             0.35,
-            ARENA_WALL_HEIGHT - wallBottom,
+            STADIUM.fasciaTop - wallBottom,
             yaw
         );
         arenaCoping.box(mx + nx * 0.12, STADIUM.fasciaTop, mz + nz * 0.12, length + 0.5, 0.55, 0.12, yaw);

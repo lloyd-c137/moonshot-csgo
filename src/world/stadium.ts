@@ -2,13 +2,14 @@
 // (2026-10-17): a blue court on a green apron ringed by low blue/white boards; one continuous light-grey bowl with blue
 // seat blocks rising from a low banner-clad parapet, three stair aisles per petal and a railed cross-aisle walkway;
 // a band of white glazed panels between columns under twelve lotus roof petals open over the court; an out-leaning
-// facade outside. Decoration only: every collider (floor, stands, the 10 m arena wall) is unchanged, so routes, the
-// nav audit and the bowl's unreachability stay as they were.
+// facade outside. The bowl is walkable: two stand stairs lead up from the court and every aisle is a stair; the
+// colliders for all of it live in world/arenaAccess.ts (added by physics/collisionWorld).
 import type { AppBase, Entity as EntityType, StandardMaterial as StandardMaterialType } from 'playcanvas';
 import { Color, CULLFACE_BACK, CULLFACE_NONE, Entity, MeshInstance, StandardMaterial, Texture } from 'playcanvas';
 
 import { MeshBuilder } from '../render/meshBuilder';
 
+import { aisleAngles, aisleTreads, ARENA_ACCESS, standStair, tierRadiusAt } from './arenaAccess';
 import type { Point2 } from './stadiumLayout';
 import {
     aisleDistance,
@@ -16,6 +17,7 @@ import {
     COURT_SURROUND,
     courtSurroundPath,
     inSurroundGap,
+    intersectRadius,
     netHeightAt,
     ringRadii,
     spectatorSeats,
@@ -146,7 +148,6 @@ export const buildStadium = (
             a1 = angleOf(i + 1, n);
         const mid = (a0 + a1) / 2;
         const petal = Math.floor((mid / (Math.PI * 2)) * STADIUM.petals);
-        const inAisle = (k: number) => aisleDistance(mid) < STADIUM.aisleHalfWidth / tierRadius(radii, i, k);
         // Banner boards on the parapet's inner face: blue and white panels, as round the photographed bowl.
         quad(
             Math.floor(i / 3) % 2 ? bannerWhite : bannerBlue,
@@ -171,8 +172,8 @@ export const buildStadium = (
             const run = tierRun + (walkway ? STADIUM.walkwayExtra : 0);
             const r1i = r0i + run,
                 r1j = r0j + run;
-            // Tread and riser (stairs in the aisles are a lighter grey).
-            quad(inAisle(k) && !walkway ? aisle : concrete, at(i, r0i, y), at(j, r0j, y), at(j, r1j, y), at(i, r1i, y));
+            // Tread and riser (the aisle stairs are drawn over them at their exact angles, below).
+            quad(concrete, at(i, r0i, y), at(j, r0j, y), at(j, r1j, y), at(i, r1i, y));
             quad(concrete, at(i, r1i, y), at(j, r1j, y), at(j, r1j, y + tierRise), at(i, r1i, y + tierRise));
             if (walkway) {
                 // The cross-aisle walkway: no seats, a glass rail along its front edge.
@@ -185,7 +186,6 @@ export const buildStadium = (
                 );
                 continue;
             }
-            if (inAisle(k)) continue;
             // Seats: light grey, with blue blocks high in every third petal (the photo's blue sections).
             const builder = k > walkwayTier + 3 && petal % 3 === 1 ? seatsBlue : seatsGrey;
             const arc = ((r0i + r0j) / 2) * (a1 - a0);
@@ -194,6 +194,8 @@ export const buildStadium = (
                 const t = (s + 0.5) / count;
                 const angle = a0 + (a1 - a0) * t;
                 const r = r0i + (r0j - r0i) * t + tierRun * 0.45;
+                // Keep the aisle stairs clear (seat half width included).
+                if (aisleDistance(angle) < (ARENA_ACCESS.aisleHalfWidth + 0.25) / r) continue;
                 // One block per seat (pan and back read as one at stadium distances).
                 builder.box(
                     cx + Math.cos(angle) * r,
@@ -460,6 +462,70 @@ export const buildStadium = (
         root.addChild(entity);
         entities.set(name, entity);
     }
+
+    // Aisle stairs at their exact angles: two light-grey half steps per tier (their colliders are the ramps through
+    // these nosings, physics/collisionWorld), and a slim handrail post line down each one.
+    for (const angle of aisleAngles()) {
+        const width = ARENA_ACCESS.aisleHalfWidth * 2;
+        for (const tread of aisleTreads(radii, angle).slice(1)) {
+            const base =
+                Math.floor((tread.y - STADIUM.fasciaTop) / STADIUM.tierRise + 1e-6) * STADIUM.tierRise +
+                STADIUM.fasciaTop;
+            const rise = Math.max(0.012, tread.y - base + 0.012);
+            const r = (tread.r0 + tread.r1) / 2;
+            aisle.box(
+                cx + Math.cos(angle) * r,
+                base,
+                cz + Math.sin(angle) * r,
+                tread.r1 - tread.r0,
+                width,
+                rise,
+                angle,
+                5
+            );
+        }
+    }
+    // Court-level stand stairs (west and east), from the floor over the seat rows to the parapet.
+    const stairMesh = new MeshBuilder();
+    const railMaterial = material('stand-stair-rail', [0.55, 0.58, 0.62], { gloss: 0.6 });
+    for (const side of ['west', 'east'] as const) {
+        const angle = side === 'west' ? Math.PI : 0;
+        const wall = intersectRadius(arena.outline, arena.center, angle);
+        const stair = standStair(side, arena.center, wall, tierRadiusAt(radii, angle, 0));
+        for (const step of stair.steps) {
+            const x0 = Math.min(step.x0, step.x1),
+                x1 = Math.max(step.x0, step.x1);
+            stairMesh.box((x0 + x1) / 2, 0, stair.z, x1 - x0 + 0.01, stair.width, step.y, 0, 6);
+        }
+        // Landing across the parapet onto the first tier, and side stringers with a top rail.
+        const lx0 = Math.min(stair.topX, stair.landingX),
+            lx1 = Math.max(stair.topX, stair.landingX);
+        stairMesh.box((lx0 + lx1) / 2, STADIUM.fasciaTop - 0.25, stair.z, lx1 - lx0, stair.width, 0.27, 0, 6);
+        for (const dz of [-1, 1]) {
+            const z = stair.z + (dz * (stair.width + 0.08)) / 2;
+            const run = Math.abs(stair.topX - stair.footX);
+            const slope = Math.atan2(STADIUM.fasciaTop, run);
+            const length = Math.hypot(run, STADIUM.fasciaTop);
+            const mx = (stair.footX + stair.topX) / 2;
+            const rail = new Entity(`GameplayAuthored_StandStairRail_${side}_${dz}`);
+            rail.addComponent('render', { type: 'box', material: railMaterial, castShadows: false });
+            rail.setLocalScale(length, 0.05, 0.05);
+            rail.setPosition(mx, STADIUM.fasciaTop / 2 + 0.95, z);
+            rail.setEulerAngles(0, 0, ((side === 'west' ? -1 : 1) * (slope * 180)) / Math.PI);
+            root.addChild(rail);
+        }
+    }
+    const stairEntity = new Entity('GameplayAuthored_StandStairs');
+    stairEntity.addComponent('render', {
+        meshInstances: [
+            new MeshInstance(
+                stairMesh.build(app.graphicsDevice),
+                material('stand-stair', [0.86, 0.87, 0.88], { gloss: 0.2 })
+            )
+        ],
+        castShadows: true
+    });
+    root.addChild(stairEntity);
 
     // Lower stands: the FF-01 seat rows take the bowl's light grey.
     const seatGrey = material('stadium-seat-grey-lower', [0.8, 0.82, 0.84], { gloss: 0.4 });

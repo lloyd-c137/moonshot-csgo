@@ -41,7 +41,18 @@ export const lineClear = (blocked: Lookup, a: Point, b: Point) => {
  * or a wall end therefore passes, a straight crossing of a wall does not. The `ends` metres next to either end are
  * skipped, since bounce points lie against a wall and the rasterised wall may cover them.
  */
-export const flightSegmentClear = (blocked: Lookup, a: Point, b: Point, side = 0.15, ends = 0.3) => {
+/**
+ * Whether a disc segment a→b stays clear of blocked cells. Samples where the disc is above `clearAbove` (m) pass:
+ * it is flying over the walls there (throws from the stadium's upper bowl into the court).
+ */
+export const flightSegmentClear = (
+    blocked: Lookup,
+    a: Point,
+    b: Point,
+    side = 0.15,
+    ends = 0.3,
+    clearAbove = Infinity
+) => {
     const dx = b[0] - a[0],
         dz = b[2] - a[2],
         length = Math.hypot(dx, dz);
@@ -54,6 +65,7 @@ export const flightSegmentClear = (blocked: Lookup, a: Point, b: Point, side = 0
         for (let i = 0; i <= steps; i++) {
             const along = (length * i) / steps;
             if (along < ends || along > length - ends) continue;
+            if (a[1] + ((b[1] - a[1]) * i) / steps > clearAbove) continue;
             hits[i] = blocked(a[0] + (dx * i) / steps + nx * offset, a[2] + (dz * i) / steps + nz * offset) ? 1 : 0;
         }
         return hits;

@@ -129,13 +129,25 @@ export const southGateBarriers = (walls: readonly BarrierWall[]): BarrierWall[] 
         top: BARRIER_TOP_Y
     });
     const outerBarrier = vertical(SOUTH_GATE.outer.x0, SOUTH_GATE.outer.x1);
-    outerBarrier.edge = [[SOUTH_GATE.outer.x0, SOUTH_GATE.outer.line], [SOUTH_GATE.outer.x1, SOUTH_GATE.outer.line]];
-    return [...walls.filter((wall) => {
-        const [[ax, az], [bx, bz]] = wall.edge;
-        const midpointX = (ax + bx) / 2;
-        const midpointZ = (az + bz) / 2;
-        return !(Math.abs(midpointZ - SOUTH_GATE.outer.line) < 0.65 && midpointX >= SOUTH_GATE.outer.x0 - 0.3 && midpointX <= SOUTH_GATE.outer.x1 + 0.3);
-    }), outerBarrier, vertical(vestibule.x0, x0), vertical(x1, vestibule.x1)];
+    outerBarrier.edge = [
+        [SOUTH_GATE.outer.x0, SOUTH_GATE.outer.line],
+        [SOUTH_GATE.outer.x1, SOUTH_GATE.outer.line]
+    ];
+    return [
+        ...walls.filter((wall) => {
+            const [[ax, az], [bx, bz]] = wall.edge;
+            const midpointX = (ax + bx) / 2;
+            const midpointZ = (az + bz) / 2;
+            return !(
+                Math.abs(midpointZ - SOUTH_GATE.outer.line) < 0.65 &&
+                midpointX >= SOUTH_GATE.outer.x0 - 0.3 &&
+                midpointX <= SOUTH_GATE.outer.x1 + 0.3
+            );
+        }),
+        outerBarrier,
+        vertical(vestibule.x0, x0),
+        vertical(x1, vestibule.x1)
+    ];
 };
 
 const piece = (wall: BarrierWall, t0: number, t1: number): BarrierWall => {
@@ -147,4 +159,36 @@ const piece = (wall: BarrierWall, t0: number, t1: number): BarrierWall => {
             [ax + (bx - ax) * t1, az + (bz - az) * t1]
         ]
     };
+};
+
+/**
+ * Barriers rising from wall tops under the upper bowl would stand up through its tiers; there they stop just below
+ * the parapet (the bowl's own colliders and back wall enclose it). Long edges are cut into 1 m pieces first.
+ */
+export const clipUnderBowl = (
+    walls: readonly BarrierWall[],
+    inside: (x: number, z: number) => boolean,
+    below: number
+) => {
+    const out: BarrierWall[] = [];
+    for (const wall of walls) {
+        const [[ax, az], [bx, bz]] = wall.edge;
+        const pieces = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az)));
+        for (let i = 0; i < pieces; i++) {
+            const t0 = i / pieces,
+                t1 = (i + 1) / pieces;
+            const edge: BarrierWall['edge'] = [
+                [ax + (bx - ax) * t0, az + (bz - az) * t0],
+                [ax + (bx - ax) * t1, az + (bz - az) * t1]
+            ];
+            const mx = (edge[0][0] + edge[1][0]) / 2,
+                mz = (edge[0][1] + edge[1][1]) / 2;
+            if (!inside(mx, mz)) {
+                out.push(pieces === 1 ? wall : { ...wall, edge });
+                continue;
+            }
+            if (wall.bottom < below) out.push({ ...wall, edge, top: Math.min(wall.top, below) });
+        }
+    }
+    return out;
 };

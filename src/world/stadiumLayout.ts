@@ -59,7 +59,7 @@ export const STADIUM = {
     segments: 96
 } as const;
 
-const intersectRadius = (outline: readonly Point2[], center: Point2, angle: number) => {
+export const intersectRadius = (outline: readonly Point2[], center: Point2, angle: number) => {
     const dx = Math.cos(angle),
         dz = Math.sin(angle);
     let best = 0;

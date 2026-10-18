@@ -1278,7 +1278,7 @@ export class Room {
         // Plausibility: within reach of the launch, inside the campus, and laid on the floor.
         const reach = Math.hypot(...entry.record.v) * DISC_REST_SECONDS + 5;
         if (distance(entry.record.o, at) > reach || !inBounds({ p: at, yaw: 0, pitch: 0 })) return;
-        this.discs.push({ id: ++this.discId, at: [at[0], Math.max(0.02, Math.min(at[1], 3)), at[2]] });
+        this.discs.push({ id: ++this.discId, at: [at[0], Math.max(0.02, Math.min(at[1], 16)), at[2]] });
         this.out.all({ type: 'discs', discs: this.discs });
     }
 

@@ -59,7 +59,7 @@ test('enter the real FF-01 scene, move, sprint, look, jump, pause, resume and re
         colliders: window.__MOONSHOT__!.collisionCount,
         barriers: window.__MOONSHOT__!.barrierWalls
     }));
-    expect(initial.colliders).toBe(13);
+    expect(initial.colliders).toBe(6);
     expect(initial.barriers).toBeGreaterThan(1000);
     const dressing = await page.evaluate(() => window.__MOONSHOT__!.dressing);
     expect(dressing.doors).toBeGreaterThan(100);

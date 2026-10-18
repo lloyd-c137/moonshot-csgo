@@ -538,6 +538,27 @@ export const createSound = () => {
                 'environment',
                 AUDIO_PRIORITY.hit
             ),
+        /** Ceremony finale: a volley of rockets whistling up from the parapet. */
+        fireworkLaunch: () =>
+            play((audio, now) => {
+                const out = bus();
+                for (let i = 0; i < 4; i++) {
+                    tone(audio, out, 'sine', 600 + i * 90, 2400 + i * 200, now + i * 0.05, 1, 0.025);
+                    hiss(audio, out, now + i * 0.05, 0.9, 0.05, 2000, 6000, 1.2);
+                }
+            }, 'environment', AUDIO_PRIORITY.hit),
+        /** Ceremony finale: rockets bursting overhead (louder with more of them). */
+        fireworkBurst: (count: number) =>
+            play((audio, now) => {
+                const out = bus();
+                const n = Math.min(4, count);
+                for (let i = 0; i < n; i++) {
+                    const at = now + i * 0.07;
+                    tone(audio, out, 'sine', 80, 30, at, 0.6, 0.35);
+                    hiss(audio, out, at, 0.5, 0.25, 4000, 900, 0.7);
+                    hiss(audio, out, at + 0.15, 0.9, 0.06, 7000, 3000, 2.5);
+                }
+            }, 'confirmation', AUDIO_PRIORITY.elimination),
         /** Ceremony: a ring of lamps striking on — a stadium-light boom, deeper and wider ring by ring. */
         ceremonyRing: (ring: number) =>
             play(

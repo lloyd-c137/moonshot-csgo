@@ -279,7 +279,13 @@ export type ServerMessage =
     | { type: 'revived'; id: string; at: Vec3Tuple }
     | { type: 'ability'; id: string; player: PlayerSummary; item: WorldItem | null }
     | { type: 'left'; id: string }
-    | { type: 'snapshot'; t: number; poses: Record<string, StampedPose> }
+    | {
+          type: 'snapshot';
+          t: number;
+          poses: Record<string, StampedPose>;
+          /** Players out for the round roaming the upper bowl during the final ceremony and minute (no combat). */
+          fans?: Record<string, StampedPose>;
+      }
     | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
     | {
           type: 'struck';

@@ -28,6 +28,7 @@ import {
     SPAWN_PROTECTION,
     THROW_COOLDOWN
 } from '../net/protocol';
+import { PARAPET_BARRIER_ENTITY_NAME } from '../physics/collisionWorld';
 import { setLook } from '../player/playerController';
 import { box, merge, place, torus } from '../render/shapes';
 import type { AudioLabUi } from '../ui/audioLab';
@@ -469,7 +470,41 @@ export const createMatch = ({
     app.root.addChild(goldLight);
     let finalDone = false;
     // ---------- final-minute entrance ceremony ----------
-    const ceremony = createCeremonyView(app, camera, characters, { outline: arenaOutline, center: arenaCenter });
+    const ceremony = createCeremonyView(
+        app,
+        camera,
+        characters,
+        { outline: arenaOutline, center: arenaCenter },
+        (at, colour, velocity, size, life, gravity) => effects.mote(at, colour, velocity, size, life, gravity)
+    );
+    // ---------- fans: players out for the round walk the upper bowl (final ceremony and minute) ----------
+    let fanMode = false;
+    const parapetSeal = () => app.root.findByName(PARAPET_BARRIER_ENTITY_NAME) as Entity | null;
+    /** From the start of the final ceremony to the end of the round. */
+    const standsOpenNow = () =>
+        !!ceremonyRun ||
+        inFinalMinute() ||
+        (roundState?.phase === 'playing' &&
+            roomNow() >= roundState.endsAt - (ROUND.finalSecondsLeft + CEREMONY.seconds) * 1000);
+    const enterFanMode = () => {
+        fanMode = true;
+        const seat = stands.seatOf(selfId()) ?? stadiumSeats[0];
+        player.rigidbody!.enabled = true;
+        player.rigidbody!.teleport(seat.x, seat.y + 0.95, seat.z, 0, 0, 0);
+        player.rigidbody!.linearVelocity = Vec3.ZERO;
+        setLook(player, 0, (Math.atan2(-(arenaCenter[0] - seat.x), -(arenaCenter[1] - seat.z)) * 180) / Math.PI);
+        teleportPending = true;
+        const script = controller();
+        if (script) script.enabled = !inputPaused;
+        ui.spectate({ reason: '看台自由活动 · 1 欢呼 · 2 挥应援棒 · 3 撒彩带', watching: null });
+    };
+    const leaveFanMode = () => {
+        fanMode = false;
+        if (!spectating) return;
+        const script = controller();
+        if (script) script.enabled = false;
+        if (player.rigidbody) player.rigidbody.enabled = false;
+    };
     let ceremonyRun: { at: number; plan: CeremonyPlan; moved: boolean; lastPerf: number; t: number } | null = null;
     /** Test hook: a ceremony starting at this room time with these entrants (offline). */
     let labCeremony: { at: number; entrants: Entrant[] } | null = null;
@@ -2407,7 +2442,12 @@ export const createMatch = ({
             net.spotted();
         }
         // Watching: the camera follows someone still in the game.
-        if (spectating) spectate(now);
+        const wantFan = started && spectating && standsOpenNow();
+        if (wantFan && !fanMode) enterFanMode();
+        else if (!wantFan && fanMode) leaveFanMode();
+        const seal = parapetSeal();
+        if (seal && seal.enabled !== standsOpenNow()) seal.enabled = standsOpenNow();
+        if (spectating && !fanMode) spectate(now);
         // In the dark the golden disc (and whoever carries it) is lit up for everyone to find.
         const goldAt = goldPosition();
         goldLight.light!.intensity = dark && goldAt ? 2.6 : 0;
@@ -2434,14 +2474,18 @@ export const createMatch = ({
             if (entrants.length) {
                 const plan = planCeremony(entrants, arenaCenter, ceremony.doors);
                 ceremonyRun = { at: ceremonyAt, plan, moved: false, lastPerf: performance.now(), t: ceremonyT };
-                ceremony.start(plan, (id) => avatars.headImage(id));
-                ui.ceremony.show(true);
+                // Fans in the stands watch it live from where they stand; everyone else gets the film.
+                const film = !fanMode;
+                ceremony.start(plan, (id) => avatars.headImage(id), film);
                 sound.ceremonyDark();
-                inputPaused = true;
-                chargingSince = null;
-                ui.charge(null);
-                const script = controller();
-                if (script) script.enabled = false;
+                if (film) {
+                    ui.ceremony.show(true);
+                    inputPaused = true;
+                    chargingSince = null;
+                    ui.charge(null);
+                    const script = controller();
+                    if (script) script.enabled = false;
+                }
             }
         }
         if (ceremonyRun) {
@@ -2452,13 +2496,17 @@ export const createMatch = ({
             ceremonyRun.t = t;
             const { plan } = ceremonyRun;
             const fadeOutAt = CEREMONY.seconds - CEREMONY.fadeOut;
-            ui.ceremony.fade(
-                t < CEREMONY.fade
-                    ? t / CEREMONY.fade
-                    : t >= fadeOutAt
-                      ? (t - fadeOutAt) / CEREMONY.fadeOut
-                      : 1 - (t - CEREMONY.fade) / 0.6
-            );
+            // A quick dip to black on the cut from the exterior to the inside.
+            const cutAt = CEREMONY.fade + CEREMONY.exterior;
+            const dip = Math.max(0, 1 - Math.abs(t - cutAt) / 0.18);
+            if (!fanMode)
+                ui.ceremony.fade(
+                    t < CEREMONY.fade
+                        ? t / CEREMONY.fade
+                        : t >= fadeOutAt
+                          ? (t - fadeOutAt) / CEREMONY.fadeOut
+                          : Math.max(dip, 1 - (t - CEREMONY.fade) / 0.6)
+                );
             // Under the black: everyone still in the game is moved to their entrance mark, facing the court.
             if (!ceremonyRun.moved && t >= CEREMONY.fade * 0.9) {
                 ceremonyRun.moved = true;
@@ -2473,6 +2521,8 @@ export const createMatch = ({
                 }
             }
             const events = ceremony.update(t, dt);
+            if (events.launched) sound.fireworkLaunch();
+            if (events.burst) sound.fireworkBurst(events.burst);
             for (const entrant of events.entered) {
                 sound.ceremonySpot();
                 sound.crowd([entrant.to[0], 6, entrant.to[2]], 'cheer');
@@ -2499,7 +2549,7 @@ export const createMatch = ({
                 ceremonyRun = null;
                 inputPaused = false;
                 const script = controller();
-                if (script) script.enabled = alive && !executionFrozen && !spectating;
+                if (script) script.enabled = (alive && !executionFrozen && !spectating) || fanMode;
             }
         }
         // The entrances stay shut (and the lamp rings lit) for the final minute.
@@ -2981,12 +3031,14 @@ export const createMatch = ({
                     ...(labCeremony && ceremonyRun ? Array.from({ length: 14 }, (_, i) => `lab-fan-${i}`) : [])
                 ],
                 (id) => roster.get(id)?.colour ?? (id.startsWith('lab-fan-') ? (Number(id.slice(8)) * 53) % 360 : 0),
-                inFinalMinute() || !!ceremonyRun,
+                standsOpenNow(),
                 now,
-                !!ceremonyRun
+                !!ceremonyRun,
+                net.fans(),
+                fanMode ? selfId() : null
             );
             if (!alive && !spectating) ui.eliminated(killer, Math.max(0, (deadUntil - now) / 1000));
-            if (net.state === 'online' && alive && !executionView.hasActor(selfId())) {
+            if (net.state === 'online' && (alive || fanMode) && !executionView.hasActor(selfId())) {
                 // A move the game made itself is flagged so the room resets (not rewinds across) this player's history.
                 net.pose(pose(), teleportPending, teleportPending);
                 teleportPending = false;

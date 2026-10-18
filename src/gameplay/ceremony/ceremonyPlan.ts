@@ -15,8 +15,9 @@ export const CEREMONY = {
     seconds: ROUND.ceremonySeconds,
     /** Fade to black; everyone is moved to their entrance during it. */
     fade: 0.6,
-    /** Establishing shot of the dark arena before the first entrant. */
-    establishing: 3.2,
+    /** Night exterior of the whole stadium, then a cut inside: the establishing shot of the dark arena. */
+    exterior: 3,
+    establishing: 1.6,
     /** Walking pace (m/s) and the pause on the mark before turning to face the court. */
     walkSpeed: 1.45,
     /** Seconds between entrants: at most this… */
@@ -31,7 +32,12 @@ export const CEREMONY = {
     shutterStep: 0.22,
     shutterDrop: 0.7,
     /** Players further down the order than this walk in without their own camera shot. */
-    featured: 8
+    featured: 8,
+    /** Fireworks and flame jets all round the parapet when the last ring lights: volleys, spacing, jet burn. */
+    fireworkVolleys: 3,
+    fireworkSpacing: 0.45,
+    flameSeconds: 1.8,
+    fireworkStations: 20
 } as const;
 
 /**
@@ -92,6 +98,8 @@ export type CeremonyPlan = {
     ring: (k: number) => number;
     holdAt: number;
     fadeOutAt: number;
+    /** The finale: fireworks and flame jets round the parapet as the last ring strikes. */
+    fireworksAt: number;
 };
 
 const yawToward = (from: Point2, to: Point2) => Math.atan2(-(to[0] - from[0]), -(to[1] - from[1]));
@@ -104,7 +112,7 @@ export const planCeremony = (players: readonly Entrant[], center: Point2, doors:
     const ordered = ceremonyOrder(players);
     const perEntrance = new Map<string, number>();
     const ringsAt = CEREMONY.seconds - CEREMONY.fadeOut - CEREMONY.hold - CEREMONY.rings * CEREMONY.ringInterval;
-    const firstStart = CEREMONY.fade + CEREMONY.establishing;
+    const firstStart = CEREMONY.fade + CEREMONY.exterior + CEREMONY.establishing;
     const entrantsRaw = ordered.map((player, order) => {
         const entrance = doors[order % doors.length];
         const lane = perEntrance.get(entrance.id) ?? 0;
@@ -143,6 +151,7 @@ export const planCeremony = (players: readonly Entrant[], center: Point2, doors:
         ringsAt,
         ring: (k) => ringsAt + k * CEREMONY.ringInterval,
         holdAt: ringsAt + CEREMONY.rings * CEREMONY.ringInterval,
+        fireworksAt: ringsAt + (CEREMONY.rings - 1) * CEREMONY.ringInterval,
         fadeOutAt: CEREMONY.seconds - CEREMONY.fadeOut
     };
 };
@@ -182,7 +191,16 @@ export const ringLevel = (plan: CeremonyPlan, k: number, t: number) => {
     return Math.max(1, 1.4 - (dt - 0.12) * 1.2);
 };
 
-export type Shot = { eye: V3; target: V3; fov: number };
+export type Shot = { eye: V3; target: V3; fov: number; /** A change of scene is a hard cut. */ scene: string };
+
+/** Flame jet height (0…1) at time t for the finale (a quick burst, a flicker, then out). */
+export const flameAt = (plan: CeremonyPlan, t: number) => {
+    const dt = t - plan.fireworksAt;
+    if (dt < 0 || dt > CEREMONY.flameSeconds) return 0;
+    if (dt < 0.18) return dt / 0.18;
+    const fade = 1 - Math.max(0, dt - CEREMONY.flameSeconds * 0.55) / (CEREMONY.flameSeconds * 0.45);
+    return Math.max(0, fade) * (0.82 + 0.18 * Math.sin(dt * 37));
+};
 
 /**
  * The ceremony camera at time t: a high establishing crane; then for each featured entrant a shot from a little
@@ -193,31 +211,66 @@ export const shotAt = (plan: CeremonyPlan, center: Point2, t: number): Shot => {
     const [cx, cz] = center;
     const featured = plan.entrants.filter((e) => e.featured);
     const shutterStart = Math.min(...Object.values(plan.shutters));
+    const exteriorEnd = CEREMONY.fade + CEREMONY.exterior;
+    const orbit = (angle: number, radius: number, height: number, target: V3, fov: number, scene: string): Shot => ({
+        eye: [cx + Math.cos(angle) * radius, height, cz + Math.sin(angle) * radius],
+        target,
+        fov,
+        scene
+    });
+    // 1. Outside: the whole stadium at night, a slow descending orbit high above the campus roofs.
+    if (t < exteriorEnd) {
+        const k = t / exteriorEnd;
+        return orbit(0.9 + k * 0.5, 74 - 10 * k, 34 - 9 * k, [cx, 9, cz], 50, 'exterior');
+    }
+    // 4–6. The lighting: an aerial rising through the roof opening, a crowd shot from the court cut in during the
+    // middle rings (the stands lighting up, the fans on their feet), then the aerial again for the last rings and the
+    // fireworks.
+    const crowdFrom = plan.ring(2),
+        crowdTo = plan.ring(5);
+    if (t >= crowdFrom && t < crowdTo) {
+        const k = (t - crowdFrom) / (crowdTo - crowdFrom);
+        const look = -1.9 + k * 0.9;
+        return {
+            eye: [cx + 2.5, 1.1, cz + 3.5],
+            target: [cx + Math.cos(look) * 26, 9 + k * 2, cz + Math.sin(look) * 26],
+            fov: 58,
+            scene: 'crowd'
+        };
+    }
     const current = [...featured].reverse().find((e) => t >= e.start - 0.15);
     if (t >= shutterStart - 0.6 || !current) {
-        // Aerial, always inside the roof ring's opening (it starts ~21 m out at 18.8 m up): before the first entrant
-        // it sinks and drifts outward under the roof's edge; from the shutters on it rises back up through the opening.
+        // 2 (before the first entrant) and 5: aerial inside the roof ring's opening (it starts ~21 m out at 18.8 m
+        // up). Before the entrants it sinks and drifts outward; from the shutters on it rises back up.
         const before = t < shutterStart - 0.6;
         const k = before
-            ? Math.min(1, t / Math.max(1, featured[0]?.start ?? 1))
+            ? Math.min(1, (t - exteriorEnd) / Math.max(1, (featured[0]?.start ?? exteriorEnd + 1) - exteriorEnd))
             : Math.min(1, (t - shutterStart + 0.6) / 8);
         const angle = -2.2 + k * 0.9 + (before ? 0 : 0.9);
         const radius = before ? 16 + 3.5 * k : 19.5 - 6 * k;
         const height = before ? 24 - 10 * k : 13 + 12 * k;
-        return {
-            eye: [cx + Math.cos(angle) * radius, height, cz + Math.sin(angle) * radius],
-            target: [cx, 0.5, cz],
-            fov: 62
-        };
+        if (!before && t >= crowdTo) {
+            // Finale: low over one side of the court, looking across at the far parapet where the flame jets and
+            // the fireworks go up, turning slowly to sweep the ring.
+            const k2 = (t - crowdTo) / 4;
+            const a = 0.6 + k2 * 0.7;
+            return {
+                eye: [cx + Math.cos(a) * 9, 6.5, cz + Math.sin(a) * 9],
+                target: [cx - Math.cos(a) * 24, 12, cz - Math.sin(a) * 24],
+                fov: 72,
+                scene: 'finale'
+            };
+        }
+        return orbit(angle, radius, height, [cx, 0.5, cz], 62, before ? 'interior' : 'aerial');
     }
+    // 3. Each featured entrant: from a little ahead of their walk line, low, looking back at them.
     const at = entrantAt(current, t).position;
     const [dx, dz] = [current.to[0] - current.from[0], current.to[2] - current.from[2]];
     const length = Math.hypot(dx, dz) || 1;
     const fx = dx / length,
         fz = dz / length;
-    // The camera holds a spot ahead of the walk line and a little to the side.
     const ahead = 3.2;
     const side = current.order % 2 ? 1.3 : -1.3;
     const eye: V3 = [current.to[0] + fx * ahead - fz * side, 1.35, current.to[2] + fz * ahead + fx * side];
-    return { eye, target: [at[0], 1.35, at[2]], fov: 44 };
+    return { eye, target: [at[0], 1.35, at[2]], fov: 44, scene: `entrant-${current.order}` };
 };

@@ -11,7 +11,7 @@ import type { Point2 } from '../../world/stadiumLayout';
 import { courtSurroundPath, intersectRadius, ringRadii, STADIUM, tierHeight, TENNIS } from '../../world/stadiumLayout';
 
 import type { CeremonyPlan, Entrance, EntrantPlan, Shot } from './ceremonyPlan';
-import { CEREMONY, entrances, entrantAt, ringLevel, shotAt, shutterAt } from './ceremonyPlan';
+import { CEREMONY, entrances, entrantAt, flameAt, ringLevel, shotAt, shutterAt } from './ceremonyPlan';
 
 type Character = ReturnType<CharacterAssetLoader['create']>;
 type V3 = [number, number, number];
@@ -92,10 +92,103 @@ export const createCeremonyView = (
     app: AppBase,
     playerCamera: EntityType,
     characters: CharacterAssetLoader,
-    arena: { outline: readonly Point2[]; center: Point2 }
+    arena: { outline: readonly Point2[]; center: Point2 },
+    /** A spark particle (the game's effects pool), for the fireworks. */
+    spark: (at: V3, colour: V3, velocity: V3, size: number, life: number, gravity: number) => void = () => undefined
 ) => {
     const { center } = arena;
     const radii = ringRadii(arena.outline, center);
+    // ---------- night exterior: outline lights on the shell, so the whole building reads in the dark ----------
+    const topTier = STADIUM.tiers - 1;
+    const backAt = (a: number) => tierRadiusAt(radii, a, topTier) + STADIUM.tierRun;
+    const { shell } = STADIUM;
+    const outlineLights = new MeshBuilder();
+    const ringPath = (radius: (a: number) => number): Point2[] =>
+        Array.from({ length: 144 }, (_, i) => {
+            const a = (i / 144) * Math.PI * 2;
+            return [center[0] + Math.cos(a) * radius(a), center[1] + Math.sin(a) * radius(a)];
+        });
+    // Crown (top of the petals), petal feet, and the base on the building roof.
+    strip(outlineLights, ringPath((a) => backAt(a) + shell.footOut + shell.lean + 0.15), shell.topHeight - 0.15, 0.3);
+    strip(outlineLights, ringPath((a) => backAt(a) + shell.footOut + 0.1), shell.footHeight - 0.1, 0.2);
+    strip(outlineLights, ringPath((a) => backAt(a) + shell.footOut + 0.6), STADIUM.facadeBottom + 0.05, 0.16);
+    // The seams between the twelve petals, foot to top.
+    for (let i = 0; i < STADIUM.petals; i++) {
+        const a = (i / STADIUM.petals) * Math.PI * 2;
+        const foot = backAt(a) + shell.footOut + 0.15,
+            top = foot + shell.lean;
+        const [ox, oz] = [Math.cos(a), Math.sin(a)];
+        const [sx, sz] = [-oz * 0.12, ox * 0.12];
+        const p0: V3 = [center[0] + ox * foot, shell.footHeight, center[1] + oz * foot];
+        const p1: V3 = [center[0] + ox * top, shell.topHeight, center[1] + oz * top];
+        outlineLights.quad(
+            [
+                [p0[0] - sx, p0[1], p0[2] - sz],
+                [p0[0] + sx, p0[1], p0[2] + sz],
+                [p1[0] + sx, p1[1], p1[2] + sz],
+                [p1[0] - sx, p1[1], p1[2] - sz]
+            ],
+            [ox, 0, oz],
+            [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1]
+            ]
+        );
+    }
+    const outlineMaterial = emissiveMaterial('ceremony-facade-outline', [0.75, 0.9, 1]);
+    outlineMaterial.emissiveIntensity = 3.2;
+    outlineMaterial.update();
+    const facade = new Entity('ceremony-facade-outline');
+    facade.addComponent('render', {
+        meshInstances: [new MeshInstance(outlineLights.build(app.graphicsDevice), outlineMaterial)],
+        castShadows: false
+    });
+    facade.enabled = false;
+    app.root.addChild(facade);
+    // Washlights round the base, throwing a cool light up the petals.
+    const washes = Array.from({ length: 6 }, (_, i) => {
+        const a = (i / 6) * Math.PI * 2 + 0.26;
+        const r = backAt(a) + 9;
+        const wash = new Entity(`ceremony-facade-wash-${i}`);
+        wash.addComponent('light', { type: 'omni', color: new Color(0.6, 0.78, 1), intensity: 0, range: 26, castShadows: false });
+        wash.setPosition(center[0] + Math.cos(a) * r, 6, center[1] + Math.sin(a) * r);
+        app.root.addChild(wash);
+        return wash;
+    });
+    const setFacadeLit = (lit: boolean) => {
+        facade.enabled = lit;
+        for (const wash of washes) wash.light!.intensity = lit ? 2.2 : 0;
+    };
+    // ---------- finale: flame jets and firework stations all round the parapet ----------
+    const flameMaterial = emissiveMaterial('ceremony-flame', [1, 0.55, 0.12]);
+    flameMaterial.blendType = BLEND_ADDITIVE;
+    flameMaterial.depthWrite = false;
+    flameMaterial.emissiveIntensity = 3;
+    flameMaterial.update();
+    const stations = Array.from({ length: CEREMONY.fireworkStations }, (_, i) => {
+        const angle = ((i + 0.5) / CEREMONY.fireworkStations) * Math.PI * 2;
+        const r = tierRadiusAt(radii, angle, 0) - STADIUM.setback - 0.25;
+        const at: V3 = [center[0] + Math.cos(angle) * r, STADIUM.fasciaTop + 0.1, center[1] + Math.sin(angle) * r];
+        const jet = new Entity(`ceremony-flame-${i}`);
+        jet.addComponent('render', { type: 'cone', material: flameMaterial, castShadows: false });
+        jet.enabled = false;
+        app.root.addChild(jet);
+        return { at, jet };
+    });
+    const FIREWORK_COLOURS: V3[] = [
+        [1, 0.82, 0.25],
+        [0.3, 0.9, 1],
+        [1, 0.35, 0.45],
+        [0.6, 1, 0.5],
+        [1, 1, 1]
+    ];
+    /** Rockets launched this volley, bursting when they reach the top of their climb. */
+    let rockets: { at: V3; burstAt: number; colour: V3 }[] = [];
+    const ROCKET_SPEED = 15,
+        ROCKET_GRAVITY = 9.8,
+        ROCKET_CLIMB = 1.1;
     const doors: Entrance[] = entrances((angle) => intersectRadius(arena.outline, center, angle));
     const root = new Entity('GameplayAuthored_FinalCeremony');
     app.root.addChild(root);
@@ -318,6 +411,8 @@ export const createCeremonyView = (
     };
 
     let plan: CeremonyPlan | null = null;
+    let filming = true;
+    let scene = '';
     let lastT = -1;
     let headImage: (id: string) => HTMLImageElement | HTMLCanvasElement | null = () => null;
 
@@ -338,20 +433,61 @@ export const createCeremonyView = (
         get running() {
             return plan !== null;
         },
-        start(next: CeremonyPlan, images: (id: string) => HTMLImageElement | HTMLCanvasElement | null) {
+        /** `cinematic` false: the world plays out but the player keeps their own view (fans roaming the stands). */
+        start(next: CeremonyPlan, images: (id: string) => HTMLImageElement | HTMLCanvasElement | null, cinematic = true) {
+            filming = cinematic;
+            setFacadeLit(true);
             clearPuppets();
             plan = next;
             headImage = images;
             smoothed = null;
             lastT = -1;
-            playerCamera.enabled = false;
-            camera.enabled = true;
+            playerCamera.enabled = !cinematic;
+            camera.enabled = cinematic;
             for (const { entity } of ringMeshes) entity.enabled = true;
         },
         /** Advances to ceremony time t (seconds since it began). Returns ring/shutter events that crossed this frame. */
         update(t: number, dt: number) {
-            if (!plan) return { struck: [] as number[], shut: [] as string[], entered: [] as EntrantPlan[] };
-            const events = { struck: [] as number[], shut: [] as string[], entered: [] as EntrantPlan[] };
+            if (!plan)
+                return { struck: [] as number[], shut: [] as string[], entered: [] as EntrantPlan[], launched: 0, burst: 0 };
+            const events = {
+                struck: [] as number[],
+                shut: [] as string[],
+                entered: [] as EntrantPlan[],
+                launched: 0,
+                burst: 0
+            };
+            // Finale: flame jets burst up round the parapet, and volleys of rockets climb and explode overhead.
+            const flame = flameAt(plan, t);
+            for (const { at, jet } of stations) {
+                jet.enabled = flame > 0.02;
+                if (!jet.enabled) continue;
+                const height = 3.2 * flame;
+                jet.setPosition(at[0], at[1] + height / 2, at[2]);
+                jet.setLocalScale(0.55 + 0.15 * flame, height, 0.55 + 0.15 * flame);
+            }
+            for (let v = 0; v < CEREMONY.fireworkVolleys; v++) {
+                const launch = plan.fireworksAt + v * CEREMONY.fireworkSpacing;
+                if (!(lastT < launch && t >= launch)) continue;
+                events.launched++;
+                stations.forEach(({ at }, i) => {
+                    if ((i + v) % 2) return; // alternate stations per volley
+                    const colour = FIREWORK_COLOURS[(i + v) % FIREWORK_COLOURS.length];
+                    spark(at, [1, 0.85, 0.5], [0, ROCKET_SPEED, 0], 0.09, ROCKET_CLIMB, ROCKET_GRAVITY);
+                    const y = at[1] + ROCKET_SPEED * ROCKET_CLIMB - 0.5 * ROCKET_GRAVITY * ROCKET_CLIMB * ROCKET_CLIMB;
+                    rockets.push({ at: [at[0], y, at[2]], burstAt: launch + ROCKET_CLIMB, colour });
+                });
+            }
+            rockets = rockets.filter((rocket) => {
+                if (t < rocket.burstAt) return true;
+                events.burst++;
+                for (let k = 0; k < 10; k++) {
+                    const a = (k / 10) * Math.PI * 2;
+                    const up = (k % 3) - 1;
+                    spark(rocket.at, rocket.colour, [Math.cos(a) * 5.5, 2 + up * 2.2, Math.sin(a) * 5.5], 0.13, 1.3, 2.5);
+                }
+                return false;
+            });
             // Stand-ins.
             for (const e of plan.entrants) {
                 const at = entrantAt(e, t);
@@ -371,7 +507,17 @@ export const createCeremonyView = (
             const fadeAll = Math.max(0, Math.min(1, (t - plan.ringsAt) / 1.5));
             spots.forEach((spot, i) => {
                 const e = lit[i];
-                if (!e || fadeAll >= 1) {
+                if (fadeAll >= 1) {
+                    // Once everyone is in, the spotlights swing up and sweep the stands, lighting the crowd.
+                    const sweep = (t - plan!.ringsAt - 1.5) * 0.55;
+                    const angle = (i / SPOTLIGHTS) * Math.PI * 2 + sweep;
+                    spot.setPosition(center[0], STADIUM.roofInnerHeight - 1, center[1]);
+                    spot.lookAt(new Vec3(center[0] + Math.cos(angle) * 28, 9 + Math.sin(sweep * 1.7) * 2, center[1] + Math.sin(angle) * 28));
+                    spot.rotateLocal(90, 0, 0);
+                    spot.light!.intensity = 8 * Math.min(1, (t - plan!.ringsAt - 1.5) / 0.4);
+                    return;
+                }
+                if (!e) {
                     spot.light!.intensity = 0;
                     return;
                 }
@@ -410,18 +556,28 @@ export const createCeremonyView = (
             });
             centreLight.light!.intensity = Math.min(1, ringLevel(plan, 0, t)) * 2.4;
             // Camera: eased toward the planned shot (cuts between entrants happen over ~0.3 s).
+            if (!filming) {
+                lastT = t;
+                return events;
+            }
             const target = shotAt(plan, center, t);
-            const k = smoothed ? 1 - Math.exp(-dt * (target.fov < 50 ? 9 : 3)) : 1;
-            smoothed = smoothed
-                ? {
-                      eye: lerp3(smoothed.eye, target.eye, k),
-                      target: lerp3(smoothed.target, target.target, k),
-                      fov: smoothed.fov + (target.fov - smoothed.fov) * k
-                  }
-                : target;
-            camera.setPosition(...smoothed.eye);
-            camera.lookAt(new Vec3(...smoothed.target));
-            camera.camera!.fov = smoothed.fov;
+            // A new scene is a hard cut; within a scene the camera eases.
+            const cut = target.scene !== scene;
+            scene = target.scene;
+            const k = smoothed && !cut ? 1 - Math.exp(-dt * (target.fov < 50 ? 9 : 3)) : 1;
+            const view: Shot =
+                smoothed && k < 1
+                    ? {
+                          eye: lerp3(smoothed.eye, target.eye, k),
+                          target: lerp3(smoothed.target, target.target, k),
+                          fov: smoothed.fov + (target.fov - smoothed.fov) * k,
+                          scene
+                      }
+                    : target;
+            smoothed = view;
+            camera.setPosition(...view.eye);
+            camera.lookAt(new Vec3(...view.target));
+            camera.camera!.fov = view.fov;
             lastT = t;
             return events;
         },
@@ -431,6 +587,9 @@ export const createCeremonyView = (
         },
         stop() {
             plan = null;
+            setFacadeLit(false);
+            rockets = [];
+            for (const { jet } of stations) jet.enabled = false;
             clearPuppets();
             camera.enabled = false;
             playerCamera.enabled = true;
@@ -440,6 +599,7 @@ export const createCeremonyView = (
         },
         /** Lamp rings stay lit for the final minute; off again when it is over. */
         setRingsLit(lit: boolean) {
+            setFacadeLit(lit);
             ringMeshes.forEach(({ entity, material }) => {
                 entity.enabled = lit;
                 material.emissiveIntensity = lit ? 2.2 : 0;

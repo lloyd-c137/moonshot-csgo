@@ -289,3 +289,24 @@ export const standBlocksCollider = (blocks: readonly StandBlock[]): ColliderMesh
     }
     return mesh;
 };
+
+/** Height range of the parapet barrier that seals the stands off from the court (final ceremony and minute). */
+export const PARAPET_BARRIER = { bottom: STADIUM.fasciaTop - 0.25, top: STADIUM.fasciaTop + 4, inset: 0.05 } as const;
+
+/**
+ * An invisible wall all round the parapet, just inside its edge: with it up, nobody climbs from the court into the
+ * stands (the stand stairs' landings cross it) and nobody in the stands drops into the court.
+ */
+export const parapetBarrier = (radii: readonly number[], center: Point2, segments = 144): ColliderMesh => {
+    const mesh: ColliderMesh = { positions: [], indices: [] };
+    const at = (angle: number, y: number): [number, number, number] => {
+        const r = radiusAt(radii, angle) - PARAPET_BARRIER.inset;
+        return [center[0] + Math.cos(angle) * r, y, center[1] + Math.sin(angle) * r];
+    };
+    for (let i = 0; i < segments; i++) {
+        const a0 = (i / segments) * Math.PI * 2,
+            a1 = ((i + 1) / segments) * Math.PI * 2;
+        pushQuad(mesh, at(a0, PARAPET_BARRIER.bottom), at(a1, PARAPET_BARRIER.bottom), at(a1, PARAPET_BARRIER.top), at(a0, PARAPET_BARRIER.top));
+    }
+    return mesh;
+};

@@ -112,6 +112,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let wantPhase: 'lobby' | 'playing' = 'playing';
     let lastPoseAt = 0;
     const history = new Map<string, PoseBuffer>();
+    /** Latest pose of each fan roaming the stands (no interpolation buffer: it is decoration). */
+    let fans = new Map<string, PlayerPose>();
     const clock = new ServerClock();
     let latency: number | null = null;
     let simulatedRtt = 0;
@@ -206,6 +208,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     buffer.push(Number.isFinite(pose.t) ? pose.t : message.t, pose);
                 }
                 for (const id of history.keys()) if (!(id in message.poses)) history.delete(id);
+                fans = new Map(Object.entries(message.fans ?? {}).filter(([id]) => id !== me));
                 break;
             }
             case 'thrown':
@@ -480,6 +483,10 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             return clock.toServer(performance.now());
         },
         /** Interpolated remote poses for drawing, keyed by player id (call once per frame). */
+        /** Spectators roaming the stands right now, by id. */
+        fans(): Map<string, PlayerPose> {
+            return fans;
+        },
         poses(): Map<string, PlayerPose> {
             const out = new Map<string, PlayerPose>();
             const serverNow = clock.toServer(performance.now());

@@ -79,6 +79,9 @@ type Player = Omit<PlayerSummary, 'account'> & {
     ammo: number;
     /** Eliminated after the lights went out: out until the next round. */
     spectating: boolean;
+    /** Where a spectator is walking in the stands (final ceremony and minute only). */
+    fanPose?: PlayerPose | null;
+    fanPoseAt: number;
     /** Golden throws so far, and when the golden disc may be thrown again after a burst. */
     goldThrows: number;
     goldCooldownUntil: number;
@@ -247,6 +250,8 @@ export class Room {
         if (this.globalFinisher) return;
         if (message.type === 'skipMomentCutscene') return this.skipMomentCutscene(message.id, realNow);
         const matchNow = this.matchNow(realNow);
+        // Fans in the stands keep moving through the ceremony (their poses never take part in combat).
+        if (message.type === 'pose' && player.spectating) return this.fanPose(player, message.pose, matchNow);
         if (this.inMomentCutscene(matchNow) || this.inCeremony(matchNow) || inCutscene(matchNow, this.blackoutAt(), this.power))
             return;
         if (message.type === 'joinRound') return this.joinRound(player, realNow);
@@ -404,7 +409,12 @@ export class Room {
                     if (player.pose && player.alive)
                         poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now) };
                 }
-                this.out.to(recipient.id, { type: 'snapshot', t: realNow, poses });
+                const fans: Record<string, StampedPose> = {};
+                if (this.standsOpen(now))
+                    for (const player of this.players.values())
+                        if (player.id !== recipient.id && player.spectating && player.fanPose && now - player.fanPoseAt < 2000)
+                            fans[player.id] = { ...player.fanPose, t: player.fanPoseAt + (realNow - now) };
+                this.out.to(recipient.id, { type: 'snapshot', t: realNow, poses, ...(Object.keys(fans).length ? { fans } : {}) });
             }
         }
         if (itemsReturned) this.broadcastItems();
@@ -490,6 +500,8 @@ export class Room {
             chatTimes: [],
             ammo: this.startAmmo,
             spectating: false,
+            fanPose: null,
+            fanPoseAt: 0,
             goldThrows: 0,
             goldCooldownUntil: 0,
             detainedUntil: 0,
@@ -1071,6 +1083,19 @@ export class Room {
     private blackout(now: number) {
         const at = this.blackoutAt();
         return at !== null && now >= at;
+    }
+
+    /** The stands are open to players out for the round: from the final ceremony to the end of the round. */
+    private standsOpen(now: number) {
+        if (this.round?.phase !== 'playing') return false;
+        return this.round.endsAt - this.matchNow(now) <= (ROUND.finalSecondsLeft + ROUND.ceremonySeconds) * 1000;
+    }
+
+    /** A spectator walking about in the upper bowl (accepted only up there, only while the stands are open). */
+    private fanPose(player: Player, pose: PlayerPose, now: number) {
+        if (!this.standsOpen(now) || !inBounds(pose) || pose.p[1] < 4.3 || pose.p[1] > 20) return;
+        player.fanPose = pose;
+        player.fanPoseAt = now;
     }
 
     /** The final entrance ceremony window (just before the final minute), when nobody can act. */

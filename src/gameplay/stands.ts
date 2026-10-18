@@ -23,7 +23,12 @@ type Fan = {
     id: string | null;
     emote: Emote | null;
     emoteUntil: number;
+    /** Last roaming position and when it was seen (to tell walking from standing). */
+    last: { x: number; z: number; at: number; moving: boolean } | null;
 };
+
+/** Where a spectator roaming the stands is (capsule centre, like player poses). */
+export type FanPose = { p: readonly number[]; yaw: number };
 
 export const createStands = (app: AppBase, characters: CharacterAssetLoader, seats: readonly SeatSlot[]) => {
     const fans: Fan[] = [];
@@ -47,7 +52,7 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
             hand.addChild(stick);
             character.root.enabled = false;
             app.root.addChild(character.root);
-            fan = { character, stick, id: null, emote: null, emoteUntil: 0 };
+            fan = { character, stick, id: null, emote: null, emoteUntil: 0, last: null };
             fans[index] = fan;
         }
         return fan;
@@ -65,13 +70,56 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
             active: boolean,
             now: number,
             /** The final entrance ceremony: everyone on their feet, waving to the players walking in. */
-            waving = false
+            waving = false,
+            /** Spectators walking about the stands: drawn where they are instead of in their seat. */
+            roaming: ReadonlyMap<string, FanPose> = new Map(),
+            /** Not drawn at all (the local player, roaming in first person). */
+            hide: string | null = null
         ) {
             assignment = active ? seatAssignment(spectatorIds, seats.length) : new Map();
             const used = new Set(assignment.values());
             for (const [id, index] of assignment) {
                 const fan = fanAt(index);
                 const seat = seats[index];
+                if (id === hide) {
+                    fan.character.root.enabled = false;
+                    fan.id = id;
+                    continue;
+                }
+                const free = roaming.get(id);
+                if (free) {
+                    if (fan.id !== id) {
+                        fan.id = id;
+                        fan.emote = null;
+                        fan.character.setColour(hueColour(colourOf(id)));
+                    }
+                    const [x, y, z] = free.p;
+                    if (!fan.last || now - fan.last.at > 120) {
+                        const moved = fan.last ? Math.hypot(x - fan.last.x, z - fan.last.z) : 0;
+                        fan.last = { x, z, at: now, moving: moved > 0.06 };
+                    }
+                    fan.character.root.enabled = true;
+                    fan.character.root.setPosition(x, y - 0.9, z);
+                    fan.character.root.setEulerAngles(0, free.yaw, 0);
+                    if (fan.emote && now >= fan.emoteUntil) fan.emote = null;
+                    fan.stick.enabled = fan.emote === 'stick';
+                    fan.character.play(
+                        fan.last.moving
+                            ? 'Walk_Loop'
+                            : fan.emote === 'cheer'
+                              ? 'Dance_Loop'
+                              : fan.emote === 'stick'
+                                ? 'Spell_Simple_Idle_Loop'
+                                : fan.emote === 'confetti'
+                                  ? 'Spell_Simple_Shoot'
+                                  : waving
+                                    ? 'Idle_Wave_Loop'
+                                    : 'Idle_Loop',
+                        0.2
+                    );
+                    continue;
+                }
+                fan.last = null;
                 if (fan.id !== id) {
                     fan.id = id;
                     fan.emote = null;
@@ -111,6 +159,10 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
             fan.emote = kind;
             fan.emoteUntil = now + EMOTE_MS[kind];
             const seat = seats[index];
+            if (fan.last) {
+                const p = fan.character.root.getPosition();
+                return [p.x, p.y + 1.4, p.z] as [number, number, number];
+            }
             return [seat.x, seat.y + 1.4, seat.z] as [number, number, number];
         },
         seatOf(id: string): SeatSlot | null {

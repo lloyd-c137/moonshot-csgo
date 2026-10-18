@@ -6,6 +6,7 @@ import { BARRIER_TOP_Y } from '../config/gameplay';
 import type { ColliderMesh } from '../world/arenaAccess';
 import {
     bowlCollider,
+    parapetBarrier,
     standBlocks,
     standBlocksCollider,
     standStair,
@@ -27,6 +28,7 @@ import { barrierMeshData, campusBarrierWalls, clipUnderBowl, southGateBarriers }
 export const COLLISION_SOURCE_NODES = ['Floor_Slab', 'Walls', 'Glazing', 'Arena_Court', 'Arena_StandBase'];
 
 export const ARENA_ACCESS_ENTITY_NAME = 'GameplayAuthored_ArenaAccess';
+export const PARAPET_BARRIER_ENTITY_NAME = 'GameplayAuthored_ParapetBarrier';
 type Arena = { outline: readonly Point2[]; center: Point2 };
 
 export const BARRIER_ENTITY_NAME = 'GameplayAuthored_Barriers';
@@ -132,6 +134,10 @@ const addArenaAccess = (app: AppBase, campus: Entity, arena: Arena) => {
         parts.push(standStairCollider(standStair(side, arena.center, wall, tierRadiusAt(radii, angle, 0))));
     }
     campus.addChild(staticMesh(app, ARENA_ACCESS_ENTITY_NAME, merge(parts)));
+    // Sealed only while players out for the round are in the stands (gameplay toggles it).
+    const seal = staticMesh(app, PARAPET_BARRIER_ENTITY_NAME, parapetBarrier(radii, arena.center));
+    seal.enabled = false;
+    campus.addChild(seal);
 };
 
 export const addCampusCollisions = (app: AppBase, campus: Entity, arena: Arena) => {

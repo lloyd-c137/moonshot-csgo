@@ -6,6 +6,7 @@ import {
     CEREMONY,
     ceremonyOrder,
     entrances,
+    flameAt,
     entrantAt,
     planCeremony,
     ringLevel,
@@ -103,7 +104,24 @@ test('the camera always has a sane shot', () => {
         assert.ok(shot.eye[1] > 0.5);
         // Never inside the roof ring: above its underside (~18.8 m) the camera stays within the opening.
         const r = Math.hypot(shot.eye[0] - center[0], shot.eye[2] - center[1]);
-        if (shot.eye[1] > 17.5)
+        // (Outside the stadium — the exterior opening — the camera is far out and may be high.)
+        if (shot.eye[1] > 17.5 && r < 50)
             assert.ok(r < 19, `camera in the roof at t=${t}: r=${r.toFixed(1)} y=${shot.eye[1].toFixed(1)}`);
     }
+});
+
+test('it opens outside, cuts in, cuts to the crowd while the rings light, and ends on the fireworks', () => {
+    const plan = planCeremony(players(5), center, doors);
+    const outside = shotAt(plan, center, 1);
+    assert.equal(outside.scene, 'exterior');
+    assert.ok(Math.hypot(outside.eye[0] - center[0], outside.eye[2] - center[1]) > 50);
+    assert.equal(shotAt(plan, center, CEREMONY.fade + CEREMONY.exterior + 0.2).scene, 'interior');
+    assert.equal(shotAt(plan, center, plan.ring(3)).scene, 'crowd');
+    assert.equal(shotAt(plan, center, plan.fireworksAt + 0.3).scene, 'finale');
+    assert.equal(plan.fireworksAt, plan.ring(CEREMONY.rings - 1));
+    assert.equal(flameAt(plan, plan.fireworksAt - 0.1), 0);
+    assert.ok(flameAt(plan, plan.fireworksAt + 0.3) > 0.6);
+    assert.equal(flameAt(plan, plan.fireworksAt + CEREMONY.flameSeconds + 0.1), 0);
+    // The fireworks finish before the view returns to the player.
+    assert.ok(plan.fireworksAt + CEREMONY.fireworkVolleys * CEREMONY.fireworkSpacing < CEREMONY.seconds - CEREMONY.fadeOut);
 });

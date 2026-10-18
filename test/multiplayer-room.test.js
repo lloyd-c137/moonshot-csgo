@@ -463,6 +463,65 @@ test('production rooms ignore a client hello claim to start inside; only gate jo
     assert.equal(inbox.get('spoof').find((message) => message.type === 'welcome').players[0].phase, 'lobby');
 });
 
+test('the first golden pickup starts one server-timed cutscene and freezes gameplay messages', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    const [x, y, z] = room.gold.at;
+    pose('a', [x, y, z], 1000);
+    assert.equal(room.gold.holder, 'a');
+    const event = inbox.get('a').find((message) => message.type === 'momentCutsceneStarted');
+    assert.equal(event?.cutscene.kind, 'gold-first');
+    assert.equal(inbox.get('b').filter((message) => message.type === 'momentCutsceneStarted').length, 1);
+    const before = room.players.get('a').pose;
+    pose('a', [x + 2, y, z], 2000);
+    assert.deepEqual(room.players.get('a').pose, before, 'movement is rejected during the cutscene');
+    room.message('a', { type: 'chat', text: 'during film' }, 2000);
+    assert.equal(inbox.get('b').some((message) => message.type === 'chat' && message.line.text === 'during film'), false);
+    pose('a', [x + 2, y, z], 4600);
+    assert.deepEqual(room.players.get('a').pose.p, [x + 2, y, z], 'gameplay resumes after the shared window');
+});
+
+test('a matching skip request ends the shared moment cutscene exactly once', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    const [x, y, z] = room.gold.at;
+    pose('a', [x, y, z], 1000);
+    const event = inbox.get('a').find((message) => message.type === 'momentCutsceneStarted');
+    assert.ok(event);
+    room.message('b', { type: 'skipMomentCutscene', id: event.cutscene.id }, 1100);
+    assert.equal(inbox.get('a').filter((message) => message.type === 'momentCutsceneEnded').length, 1);
+    assert.equal(inbox.get('b').filter((message) => message.type === 'momentCutsceneEnded').length, 1);
+    pose('a', [x + 2, y, z], 1200);
+    assert.deepEqual(room.players.get('a').pose.p, [x + 2, y, z]);
+    room.message('b', { type: 'skipMomentCutscene', id: event.cutscene.id }, 1300);
+    assert.equal(inbox.get('a').filter((message) => message.type === 'momentCutsceneEnded').length, 1);
+});
+
+test('the room starts one final-duel cutscene when an established round reaches two survivors', () => {
+    const { room, join, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    join('c', 'C');
+    for (const [i, id] of ['a', 'b', 'c'].entries()) {
+        const player = room.players.get(id);
+        player.pose = { p: [-8 + i, 0.92, 4], yaw: 0, pitch: 0 };
+        player.poseAt = 1000;
+    }
+    const eliminated = room.players.get('c');
+    eliminated.alive = false;
+    eliminated.spectating = true;
+    room.fallen(eliminated, 1100);
+    const event = inbox.get('a').find((message) => message.type === 'momentCutsceneStarted');
+    assert.equal(event?.cutscene.kind, 'last-two');
+    assert.deepEqual(event?.cutscene.focus, [-8, 0.92, 4]);
+    assert.deepEqual(event?.cutscene.secondary, [-7, 0.92, 4]);
+    assert.equal(inbox.get('b').filter((message) => message.type === 'momentCutsceneStarted').length, 1);
+    room.fallen(eliminated, 1200);
+    assert.equal(inbox.get('a').filter((message) => message.type === 'momentCutsceneStarted').length, 1);
+});
+
 test('players get clearly different colours', () => {
     const { join, room } = harness();
     for (const id of ['a', 'b', 'c', 'd']) join(id, id);
@@ -644,19 +703,19 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
     // B eliminates A: the disc drops where A fell, and B picks it up after the short delay.
     const [ax, , az] = room.players.get('a').pose.p;
     // Along the corridor the spawn lies in (the room rejects flights through walls).
-    room.message('b', { type: 'pose', pose: { p: [ax, 0.92, az - 6], yaw: 0, pitch: 0 } }, 3000);
+    room.message('b', { type: 'pose', pose: { p: [ax, 0.92, az - 6], yaw: 0, pitch: 0 } }, 6000);
     for (const [id, at] of [
-        [1, 4000],
-        [2, 5000],
-        [3, 6000]
+        [1, 7000],
+        [2, 8000],
+        [3, 9000]
     ]) {
         room.message('b', { type: 'throw', throw: { id, o: [ax, 1.5, az - 6], v: [0, 0, 15], tilt: 0 } }, at);
         room.message('b', { type: 'hit', throwId: id, target: 'a', at: [ax, 1.0, az] }, at + 300);
     }
     assert.deepEqual(goldEvents().slice(1), [['dropped', null]]);
-    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 6400);
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 10_000);
     assert.equal(goldEvents().length, 2, 'not straight away');
-    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 7400);
+    room.message('b', { type: 'pose', pose: { p: [ax + 0.5, 0.92, az], yaw: 0, pitch: 0 } }, 11_000);
     assert.deepEqual(goldEvents().at(-1), ['taken', 'b']);
     // Kills score one point each.
     assert.deepEqual(room.summaries().find((p) => p.id === 'b').score, 1);
@@ -800,6 +859,7 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     const blackout = room.blackoutAt();
     assert.equal(ROUND.blackoutSecondsLeft, 240);
     assert.equal(blackout, 360_000);
+    room.goldCutscenePlayed = true; // this scenario starts after the round's first-pickup presentation
     // Golden throws leave a disc only sometimes (here: the roll misses).
     room.gold = { holder: 'a', at: [0, 0.92, 0] };
     room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, 100);
@@ -835,12 +895,12 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     room.tick(blackout + 10_000);
     assert.equal(room.players.get('b').alive, false, 'no respawn after the blackout');
     // C is eliminated by A's discs: A is the last one standing and wins straight away.
-    room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 11_000);
-    room.message('c', { type: 'pose', pose: { p: [6, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 11_000);
+    room.message('a', { type: 'pose', pose: { p: [0, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 14_000);
+    room.message('c', { type: 'pose', pose: { p: [6, 0.92, 0], yaw: 0, pitch: 0 } }, blackout + 14_000);
     for (const [id, at] of [
-        [3, blackout + 12_000],
-        [4, blackout + 13_000],
-        [5, blackout + 14_000]
+        [3, blackout + 15_000],
+        [4, blackout + 16_000],
+        [5, blackout + 17_000]
     ]) {
         room.message('a', { type: 'throw', throw: { id, o: [0, 1.5, 0], v: [15, 0, 0], tilt: 0 } }, at);
         room.message('a', { type: 'hit', throwId: id, target: 'c', at: [6, 1.0, 0] }, at + 300);
@@ -853,8 +913,8 @@ test('blackout: eliminations are final, the guard can spot players, the last one
     assert.equal(ended.round.winner, 'A');
     assert.equal(ended.round.outcome, 'last-survivor');
     // The next round brings everyone back.
-    room.tick(blackout + 14_300 + ROUND.intermissionSeconds * 1000 + 1);
-    room.tick(blackout + 14_300 + ROUND.intermissionSeconds * 1000 + 100);
+    room.tick(blackout + 17_300 + ROUND.intermissionSeconds * 1000 + 1);
+    room.tick(blackout + 17_300 + ROUND.intermissionSeconds * 1000 + 100);
     assert.ok([...room.players.values()].every((p) => !p.spectating));
     const respawned = inbox
         .get('a')

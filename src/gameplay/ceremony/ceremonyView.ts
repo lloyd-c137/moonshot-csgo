@@ -329,6 +329,12 @@ export const createCeremonyView = (
 
     return {
         doors,
+        shutterProbes: () => shutters.map(({ door, x, z }) => ({
+            id: door.id,
+            from: [x + door.out[0] * 2, 1.4, z + door.out[1] * 2] as V3,
+            to: [x - door.out[0] * 2, 1.4, z - door.out[1] * 2] as V3
+        })),
+        metrics: () => ({ entrantActors: puppets.size, spotlights: SPOTLIGHTS }),
         get running() {
             return plan !== null;
         },

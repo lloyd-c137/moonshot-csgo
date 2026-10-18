@@ -44,6 +44,11 @@ declare global {
                     };
                 };
                 avatarHeadTextured: (id: string) => boolean;
+                ceremony: () => { t: number; entrants: number } | null;
+                shuttersClosed: () => boolean;
+                shutterProbes: () => { id: string; from: number[]; to: number[] }[];
+                ceremonyMetrics: () => { entrantActors: number; spotlights: number; seatedSpectators: number };
+                cutscene: () => { kind: string; skipped: boolean; camera: boolean } | null;
             };
         };
     }

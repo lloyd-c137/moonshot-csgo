@@ -8,12 +8,13 @@
 //   claim (throw exists and is recent, one hit per throw, both players alive, target within reach of the throw)
 //   and alone decides eliminations and respawns.
 
+import type { MomentCutscene } from '../gameplay/cutscenes/cutscenes.ts';
 import type { Execution } from '../gameplay/execution.ts';
 import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 export const MAX_PLAYERS = 32;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
@@ -236,6 +237,7 @@ export type ClientMessage =
     | { type: 'executionPrepare'; requestId: string; target: string }
     /** A spectator in the final-minute stands cheers, waves a light stick or throws confetti. */
     | { type: 'emote'; kind: 'cheer' | 'stick' | 'confetti' }
+    | { type: 'skipMomentCutscene'; id: string }
     | { type: 'executionCommit'; requestId: string }
     | { type: 'executionCancel'; requestId: string }
     /** The sender threw inside 纪老师's view and is standing still for DETENTION_SECONDS. */
@@ -257,6 +259,7 @@ export type ServerMessage =
           power: PowerState;
           executions: Execution[];
           globalFinisher: GlobalFinisher | null;
+          momentCutscene: MomentCutscene | null;
           gold: GoldState;
           ammo: number;
           discs: GroundDisc[];
@@ -312,6 +315,8 @@ export type ServerMessage =
     | { type: 'healed'; id: string; hp: number }
     | { type: 'respawn'; id: string; spawn: number }
     | { type: 'gold'; gold: GoldState; event: 'spawned' | 'taken' | 'dropped' }
+    | { type: 'momentCutsceneStarted'; cutscene: MomentCutscene }
+    | { type: 'momentCutsceneEnded'; id: string; skipped: true }
     | { type: 'round'; round: RoundState; scores: Scores }
     | { type: 'caught'; id: string }
     /** Your disc count changed. */
@@ -415,6 +420,8 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
             return typeof value.requestId === 'string' && value.requestId.length <= 80
                 ? (value as ClientMessage)
                 : null;
+        case 'skipMomentCutscene':
+            return typeof value.id === 'string' && value.id.length <= 96 ? (value as ClientMessage) : null;
         case 'landed':
             return isNumber(value.throwId) && isVec3(value.at) ? (value as ClientMessage) : null;
         case 'pose':

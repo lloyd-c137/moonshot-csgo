@@ -1666,6 +1666,10 @@ body {
     display: grid;
     gap: 14px;
     width: min(420px, 40vw);
+    padding: 18px 20px 18px 0;
+    background: linear-gradient(90deg, rgb(11 15 20 / 0.84), rgb(11 15 20 / 0.48) 78%, transparent);
+    border-left: 3px solid var(--signal);
+    padding-left: 16px;
     transform: translateY(-50%);
 }
 .mvp-card > * { opacity: 0; }

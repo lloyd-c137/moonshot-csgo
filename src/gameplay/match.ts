@@ -48,7 +48,7 @@ import {
     HIT_STOP_MS
 } from './combatFeel';
 import { activeCutscene, CUTSCENE_CAPTIONS, cutsceneShot } from './cutscenes/cutscenes';
-import type { CutsceneKind } from './cutscenes/cutscenes';
+import type { CutsceneKind, MomentCutscene } from './cutscenes/cutscenes';
 import { createCutsceneView } from './cutscenes/cutsceneView';
 import { createDiscs, hueColour } from './discs';
 import { createEffects } from './effects';
@@ -282,6 +282,7 @@ export const createMatch = ({
     let labNightAt: number | null = null;
     let labFinalOverride = false;
     let labPowerOverride: PowerState | null = null;
+    let labMomentCutscene: MomentCutscene | null = null;
     const labTargetId = 'audio-lab-target';
     const labTargetPose: PlayerPose = { p: [SAFE_SPAWN.x, SAFE_SPAWN.y, SAFE_SPAWN.z - 4], yaw: 0, pitch: 0 };
     let labHp: number = MAX_HP;
@@ -351,11 +352,23 @@ export const createMatch = ({
                 simulateBreaker: () => {
                     labPowerOverride = { pulledAt: roomNow() };
                 },
+                simulateMomentCutscene: (kind) => {
+                    const p = pose().p;
+                    const target = labTargetPose.p;
+                    labMomentCutscene = {
+                        id: `lab-${kind}-${performance.now()}`,
+                        kind,
+                        at: roomNow(),
+                        focus: [p[0], p[1], p[2]],
+                        secondary: [target[0], target[1], target[2]]
+                    };
+                },
                 resetTestMechanics: () => {
                     labNightOverride = false;
                     labNightAt = null;
                     labFinalOverride = false;
                     labPowerOverride = null;
+                    labMomentCutscene = null;
                     finalRelocationResult = 'idle';
                 },
                 simulateRoundResult: (outcome, mine) => {
@@ -514,10 +527,22 @@ export const createMatch = ({
     };
     // ---------- event cutscenes (lights out, breaker pulled) ----------
     const cutsceneView = createCutsceneView(app, camera);
-    let cutsceneRun: { kind: CutsceneKind; at: number; skipped: boolean; lastPerf: number; beats: Set<string> } | null = null;
+    let currentMomentCutscene: MomentCutscene | null = null;
+    let cutsceneRun: {
+        kind: CutsceneKind;
+        at: number;
+        moment: MomentCutscene | null;
+        skipped: boolean;
+        lastPerf: number;
+        beats: Set<string>;
+    } | null = null;
     window.addEventListener('keydown', (event) => {
         if (event.code === 'Space' && cutsceneRun && !cutsceneRun.skipped) {
             cutsceneRun.skipped = true;
+            if (cutsceneRun.moment) {
+                if (net.state === 'online') net.skipMomentCutscene(cutsceneRun.moment.id);
+                else if (labMomentCutscene?.id === cutsceneRun.moment.id) labMomentCutscene = null;
+            }
             event.preventDefault();
         }
     });
@@ -992,6 +1017,7 @@ export const createMatch = ({
                 ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
             }
             if (state !== 'online') {
+                currentMomentCutscene = null;
                 if (matchPausedAt !== null) resumeMatchClock(Date.now());
                 globalFinisher = null;
                 ui.finisherMode(false);
@@ -1030,6 +1056,7 @@ export const createMatch = ({
                 executionView.start(globalExecution(extra.globalFinisher), true);
             }
             power = extra.power;
+            currentMomentCutscene = extra.momentCutscene;
             applyWorldItems(extra.items);
             Object.assign(localAbilities, {
                 revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
@@ -1479,6 +1506,12 @@ export const createMatch = ({
         latency: (ms) => ui.latency(ms),
         power: (next) => {
             power = next;
+        },
+        momentCutsceneStarted: (cutscene) => {
+            currentMomentCutscene = cutscene;
+        },
+        momentCutsceneEnded: (id) => {
+            if (currentMomentCutscene?.id === id) currentMomentCutscene = null;
         },
         executionStarted: (record) => executionView.start(record),
         executionEnded: (id, completed, reason) => {
@@ -2266,9 +2299,9 @@ export const createMatch = ({
             (net.state === 'online' && lightsOut !== null && time >= lightsOut) || (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
         // Event cutscenes: everyone sees the moment the lights go out / the breaker is pulled, frozen meanwhile.
-        const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower) : null;
-        if (cut && !cutsceneRun && cut.t < 1.2) {
-            cutsceneRun = { kind: cut.kind, at: cut.at, skipped: false, lastPerf: performance.now(), beats: new Set() };
+        const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower, currentMomentCutscene ?? labMomentCutscene) : null;
+        if (cut && !cutsceneRun) {
+            cutsceneRun = { kind: cut.kind, at: cut.at, moment: cut.moment ?? null, skipped: false, lastPerf: performance.now(), beats: new Set() };
             cutsceneView.start();
             ui.cutscene(CUTSCENE_CAPTIONS[cut.kind]);
             inputPaused = true;
@@ -2305,10 +2338,17 @@ export const createMatch = ({
                         }
                         sound.impact([bx, by, bz]);
                     });
-            } else beat('torch', 1.75, () => sound.ceremonySpot());
+            } else if (cutsceneRun.kind === 'blackout') beat('torch', 1.75, () => sound.ceremonySpot());
+            else if (cutsceneRun.kind === 'last-two') beat('duel', 0.25, () => sound.ceremonySpot());
             if (!cutsceneRun.skipped)
                 cutsceneView.update(
-                    cutsceneShot(cutsceneRun.kind, t, guardAt(time, lightsOut, activePower), [...BREAKER_CABINET] as [number, number, number]),
+                    cutsceneShot(
+                        cutsceneRun.kind,
+                        t,
+                        guardAt(time, lightsOut, activePower),
+                        [...BREAKER_CABINET] as [number, number, number],
+                        cutsceneRun.moment
+                    ),
                     dt
                 );
             const over = !cut || cut.at !== cutsceneRun.at;
@@ -3127,6 +3167,8 @@ export const createMatch = ({
             ceremony: () => (ceremonyRun ? { t: ceremonyRun.t, entrants: ceremonyRun.plan.entrants.length } : null),
             cutscene: () => (cutsceneRun ? { kind: cutsceneRun.kind, skipped: cutsceneRun.skipped, camera: cutsceneView.active } : null),
             shuttersClosed: () => ceremony.shuttersClosed(),
+            shutterProbes: () => ceremony.shutterProbes(),
+            ceremonyMetrics: () => ({ ...ceremony.metrics(), seatedSpectators: stands.seated }),
             setSimulatedRtt: (milliseconds: number) => net.setSimulatedRtt(milliseconds),
             markers: mapMarkers,
             monitorFocused: () => false,

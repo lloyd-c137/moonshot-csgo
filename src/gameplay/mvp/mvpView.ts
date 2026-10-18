@@ -92,7 +92,8 @@ export const createMvpView = (app: AppBase, playerCamera: EntityType, characters
             // Low and in front, the winner framed to the right of the card; a slow push in.
             const push = Math.min(1, t / MVP.seconds);
             camera.setPosition(mark[0] + 1.1, 1.25, mark[2] - 4.6 + push * 0.9);
-            camera.lookAt(new Vec3(mark[0] - 1.25, 1.05, z));
+            // Keep the actor to the right of the fixed left-side stats card at desktop and laptop viewports.
+            camera.lookAt(new Vec3(mark[0] + 1.5, 1.05, z));
             camera.camera!.fov = 46 - push * 4;
         },
         stop() {

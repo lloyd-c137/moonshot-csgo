@@ -1,5 +1,6 @@
 // Browser side of the shared-world connection: one WebSocket to the room, typed events, pose interpolation.
 // Without a configured or reachable server the game stays fully playable offline (frisbee practice).
+import type { MomentCutscene } from '../gameplay/cutscenes/cutscenes';
 import type { Execution } from '../gameplay/execution';
 import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes';
 
@@ -37,6 +38,7 @@ type Handlers = {
             power: PowerState;
             executions: Execution[];
             globalFinisher: GlobalFinisher | null;
+            momentCutscene: MomentCutscene | null;
             gold: GoldState;
             ammo: number;
             discs: GroundDisc[];
@@ -91,6 +93,8 @@ type Handlers = {
     globalFinisherState: (finisher: GlobalFinisher) => void;
     globalFinisherCompleted: (id: string, resumedAt: number) => void;
     globalFinisherCancelled: (id: string, reason: string, resumedAt: number) => void;
+    momentCutsceneStarted: (cutscene: MomentCutscene) => void;
+    momentCutsceneEnded: (id: string) => void;
     caught: (id: string) => void;
     ammo: (ammo: number) => void;
     discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
@@ -151,6 +155,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     power: message.power,
                     executions: message.executions,
                     globalFinisher: message.globalFinisher,
+                    momentCutscene: message.momentCutscene,
                     gold: message.gold,
                     ammo: message.ammo,
                     discs: message.discs,
@@ -303,6 +308,12 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'globalFinisherCancelled':
                 handlers.globalFinisherCancelled(message.id, message.reason, message.resumedAt);
                 break;
+            case 'momentCutsceneStarted':
+                handlers.momentCutsceneStarted(message.cutscene);
+                break;
+            case 'momentCutsceneEnded':
+                handlers.momentCutsceneEnded(message.id);
+                break;
             case 'respawn':
                 handlers.respawn(message.id, message.spawn);
                 break;
@@ -449,6 +460,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         emote(kind: 'cheer' | 'stick' | 'confetti') {
             send({ type: 'emote', kind });
+        },
+        skipMomentCutscene(id: string) {
+            send({ type: 'skipMomentCutscene', id });
         },
         prepareExecution(target: string) {
             const requestId = crypto.randomUUID();

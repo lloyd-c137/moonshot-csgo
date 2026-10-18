@@ -41,8 +41,6 @@ const gltf = JSON.parse(file.toString('utf8', 20, 20 + jsonLength)) as Gltf;
 const binStart = 20 + jsonLength + 8;
 const binLength = file.readUInt32LE(20 + jsonLength);
 let bin = Buffer.from(file.subarray(binStart, binStart + binLength));
-if (gltf.animations.some((a) => Object.values(NAMES).includes(a.name as never)))
-    throw new Error('The wave clips are already in the GLB; restore it from git before re-authoring');
 
 const width = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 } as Record<string, number>;
 const read = (index: number) => {
@@ -122,13 +120,13 @@ const IDLE_SECONDS = 2;
 const WAVE_RATE = 1.6;
 /** How high the arm sits on the base→overhead arc (top and bottom of the wave), per bone. */
 const ARM: Record<string, [number, number]> = {
-    clavicle_r: [0.8, 0.8],
-    upperarm_r: [1, 0.88],
-    lowerarm_r: [1, 0.55],
-    hand_r: [1, 0.55]
+    clavicle_r: [0.98, 0.76],
+    upperarm_r: [1, 0.7],
+    lowerarm_r: [0.96, 0.42],
+    hand_r: [0.82, 0.3]
 };
 /** A little lean and a turn of the head toward the raised hand. */
-const TORSO: Record<string, number> = { spine_02: 0.18, spine_03: 0.22, neck_01: 0.2, Head: 0.15 };
+const TORSO: Record<string, number> = { spine_02: 0.2, spine_03: 0.26, neck_01: 0.18, Head: 0.12 };
 
 const author = (kind: 'walk' | 'idle') => {
     const seconds = kind === 'walk' ? WALK_SECONDS : IDLE_SECONDS;
@@ -185,8 +183,41 @@ const appendFloats = (values: Vec[], type: 'SCALAR' | 'VEC3' | 'VEC4') => {
     gltf.accessors.push(accessor);
     return gltf.accessors.length - 1;
 };
+const overwriteFloats = (index: number, values: Vec[], type: 'SCALAR' | 'VEC3' | 'VEC4') => {
+    const accessor = gltf.accessors[index];
+    if (!accessor || accessor.componentType !== 5126 || accessor.type !== type || accessor.count !== values.length)
+        throw new Error(`Cannot re-author accessor ${index}: incompatible animation track`);
+    const view = gltf.bufferViews[accessor.bufferView];
+    const widthValue = width[type];
+    const stride = view.byteStride ?? widthValue * 4;
+    const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+    values.forEach((row, i) => row.forEach((value, c) => bin.writeFloatLE(value, start + i * stride + c * 4)));
+    if (type === 'SCALAR') {
+        accessor.min = [Math.min(...values.map((value) => value[0]))];
+        accessor.max = [Math.max(...values.map((value) => value[0]))];
+    }
+};
 for (const kind of ['walk', 'idle'] as const) {
     const authored = author(kind);
+    const existing = gltf.animations.find((animation) => animation.name === NAMES[kind]);
+    if (existing) {
+        const input = existing.samplers[0]?.input;
+        if (input === undefined) throw new Error(`Existing ${NAMES[kind]} has no time track`);
+        overwriteFloats(input, authored.times.map((t) => [t]), 'SCALAR');
+        const byChannel = new Map(authored.channels.map((channel) => [`${channel.node}:${channel.path}`, channel]));
+        for (const channel of existing.channels) {
+            const authoredChannel = byChannel.get(`${channel.target.node}:${channel.target.path}`);
+            if (!authoredChannel) throw new Error(`Existing ${NAMES[kind]} has an unexpected channel`);
+            overwriteFloats(
+                existing.samplers[channel.sampler].output,
+                authoredChannel.values,
+                channel.target.path === 'rotation' ? 'VEC4' : 'VEC3'
+            );
+            byChannel.delete(`${channel.target.node}:${channel.target.path}`);
+        }
+        if (byChannel.size) throw new Error(`Existing ${NAMES[kind]} is missing authored channels`);
+        continue;
+    }
     const input = appendFloats(
         authored.times.map((t) => [t]),
         'SCALAR'

@@ -20,6 +20,20 @@ test('the breaker cutscene runs from the pull', () => {
     assert.equal(activeCutscene(5000 + CUTSCENE_SECONDS.breaker * 1000, null, power), null);
 });
 
+test('the golden-disc and final-duel moments have shared 3–4 s windows and seekable camera shots', () => {
+    for (const [kind, seconds] of [['gold-first', 3.6], ['last-two', 3.4]]) {
+        const moment = { id: `test-${kind}`, kind, at: 7000, focus: [-8, 0.92, 4], secondary: [-5, 0.92, 4] };
+        assert.equal(CUTSCENE_SECONDS[kind], seconds);
+        assert.deepEqual(activeCutscene(7000, null, none, moment), { kind, at: 7000, t: 0, moment });
+        assert.equal(activeCutscene(7000 + seconds * 1000, null, none, moment), null);
+        for (const t of [0, seconds / 2, seconds - 0.1]) {
+            const shot = cutsceneShot(kind, t, { x: 0, z: 0, yaw: 0, walking: false }, [0, 0, 0], moment);
+            assert.ok([...shot.eye, ...shot.target, shot.fov].every(Number.isFinite));
+            assert.ok(shot.fov >= 45 && shot.fov <= 70);
+        }
+    }
+});
+
 test('the guard waits at his post through the close-up, then sets off on camera', () => {
     const blackout = 10_000;
     const before = guardAt(blackout + ROUND.guardNightDelaySeconds * 1000 - 1, blackout);

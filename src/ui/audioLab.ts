@@ -1,4 +1,5 @@
 // Development-only local audition panel. User video/derived clips stay outside public/ and Git.
+import type { MomentCutscene } from '../gameplay/cutscenes/cutscenes';
 import type { Sound, TestSoundCue } from '../gameplay/sound';
 import { MAX_HP } from '../net/protocol';
 
@@ -30,6 +31,7 @@ type Options = {
     /** The final entrance ceremony: on the server clock when connected, otherwise played locally with stand-ins. */
     simulateCeremony: () => Promise<'server' | 'local'>;
     simulateBreaker: () => void;
+    simulateMomentCutscene: (kind: MomentCutscene['kind']) => void;
     resetTestMechanics: () => void;
     simulateRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
 };
@@ -58,6 +60,7 @@ export const mountAudioLab = async ({
     simulateFinalMinute,
     simulateCeremony,
     simulateBreaker,
+    simulateMomentCutscene,
     resetTestMechanics,
     simulateRoundResult
 }: Options) => {
@@ -78,7 +81,7 @@ export const mountAudioLab = async ({
           <small>仅本地开发会话生效，不保存到账号或设置。可关闭面板进入场景比较，再回来微调。</small>
         </div>
         <div class="audio-lab-scenarios" aria-label="战斗反馈场景"><strong>战斗反馈快速对比</strong><button data-scenario="body" type="button">身体命中</button><button data-scenario="head" type="button">爆头</button><button data-scenario="elimination" type="button">普通淘汰</button><button data-scenario="golden" type="button">金盘淘汰</button><button data-action="execution-demo" type="button">处决人偶测试</button><small>命中预设直接驱动固定人偶反馈；处决按钮会进入背后站位，再按 V 播放实际双角色动作。人偶死亡后原地复活。</small></div>
-        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终球场对决</button><button data-phase="ceremony" type="button">Final 入场仪式</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>本地测试可以直接查看拉闸、终局夜晚与最终球场传送，不需跑图或等待倒计时；本机演示不改战绩、不影响其他玩家。连上开发测试服时，夜晚/最终对决优先使用服务器时钟。</small></div>
+        <div class="audio-lab-scenarios" aria-label="回合机制快速触发"><strong>机制快速测试</strong><button data-phase="breaker" type="button">直接拉闸</button><button data-phase="blackout" type="button">终局夜晚</button><button data-phase="final" type="button">最终球场对决</button><button data-phase="ceremony" type="button">Final 入场仪式</button><button data-phase="gold-first" type="button">金盘首次争夺</button><button data-phase="last-two" type="button">最后两人对决</button><button data-phase="reset" type="button">恢复测试状态</button><button data-result="golden-disc" data-mine="true" type="button">金盘胜利</button><button data-result="last-survivor" data-mine="false" type="button">失败展示</button><button data-result="draw" data-mine="false" type="button">平局展示</button><small>本地测试可以直接查看拉闸、终局夜晚、金盘争夺、最后两人对决与最终球场传送，不需跑图或等待倒计时；本机演示不改战绩、不影响其他玩家。连上开发测试服时，夜晚/最终对决优先使用服务器时钟。</small></div>
         <p class="audio-lab-status" role="status">正在读取本地拆分片段…</p>
         <div class="audio-lab-rows"></div>
         <label class="audio-lab-loop"><input data-loop type="checkbox">循环当前试听</label>
@@ -186,6 +189,12 @@ export const mountAudioLab = async ({
         simulateBreaker();
         status.textContent = '已在本机直接拉闸；可观察灭灯、提示音、背景音乐和保安修闸路线。';
     });
+    for (const kind of ['gold-first', 'last-two'] as const) {
+        host.querySelector<HTMLButtonElement>(`[data-phase="${kind}"]`)!.addEventListener('click', () => {
+            simulateMomentCutscene(kind);
+            status.textContent = kind === 'gold-first' ? '已触发金飞盘首次争夺过场。' : '已触发最后两人对决过场。';
+        });
+    }
     host.querySelector<HTMLButtonElement>('[data-phase="reset"]')!.addEventListener('click', () => {
         resetTestMechanics();
         status.textContent = '测试机制已复位。';

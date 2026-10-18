@@ -10,21 +10,34 @@ import type { PowerState } from '../power.ts';
 import type { TeacherPose } from '../teacher.ts';
 
 export type V3 = [number, number, number];
-export type CutsceneKind = 'blackout' | 'breaker';
+export type CutsceneKind = 'blackout' | 'breaker' | 'gold-first' | 'last-two';
+export type MomentCutscene = {
+    id: string;
+    kind: 'gold-first' | 'last-two';
+    at: number;
+    focus: V3;
+    secondary?: V3;
+};
 export type Shot = { eye: V3; target: V3; fov: number };
 
 export const CUTSCENE_SECONDS: Record<CutsceneKind, number> = {
     blackout: ROUND.blackoutCutsceneSeconds,
-    breaker: ROUND.breakerCutsceneSeconds
+    breaker: ROUND.breakerCutsceneSeconds,
+    'gold-first': 3.6,
+    'last-two': 3.4
 };
 
 export const CUTSCENE_CAPTIONS: Record<CutsceneKind, { title: string; sub: string }> = {
     blackout: { title: '终局夜晚', sub: '保安开始巡逻 · 被手电照到即出局' },
-    breaker: { title: '配电室被拉闸', sub: '全校断电 · 保安正赶去修理' }
+    breaker: { title: '配电室被拉闸', sub: '全校断电 · 保安正赶去修理' },
+    'gold-first': { title: '金飞盘易主', sub: '争夺进入白热化 · 守住金盘，赢下本局' },
+    'last-two': { title: '最终二人对决', sub: '只剩两名选手 · 决胜时刻' }
 };
 
 /** The cutscene playing at room time `ms`, if any, and how far into it (seconds). */
-export const activeCutscene = (ms: number, blackoutAt: number | null, power: PowerState) => {
+export const activeCutscene = (ms: number, blackoutAt: number | null, power: PowerState, moment?: MomentCutscene | null) => {
+    if (moment && ms >= moment.at && ms < moment.at + CUTSCENE_SECONDS[moment.kind] * 1000)
+        return { kind: moment.kind, at: moment.at, t: (ms - moment.at) / 1000, moment };
     if (power.pulledAt !== null && ms >= power.pulledAt && ms < power.pulledAt + CUTSCENE_SECONDS.breaker * 1000)
         return { kind: 'breaker' as const, at: power.pulledAt, t: (ms - power.pulledAt) / 1000 };
     if (blackoutAt !== null && ms >= blackoutAt && ms < blackoutAt + CUTSCENE_SECONDS.blackout * 1000)
@@ -32,8 +45,8 @@ export const activeCutscene = (ms: number, blackoutAt: number | null, power: Pow
     return null;
 };
 
-export const inCutscene = (ms: number, blackoutAt: number | null, power: PowerState) =>
-    activeCutscene(ms, blackoutAt, power) !== null;
+export const inCutscene = (ms: number, blackoutAt: number | null, power: PowerState, moment?: MomentCutscene | null) =>
+    activeCutscene(ms, blackoutAt, power, moment) !== null;
 
 const forwardOf = (yawDeg: number): [number, number] => {
     const yaw = (yawDeg * Math.PI) / 180;
@@ -44,7 +57,24 @@ const forwardOf = (yawDeg: number): [number, number] => {
  * The camera for a cutscene at t seconds, given where the guard is now (`guard`) and, for the breaker, the
  * cabinet. Shots are framed from the guard's own heading, so they follow him wherever the patrol leads.
  */
-export const cutsceneShot = (kind: CutsceneKind, t: number, guard: TeacherPose, cabinet: V3): Shot => {
+export const cutsceneShot = (kind: CutsceneKind, t: number, guard: TeacherPose, cabinet: V3, moment?: MomentCutscene | null): Shot => {
+    if ((kind === 'gold-first' || kind === 'last-two') && moment) {
+        const focus = moment.focus;
+        const other = moment.secondary ?? focus;
+        const mid: V3 = [(focus[0] + other[0]) / 2, (focus[1] + other[1]) / 2, (focus[2] + other[2]) / 2];
+        const dx = other[0] - focus[0];
+        const dz = other[2] - focus[2];
+        const yaw = Math.atan2(dx, dz);
+        const radius = Math.max(2.2, Math.min(4.2, Math.hypot(dx, dz) * 0.8 + 2));
+        const orbit = (t / CUTSCENE_SECONDS[kind]) * Math.PI * 0.65;
+        const angle = yaw + orbit;
+        const close = kind === 'gold-first' && t > 2.2;
+        return {
+            eye: [mid[0] + Math.sin(angle) * (close ? 2.2 : radius), mid[1] + (close ? 1.45 : 2.2), mid[2] + Math.cos(angle) * (close ? 2.2 : radius)],
+            target: [mid[0], mid[1] + (kind === 'gold-first' ? 0.9 : 1), mid[2]],
+            fov: kind === 'gold-first' ? (close ? 48 : 62) : t > 2.4 ? 52 : 64
+        };
+    }
     const [fx, fz] = forwardOf(guard.yaw);
     const [sx, sz] = [-fz, fx];
     const at = (forward: number, side: number, y: number): V3 => [

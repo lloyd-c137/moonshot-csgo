@@ -10,7 +10,7 @@
     },
     "runtime": {
         "path": "public/assets/characters/moonshot-humanoid.glb",
-        "sha256": "03c0659f066a21f3de155b98a5e0a329b8853a071511928f857c8a53e405e52c",
+        "sha256": "17cc215bd755b1433d7a0e709e1428cc9a74f0885e4da38310c0e8232d500c43",
         "bytes": 4081284,
         "generator": "tools/prepareCharacter.py + tools/prepareFinisherAnimation.py with Blender 4.5.14 + tools/authorFinisherToss.ts + tools/authorWaveClips.ts",
         "headMaterial": "M_Head",

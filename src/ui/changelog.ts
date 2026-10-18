@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.26.0',
+        date: '2026.10.18',
+        title: '回合演出与挥手动画打磨',
+        notes: [
+            '金飞盘首次易主和进入最后两人阶段时，加入全场同步、可跳过的短过场。',
+            '调整骨骼挥手动作，让角色更明显地举手挥动；优化 Final 入场仪式的观众与镜头演出。'
+        ]
+    },
+    {
         version: 'v0.25.0',
         date: '2026.10.18',
         title: 'MVP 结算与头像入口',

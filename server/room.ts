@@ -4,7 +4,8 @@ import { SOUTH_GATE } from '../src/config/gameplay.ts';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { inCutscene } from '../src/gameplay/cutscenes/cutscenes.ts';
+import { CUTSCENE_SECONDS, inCutscene  } from '../src/gameplay/cutscenes/cutscenes.ts';
+import type { MomentCutscene } from '../src/gameplay/cutscenes/cutscenes.ts';
 import { canExecute, canStartGlobalFinisher, EXECUTION, executionWatched } from '../src/gameplay/execution.ts';
 import type { Execution } from '../src/gameplay/execution.ts';
 import { GLOBAL_FINISHER_CONFIG } from '../src/gameplay/finisher/FinisherTypes.ts';
@@ -155,6 +156,11 @@ export class Room {
     private finisherRoundUses = 0;
     private preparations = new Map<string, FinisherPreparation>();
     private globalFinisher: GlobalFinisher | null = null;
+    private momentCutscene: MomentCutscene | null = null;
+    private momentCutsceneSequence = 0;
+    private goldCutscenePlayed = false;
+    private lastTwoCutscenePlayed = false;
+    private roundPeakPlayers = 0;
     /** Match-time offset grows only while the authoritative world is globally frozen. */
     private matchClockOffset = 0;
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
@@ -239,6 +245,10 @@ export class Room {
         if (message.type === 'ping') return this.out.to(player.id, { type: 'pong', c: message.c });
         // The room is authoritative: no gameplay or chat message is queued while a finisher owns the world.
         if (this.globalFinisher) return;
+        if (message.type === 'skipMomentCutscene') return this.skipMomentCutscene(message.id, realNow);
+        const matchNow = this.matchNow(realNow);
+        if (this.inMomentCutscene(matchNow) || this.inCeremony(matchNow) || inCutscene(matchNow, this.blackoutAt(), this.power))
+            return;
         if (message.type === 'joinRound') return this.joinRound(player, realNow);
         if (message.type === 'interact') return this.interact(player, message.target, this.matchNow(realNow));
         if (message.type === 'toggleFrc') return this.toggleFrc(player, this.matchNow(realNow));
@@ -508,6 +518,7 @@ export class Room {
         };
         this.players.set(id, player);
         if (!this.round) this.startRound(this.matchNow(realNow), false);
+        if (phase === 'playing') this.roundPeakPlayers = Math.max(this.roundPeakPlayers, this.playingPlayerCount());
         // Arriving after the lights went out: watch until the next round.
         if (phase === 'playing' && (this.blackout(now) || (account && this.executedAccounts.has(account.name)))) {
             player.alive = false;
@@ -527,6 +538,7 @@ export class Room {
             power: this.power,
             executions: [...this.executions.values()],
             globalFinisher: this.globalFinisher ? structuredClone(this.globalFinisher) : null,
+            momentCutscene: this.inMomentCutscene(now) ? structuredClone(this.momentCutscene) : null,
             gold: this.gold,
             ammo: player.ammo,
             discs: this.discs,
@@ -557,6 +569,7 @@ export class Room {
             return;
         }
         player.phase = 'playing';
+        this.roundPeakPlayers = Math.max(this.roundPeakPlayers, this.playingPlayerCount());
         player.spawnedAt = now;
         player.hp = MAX_HP;
         player.alive = true;
@@ -1125,9 +1138,16 @@ export class Room {
 
     /** After the lights go out: when one player (or nobody) is left standing, the round ends at once. */
     private checkLastStanding(now: number) {
-        if (!this.blackout(now) || this.round?.phase !== 'playing') return;
+        if (this.round?.phase !== 'playing') return;
         const participants = [...this.players.values()].filter((each) => each.phase === 'playing');
         const standing = participants.filter((each) => !each.spectating);
+        if (standing.length === 2 && this.roundPeakPlayers >= 3 && !this.lastTwoCutscenePlayed) {
+            this.lastTwoCutscenePlayed = true;
+            const [a, b] = standing;
+            if (a.pose && b.pose)
+                this.startMomentCutscene('last-two', now, a.pose.p, b.pose.p);
+        }
+        if (!this.blackout(now)) return;
         if (standing.length > 1 || participants.length < 2) return;
         this.endRound(
             now,
@@ -1148,6 +1168,10 @@ export class Room {
         this.finisherRoundUses = 0;
         this.finisherUses.clear();
         this.preparations.clear();
+        this.momentCutscene = null;
+        this.goldCutscenePlayed = false;
+        this.lastTwoCutscenePlayed = false;
+        this.roundPeakPlayers = this.playingPlayerCount();
         for (const player of this.players.values()) {
             if (player.phase !== 'playing') continue;
             if (player.accountName) this.roundParticipants.add(player.accountName);
@@ -1271,6 +1295,38 @@ export class Room {
         if (Math.hypot(x - gx, z - gz) > ROUND.pickupRadius || Math.abs(y - gy) > 1.6) return;
         this.gold = { holder: player.id, at: [x, y, z] };
         this.out.all({ type: 'gold', gold: this.gold, event: 'taken' });
+        if (!this.goldCutscenePlayed && player.pose) {
+            this.goldCutscenePlayed = true;
+            this.startMomentCutscene('gold-first', now, player.pose.p);
+        }
+    }
+
+    private startMomentCutscene(kind: MomentCutscene['kind'], now: number, focus: Vec3Tuple, secondary?: Vec3Tuple) {
+        const cutscene: MomentCutscene = {
+            id: `moment-${this.roundId}-${++this.momentCutsceneSequence}`,
+            kind,
+            at: now,
+            focus: [...focus],
+            ...(secondary ? { secondary: [...secondary] } : {})
+        };
+        this.momentCutscene = cutscene;
+        this.out.all({ type: 'momentCutsceneStarted', cutscene });
+    }
+
+    private inMomentCutscene(now: number) {
+        const cutscene = this.momentCutscene;
+        return !!cutscene && now >= cutscene.at && now < cutscene.at + CUTSCENE_SECONDS[cutscene.kind] * 1000;
+    }
+
+    private skipMomentCutscene(id: string, realNow: number) {
+        const active = this.momentCutscene;
+        if (!active || active.id !== id || !this.inMomentCutscene(this.matchNow(realNow))) return;
+        this.momentCutscene = null;
+        this.out.all({ type: 'momentCutsceneEnded', id, skipped: true });
+    }
+
+    private playingPlayerCount() {
+        return [...this.players.values()].filter((player) => player.phase === 'playing').length;
     }
 
     private dropGold(holder: Player, now: number) {

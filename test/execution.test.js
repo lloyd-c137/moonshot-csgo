@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Room } from '../server/room.ts';
+import { CUTSCENE_SECONDS } from '../src/gameplay/cutscenes/cutscenes.ts';
 import {
     canExecute,
     canStartGlobalFinisher,
@@ -96,6 +97,8 @@ test('GLOBAL FINISHER uses the specified distance, angle, height, occlusion and 
         'executionPrepare'
     );
     assert.equal(parseClientMessage('{"type":"executionCommit","requestId":"x"}').type, 'executionCommit');
+    assert.equal(parseClientMessage('{"type":"skipMomentCutscene","id":"moment-1"}').type, 'skipMomentCutscene');
+    assert.equal(parseClientMessage(`{"type":"skipMomentCutscene","id":"${'x'.repeat(97)}"}`), null);
     assert.equal(parseClientMessage('{"type":"execute","target":"b"}'), null, 'old bypass message removed');
 });
 
@@ -161,9 +164,11 @@ test('server requires a prepared 400 ms hold, freezes every client mutation and 
     const lateWelcome = messages.get('late').find((message) => message.type === 'welcome');
     assert.equal(lateWelcome.globalFinisher, null);
     assert.equal(lateWelcome.matchTime, 2402, 'late join receives the paused/resumed match clock');
-    move('c', pose(), finisher.endsAt + 2);
-    move('a', pose(-45), finisher.endsAt + 2);
-    prepare('c', 'a', 'cooldown', finisher.endsAt + 3);
+    const afterFinalDuel = finisher.endsAt + CUTSCENE_SECONDS['last-two'] * 1000 + 1;
+    room.tick(afterFinalDuel);
+    move('c', pose(), afterFinalDuel + 1);
+    move('a', pose(-45), afterFinalDuel + 1);
+    prepare('c', 'a', 'cooldown', afterFinalDuel + 2);
     assert.ok(
         messages
             .get('c')

@@ -36,6 +36,7 @@ import { killIcons } from '../ui/killFeed';
 import type { EventIcon, Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
 import type { SeatSlot } from '../world/stadiumLayout';
+import { fanSectionFocus, ringRadii } from '../world/stadiumLayout';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
@@ -489,6 +490,8 @@ export const createMatch = ({
     );
     // ---------- fans: players out for the round walk the upper bowl (final ceremony and minute) ----------
     let fanMode = false;
+    /** Middle of the fans' section in the stands (the ceremony films the crowd there). */
+    const fanFocus = fanSectionFocus(ringRadii(arenaOutline, arenaCenter), arenaCenter);
     const parapetSeal = () => app.root.findByName(PARAPET_BARRIER_ENTITY_NAME) as Entity | null;
     /** From the start of the final ceremony to the end of the round. */
     const standsOpenNow = () =>
@@ -2540,7 +2543,12 @@ export const createMatch = ({
                               skill: ceremonySkills(entry) || undefined
                           })));
             if (entrants.length) {
-                const plan = planCeremony(entrants, arenaCenter, ceremony.doors);
+                // The fans' section gets its own shot when anyone is sitting in it.
+                const fanCount =
+                    [...roster.values()].filter((entry) => entry.spectating).length +
+                    (labCeremony ? 14 : 0) +
+                    (labFan ? 1 : 0);
+                const plan = planCeremony(entrants, arenaCenter, ceremony.doors, { focus: fanFocus, count: fanCount });
                 ceremonyRun = { at: ceremonyAt, plan, moved: false, lastPerf: performance.now(), t: ceremonyT };
                 // Fans in the stands watch it live from where they stand; everyone else gets the film.
                 const film = !fanMode;

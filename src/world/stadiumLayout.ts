@@ -130,27 +130,51 @@ export type SeatSlot = { x: number; y: number; z: number; yaw: number };
  * Seats for eliminated spectators: spread round-robin over all twelve petals and a band of tiers, so the crowd
  * fills the bowl evenly and a seat says nothing about where its player was.
  */
-export const spectatorSeats = (radii: readonly number[], center: Point2, count = 48): SeatSlot[] => {
+/**
+ * The fans' section (owner request 2026-10-18: the spectators sit together, so the ceremony camera can find them):
+ * the upper rows of the south petal. Rows fill front to back, each from the middle outward, clear of the aisles.
+ */
+export const FAN_SECTION = { angle: Math.PI / 2, tiers: [10, 11, 12, 13, 14, 15, 16], perRow: 10 } as const;
+
+const fanSeatAt = (radii: readonly number[], center: Point2, angle: number, k: number): SeatSlot => {
     const segments = radii.length;
+    const i = Math.round((angle / (Math.PI * 2)) * segments) % segments;
+    const r = tierRadius(radii, i, k) + STADIUM.tierRun * 0.45;
+    return {
+        x: center[0] + Math.cos(angle) * r,
+        y: tierHeight(k),
+        z: center[1] + Math.sin(angle) * r,
+        // Facing the court centre (same yaw convention as the execution actors: atan2(-dx, -dz) toward the target).
+        yaw: (Math.atan2(Math.cos(angle), Math.sin(angle)) * 180) / Math.PI
+    };
+};
+
+/** Seats for players out for the round, all in the fans' section: a compact block that grows row by row. */
+export const spectatorSeats = (radii: readonly number[], center: Point2, count = 48): SeatSlot[] => {
     const slots: SeatSlot[] = [];
-    const tiers = [10, 12, 14, 16];
-    for (let n = 0; n < count; n++) {
-        const petal = n % STADIUM.petals;
-        const row = Math.floor(n / STADIUM.petals) % tiers.length;
-        // Between the petal's stair aisles (at 0, ⅓ and ⅔ of the petal), never on one.
-        const angle = ((petal + 0.5 + (row % 2 ? 0.09 : -0.09)) / STADIUM.petals) * Math.PI * 2;
-        const i = Math.round((angle / (Math.PI * 2)) * segments) % segments;
-        const k = tiers[row];
+    for (const k of FAN_SECTION.tiers) {
+        const segments = radii.length;
+        const i = Math.round((FAN_SECTION.angle / (Math.PI * 2)) * segments) % segments;
         const r = tierRadius(radii, i, k) + STADIUM.tierRun * 0.45;
-        slots.push({
-            x: center[0] + Math.cos(angle) * r,
-            y: tierHeight(k),
-            z: center[1] + Math.sin(angle) * r,
-            // Facing the court centre (same yaw convention as the execution actors: atan2(-dx, -dz) toward the target).
-            yaw: (Math.atan2(Math.cos(angle), Math.sin(angle)) * 180) / Math.PI
-        });
+        const step = STADIUM.seatPitch / r;
+        let placed = 0;
+        for (let j = 0; placed < FAN_SECTION.perRow && j < 60; j++) {
+            // 0, +1, −1, +2, −2 … seats from the middle of the row.
+            const offset = j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2);
+            const angle = FAN_SECTION.angle + offset * step;
+            if (aisleDistance(angle) < 0.85 / r) continue;
+            slots.push(fanSeatAt(radii, center, angle, k));
+            placed++;
+        }
+        if (slots.length >= count) break;
     }
-    return slots;
+    return slots.slice(0, count);
+};
+
+/** Where the camera looks to film the fans: the middle of their section, at chest height. */
+export const fanSectionFocus = (radii: readonly number[], center: Point2): [number, number, number] => {
+    const seat = fanSeatAt(radii, center, FAN_SECTION.angle, FAN_SECTION.tiers[2]);
+    return [seat.x, seat.y + 1.1, seat.z];
 };
 
 /** Seat index for each spectator: stable order by id, so every client seats the crowd identically. */

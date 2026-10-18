@@ -13,6 +13,8 @@ import {
     ringRadii,
     seatAssignment,
     spectatorSeats,
+    FAN_SECTION,
+    fanSectionFocus,
     STADIUM,
     TENNIS,
     tennisLines,
@@ -62,16 +64,24 @@ test('court surround: boards clear of both stands, inside the outline, with four
     assert.equal(inSurroundGap(x0 + 4, z0), false);
 });
 
-test('spectator seats spread over every petal and face the court; assignment is the same on every client', () => {
+test('spectators sit together in one section, face the court, and fill it front row first', () => {
     const seats = spectatorSeats(radii, center);
     assert.equal(seats.length, 48);
-    const petals = new Set(
-        seats.map((seat) => {
-            const angle = (Math.atan2(seat.z - center[1], seat.x - center[0]) + Math.PI * 2) % (Math.PI * 2);
-            return Math.floor(angle / ((Math.PI * 2) / STADIUM.petals));
-        })
-    );
-    assert.equal(petals.size, STADIUM.petals, 'the first twelve spectators already cover all twelve petals');
+    // All in the fans' section: within one petal's width of its centre line.
+    for (const seat of seats) {
+        const angle = Math.atan2(seat.z - center[1], seat.x - center[0]);
+        let d = Math.abs(angle - FAN_SECTION.angle);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        assert.ok(d < Math.PI / STADIUM.petals, 'a seat outside the fans section');
+    }
+    // The first few (a small crowd) share the front row, side by side.
+    const first = seats.slice(0, 5);
+    assert.ok(first.every((seat) => seat.y === first[0].y));
+    for (let i = 1; i < seats.length; i++)
+        for (let j = 0; j < i; j++)
+            assert.ok(Math.hypot(seats[i].x - seats[j].x, seats[i].y - seats[j].y, seats[i].z - seats[j].z) > 0.45, 'two fans in one seat');
+    const focus = fanSectionFocus(radii, center);
+    assert.ok(focus.every(Number.isFinite) && focus[1] > tierHeight(10));
     for (const seat of seats.slice(0, 12)) {
         assert.ok(seat.y >= tierHeight(0), 'in the upper bowl, out of reach of the court');
         // Yaw convention: forward is (-sin yaw, -cos yaw); it must point toward the centre.

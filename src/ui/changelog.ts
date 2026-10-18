@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.30.0',
+        date: '2026.10.18',
+        title: '观众席集中与观众镜头',
+        notes: [
+            '已出局的观战玩家现在集中坐在南侧看台的同一片区域，从前排中间开始往两边、往后排坐满。',
+            'Final 入场仪式在全场亮灯时会切到观众席：从球场仰拍这片看台，镜头沿着人群缓慢平移；看台上没人时仍是原来的全场看台镜头。',
+            '测试面板（P）新增“以观众身份看 Final 仪式”，可以在本机以观众身份进入看台自由走动。'
+        ]
+    },
+    {
         version: 'v0.27.0',
         date: '2026.10.18',
         title: 'Final 仪式：看台观众与烟花',

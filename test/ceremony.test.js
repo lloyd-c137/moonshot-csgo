@@ -125,3 +125,15 @@ test('it opens outside, cuts in, cuts to the crowd while the rings light, and en
     // The fireworks finish before the view returns to the player.
     assert.ok(plan.fireworksAt + CEREMONY.fireworkVolleys * CEREMONY.fireworkSpacing < CEREMONY.seconds - CEREMONY.fadeOut);
 });
+
+test('with fans in the stands the film cuts to their section while the lights come on', () => {
+    const focus = [center[0], 13, center[1] + 34];
+    const plan = planCeremony(players(4), center, doors, { focus, count: 3 });
+    const shot = shotAt(plan, center, (plan.ring(1) + plan.ring(5)) / 2);
+    assert.equal(shot.scene, 'fans');
+    // Looking up at the section from the court.
+    assert.ok(shot.eye[1] < 3 && shot.target[1] > 10);
+    assert.ok(Math.hypot(shot.target[0] - focus[0], shot.target[2] - focus[2]) < 3);
+    // Without fans the generic crowd shot stays.
+    assert.equal(shotAt(planCeremony(players(4), center, doors), center, plan.ring(3)).scene, 'crowd');
+});

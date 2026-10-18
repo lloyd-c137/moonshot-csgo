@@ -9,6 +9,7 @@ import {
     bowlCollider,
     lineHeight,
     nosingLine,
+    SOURCE_STAND_AISLES,
     SOURCE_STAND_ROWS,
     standBlocks,
     standStair,
@@ -50,21 +51,37 @@ test('the bowl collider is a closed set of quads with a back wall', () => {
     assert.ok(Math.max(...ys) >= 20);
 });
 
-test('court-level stand rows leave no gaps and each stair clears every seat', () => {
+test('court-level stand rows leave no gaps, keep the source walkways open, and each stair clears every seat', () => {
     for (const side of ['west', 'east']) {
         const angle = side === 'west' ? Math.PI : 0;
         const dir = side === 'west' ? -1 : 1;
         const wall = intersectRadius(outline, center, angle);
         const blocks = standBlocks(side, center[0] + dir * wall);
-        for (let k = 1; k < blocks.length; k++) {
-            const touching = side === 'west' ? blocks[k].x1 === blocks[k - 1].x0 : blocks[k].x0 === blocks[k - 1].x1;
+        const rowOf = (block) => SOURCE_STAND_ROWS.findIndex((row) => row.top === block.top);
+        for (let k = 1; k < SOURCE_STAND_ROWS.length; k++) {
+            const here = blocks.filter((block) => rowOf(block) === k)[0];
+            const before = blocks.filter((block) => rowOf(block) === k - 1)[0];
+            const touching = side === 'west' ? here.x1 === before.x0 : here.x0 === before.x1;
             assert.ok(touching, `gap between rows ${k - 1} and ${k}`);
+        }
+        // Nothing solid in the walkways (they were invisible walls that trapped players).
+        for (const block of blocks)
+            for (const [g0, g1] of SOURCE_STAND_AISLES) assert.ok(block.z1 <= g0 || block.z0 >= g1, 'a row fills a walkway');
+        // Every row still covers its seats outside the walkways.
+        for (let k = 0; k < SOURCE_STAND_ROWS.length; k++) {
+            const covered = blocks.filter((block) => rowOf(block) === k).reduce((sum, block) => sum + (block.z1 - block.z0), 0);
+            const open = SOURCE_STAND_AISLES.reduce(
+                (sum, [g0, g1]) => sum + Math.max(0, Math.min(g1, SOURCE_STAND_ROWS[k].z1) - Math.max(g0, SOURCE_STAND_ROWS[k].z0)),
+                0
+            );
+            assert.ok(Math.abs(covered + open - (SOURCE_STAND_ROWS[k].z1 - SOURCE_STAND_ROWS[k].z0)) < 1e-9);
         }
         const stair = standStair(side, center, wall, tierRadiusAt(radii, angle, 0));
         const run = Math.abs(stair.topX - stair.footX);
         assert.ok(Math.abs(Math.atan2(STADIUM.fasciaTop, run) - Math.PI / 6) < 0.01);
         // The ramp is above every seat row it crosses.
-        blocks.forEach((block, k) => {
+        blocks.forEach((block) => {
+            const k = rowOf(block);
             const front = side === 'west' ? block.x1 : block.x0;
             const along = Math.abs(front - stair.footX);
             const height = (STADIUM.fasciaTop * along) / run;

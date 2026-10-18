@@ -109,6 +109,8 @@ export type CeremonyPlan = {
     fadeOutAt: number;
     /** The finale: fireworks and flame jets round the parapet as the last ring strikes. */
     fireworksAt: number;
+    /** The fans' section (spectators sit together there) and how many are in it: the crowd shot films them. */
+    fans: { focus: V3; count: number } | null;
 };
 
 const yawToward = (from: Point2, to: Point2) => Math.atan2(-(to[0] - from[0]), -(to[1] - from[1]));
@@ -117,7 +119,12 @@ const yawToward = (from: Point2, to: Point2) => Math.atan2(-(to[0] - from[0]), -
 export const ceremonyOrder = (players: readonly Entrant[]) =>
     [...players].sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
-export const planCeremony = (players: readonly Entrant[], center: Point2, doors: readonly Entrance[]): CeremonyPlan => {
+export const planCeremony = (
+    players: readonly Entrant[],
+    center: Point2,
+    doors: readonly Entrance[],
+    fans: { focus: V3; count: number } | null = null
+): CeremonyPlan => {
     const ordered = ceremonyOrder(players);
     const perEntrance = new Map<string, number>();
     const ringsAt = CEREMONY.seconds - CEREMONY.fadeOut - CEREMONY.hold - CEREMONY.rings * CEREMONY.ringInterval;
@@ -161,7 +168,8 @@ export const planCeremony = (players: readonly Entrant[], center: Point2, doors:
         ring: (k) => ringsAt + k * CEREMONY.ringInterval,
         holdAt: ringsAt + CEREMONY.rings * CEREMONY.ringInterval,
         fireworksAt: ringsAt + (CEREMONY.rings - 1) * CEREMONY.ringInterval,
-        fadeOutAt: CEREMONY.seconds - CEREMONY.fadeOut
+        fadeOutAt: CEREMONY.seconds - CEREMONY.fadeOut,
+        fans
     };
 };
 
@@ -246,6 +254,24 @@ export const shotAt = (plan: CeremonyPlan, center: Point2, t: number): Shot => {
     // fireworks.
     const crowdFrom = plan.ring(2),
         crowdTo = plan.ring(5);
+    if (plan.fans && plan.fans.count > 0 && t >= plan.ring(1) && t < crowdTo) {
+        // The fans: from the court, a long lens up at their section as the stands light up round them, drifting
+        // slowly along the block.
+        const k = (t - plan.ring(1)) / (crowdTo - plan.ring(1));
+        const [fx, fy, fz] = plan.fans.focus;
+        const dx = fx - cx,
+            dz = fz - cz;
+        const length = Math.hypot(dx, dz) || 1;
+        const [ux, uz] = [dx / length, dz / length];
+        const [sx, sz] = [-uz, ux];
+        const drift = (k - 0.5) * 3;
+        return {
+            eye: [cx + ux * 10 + sx * (2 + drift * 0.4), 1.7, cz + uz * 10 + sz * (2 + drift * 0.4)],
+            target: [fx + sx * drift, fy, fz + sz * drift],
+            fov: 34 - k * 4,
+            scene: 'fans'
+        };
+    }
     if (t >= crowdFrom && t < crowdTo) {
         const k = (t - crowdFrom) / (crowdTo - crowdFrom);
         const look = -1.9 + k * 0.9;

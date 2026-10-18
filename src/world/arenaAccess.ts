@@ -199,14 +199,33 @@ export type StandBlock = { x0: number; x1: number; z0: number; z1: number; top: 
  * Solid stepped blocks replacing the seat-pedestal colliders: row k fills from its front edge to the next row's
  * front edge (the last row reaches the arena wall at `wallX`), so no gap is left to fall into.
  */
+/**
+ * The two walkways that cross each court-level stand in the FF-01 model (gaps in every seat row, measured from the
+ * GLB): the row colliders stop at their edges so the walkways stay open (owner report 2026-10-18: filled in, they
+ * were invisible walls that trapped anyone who got inside).
+ */
+export const SOURCE_STAND_AISLES: readonly (readonly [number, number])[] = [
+    [-10.1, -8.83],
+    [3.12, 4.39]
+];
+
 export const standBlocks = (side: 'west' | 'east', wallX: number): StandBlock[] => {
     const dir = side === 'west' ? -1 : 1;
     const front = SOURCE_STAND_FRONT[side];
-    return SOURCE_STAND_ROWS.map((row, k) => {
+    const blocks: StandBlock[] = [];
+    SOURCE_STAND_ROWS.forEach((row, k) => {
         const a = front + dir * SOURCE_STAND_PITCH * k;
         const b = k + 1 < SOURCE_STAND_ROWS.length ? front + dir * SOURCE_STAND_PITCH * (k + 1) : wallX;
-        return { x0: Math.min(a, b), x1: Math.max(a, b), z0: row.z0, z1: row.z1, top: row.top };
+        // The row, cut at each walkway it crosses.
+        let z0: number = row.z0;
+        for (const [g0, g1] of SOURCE_STAND_AISLES) {
+            if (g1 <= z0 || g0 >= row.z1) continue;
+            if (g0 > z0) blocks.push({ x0: Math.min(a, b), x1: Math.max(a, b), z0, z1: g0, top: row.top });
+            z0 = Math.max(z0, g1);
+        }
+        if (z0 < row.z1) blocks.push({ x0: Math.min(a, b), x1: Math.max(a, b), z0, z1: row.z1, top: row.top });
     });
+    return blocks;
 };
 
 export type StandStair = {

@@ -1,7 +1,8 @@
 // Authors the ceremony wave clips straight into the runtime character GLB, without Blender: Walk_Wave_Loop (walking
 // in while waving to the crowd) and Idle_Wave_Loop (standing on the mark, still waving). The body is the CC0 rig's
 // own Walk_Loop / Idle_Loop; the right arm pumps between a raised and a fully overhead version of the Boomerang
-// clip's overhead pose. In place (root translation zero); the runtime moves the actors.
+// clip's overhead pose, while the right fingers use the open-hand A_TPose. In place (root translation zero); the
+// runtime moves the actors.
 //
 // Usage: node tools/authorWaveClips.ts   (rewrites public/assets/characters/moonshot-humanoid.glb + manifest)
 import { createHash } from 'node:crypto';
@@ -105,6 +106,7 @@ const clip = (suffix: string) => {
 
 const idle = clip('Idle_Loop');
 const walk = clip('Walk_Loop');
+const openPalm = clip('A_TPose');
 const boomerang = clip('Finisher_Boomerang_Attacker');
 const joints = gltf.skins[0].joints;
 const nodeName = (index: number) => gltf.nodes[index].name ?? '';
@@ -125,6 +127,8 @@ const ARM: Record<string, [number, number]> = {
     lowerarm_r: [0.96, 0.42],
     hand_r: [0.82, 0.3]
 };
+/** Keep the raised waving hand open instead of inheriting the relaxed, curled fingers. */
+const RIGHT_FINGER = /^(thumb|index|middle|ring|pinky)_\d+_(?:leaf_)?r$/;
 /** A little lean and a turn of the head toward the raised hand. */
 const TORSO: Record<string, number> = { spine_02: 0.2, spine_03: 0.26, neck_01: 0.18, Head: 0.12 };
 
@@ -144,7 +148,9 @@ const author = (kind: 'walk' | 'idle') => {
             const bodyT = source.sample(node, 'translation', local) ?? [0, 0, 0];
             let q = body;
             const high = boomerang.sample(node, 'rotation', OVERHEAD) as Quat | null;
-            if (high && ARM[name]) {
+            if (RIGHT_FINGER.test(name)) {
+                q = openPalm.sample(node, 'rotation', 0) as Quat;
+            } else if (high && ARM[name]) {
                 // The loop must close: the wave rate is rounded to whole waves over the clip.
                 const waves = Math.max(1, Math.round(seconds * WAVE_RATE));
                 const phase = 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * t) / seconds);
@@ -258,7 +264,9 @@ manifest.verified.animationClips = gltf.animations.length;
 manifest.wave = {
     actions: [NAMES.walk, NAMES.idle],
     durationSeconds: { walk: WALK_SECONDS, idle: IDLE_SECONDS },
-    generator: 'tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body with the Boomerang overhead pose pumped on the right arm; no Blender)',
+    handPose: 'Open right palm from A_TPose; finger joints no longer inherit the curled locomotion pose',
+    generator:
+        'tools/authorWaveClips.ts (Walk_Loop / Idle_Loop body, open right palm from A_TPose, Boomerang overhead pose pumped on the right arm; no Blender)',
     rootTranslation: false
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 4)}\n`);

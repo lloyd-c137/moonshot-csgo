@@ -190,6 +190,37 @@ test('right-hand grip animation covers every finger used by held props', () => {
     }
 });
 
+test('ceremony wave clips keep all right-hand fingers in the authored open-palm pose', () => {
+    const { gltf, readAccessor } = readGlb(bytes);
+    const tPose = gltf.animations.find((animation) => animation.name.endsWith('A_TPose'));
+    assert.ok(tPose, 'has the rig open-palm reference pose');
+    const fingerNodes = gltf.nodes
+        .map((node, index) => ({ name: node.name ?? '', index }))
+        .filter(({ name }) => /^(thumb|index|middle|ring|pinky)_\d+_(?:leaf_)?r$/.test(name));
+    assert.equal(fingerNodes.length, 20, 'includes every right-hand finger segment');
+    assert.equal(manifest.wave.handPose, 'Open right palm from A_TPose; finger joints no longer inherit the curled locomotion pose');
+
+    for (const clipName of manifest.wave.actions) {
+        const wave = gltf.animations.find((animation) => animation.name === clipName);
+        assert.ok(wave, `has ${clipName}`);
+        for (const { name, index } of fingerNodes) {
+            const referenceChannel = tPose.channels.find(
+                (channel) => channel.target.node === index && channel.target.path === 'rotation'
+            );
+            const waveChannel = wave.channels.find(
+                (channel) => channel.target.node === index && channel.target.path === 'rotation'
+            );
+            assert.ok(referenceChannel, `${name} is present in A_TPose`);
+            assert.ok(waveChannel, `${name} is animated in ${clipName}`);
+            const openPose = readAccessor(tPose.samplers[referenceChannel.sampler].output)[0];
+            const wavePoses = readAccessor(wave.samplers[waveChannel.sampler].output);
+            for (const pose of wavePoses) {
+                assert.deepEqual(pose, openPose, `${clipName} keeps ${name} extended instead of curled`);
+            }
+        }
+    }
+});
+
 test('players are one solid colour (body, joints, bare head) unless a role explicitly overrides a region', () => {
     assert.deepEqual(characterMaterialColour('M_Joints', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);
     assert.deepEqual(characterMaterialColour('M_Head', [0.1, 0.4, 0.8]), [0.1, 0.4, 0.8]);

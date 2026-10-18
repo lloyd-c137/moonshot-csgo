@@ -439,7 +439,8 @@ const boot = async () => {
         });
     let signingIn = false;
     const enter = () => {
-        match.unlockAudio();
+        // Resume synchronously from the button gesture before auth or pointer-lock flows.
+        void match.unlockAudio().catch((error: Error) => shell.notify(`音频未能开启：${error.message}。请再点击进入校园`));
         // Every player has an account (no guests): sign in first; an unknown username is registered on the spot.
         if (hasEntered || !auth.available || auth.account) return lockPointer();
         if (signingIn) return;

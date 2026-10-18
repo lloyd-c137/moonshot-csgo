@@ -175,7 +175,7 @@ const MARKUP = `
       </div>
       <p class="load-error" id="load-error" role="alert" hidden></p>
       <button class="secondary" id="reload-button" type="button" hidden>重新加载</button>
-      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">ENTER THE ARENA</small><i class="play-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7"/></svg></i></button>
+      <button class="play-button" id="enter-button" type="button" disabled><span class="play-label" id="enter-label">正在加载</span><small aria-hidden="true">点击开启音频 · ENTER THE ARENA</small><i class="play-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7"/></svg></i></button>
       <p class="fine-print">账号只保存用户名、加密后的密码和战绩，不收集其他个人信息 · 场景由 FF-01 平面图推导，并非实地测量</p>
     </footer>
   </section>

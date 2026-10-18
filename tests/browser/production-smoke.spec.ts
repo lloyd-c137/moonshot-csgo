@@ -8,6 +8,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         Object.assign(window, { __decodedCombatAudio: decoded });
         const decode = AudioContext.prototype.decodeAudioData;
         AudioContext.prototype.decodeAudioData = function (data: ArrayBuffer) {
+            Object.assign(window, { __gameAudioContext: this });
             return decode.call(this, data).then((buffer) => {
                 decoded.push(buffer.duration);
                 return buffer;
@@ -46,6 +47,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
     await expect(page.locator('.stages li[data-state="done"]')).toHaveCount(6);
     await expect(page.locator('#boot-loader')).toBeHidden();
+    await expect(page.locator('#enter-button')).toContainText('点击开启音频');
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
     await expect.poll(() => assets['/assets/audio/homepage-theme.mp3']).toBe(200);
@@ -67,6 +69,9 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
         .toBe(true);
 
     await page.getByRole('button', { name: '进入校园' }).click();
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __gameAudioContext?: AudioContext }).__gameAudioContext?.state))
+        .toBe('running');
     await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     for (const [file, duration] of [

@@ -391,8 +391,13 @@ export const createSound = () => {
         stopTestClips: () => {
             for (const voice of testVoices.values()) voice.source.stop();
         },
-        /** Call from a user gesture (entering the campus) so browsers allow audio. */
-        unlock: () => void ensure(),
+        /** Call from a user gesture so browsers allow audio playback. */
+        unlock: async () => {
+            const audio = ensure();
+            if (!audio) throw new Error('浏览器不支持 Web Audio');
+            if (audio.state !== 'running') await audio.resume();
+            if (audio.state !== 'running') throw new Error('浏览器尚未开启音频');
+        },
         /** Keeps the 3D listener on the camera. */
         listener(position: V3, forward: V3) {
             if (!ctx) return;

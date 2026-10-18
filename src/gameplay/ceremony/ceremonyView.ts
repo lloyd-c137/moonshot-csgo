@@ -261,6 +261,8 @@ export const createCeremonyView = (
     };
 
     // ---------- light rings, centre out ----------
+    /** Scratch target for lookAt (reused every frame instead of allocating). */
+    const aimAt = new Vec3();
     const ringMeshes: { entity: EntityType; material: StandardMaterial }[] = [];
     const ringColours: V3[] = [
         [1, 0.96, 0.85],
@@ -512,7 +514,7 @@ export const createCeremonyView = (
                     const sweep = (t - plan!.ringsAt - 1.5) * 0.55;
                     const angle = (i / SPOTLIGHTS) * Math.PI * 2 + sweep;
                     spot.setPosition(center[0], STADIUM.roofInnerHeight - 1, center[1]);
-                    spot.lookAt(new Vec3(center[0] + Math.cos(angle) * 28, 9 + Math.sin(sweep * 1.7) * 2, center[1] + Math.sin(angle) * 28));
+                    spot.lookAt(aimAt.set(center[0] + Math.cos(angle) * 28, 9 + Math.sin(sweep * 1.7) * 2, center[1] + Math.sin(angle) * 28));
                     spot.rotateLocal(90, 0, 0);
                     spot.light!.intensity = 8 * Math.min(1, (t - plan!.ringsAt - 1.5) / 0.4);
                     return;
@@ -530,7 +532,7 @@ export const createCeremonyView = (
                     STADIUM.roofInnerHeight - 1,
                     center[1] + (oz * Math.cos(side) + ox * Math.sin(side)) * r
                 );
-                spot.lookAt(new Vec3(at[0], 0.9, at[2]));
+                spot.lookAt(aimAt.set(at[0], 0.9, at[2]));
                 spot.rotateLocal(90, 0, 0); // spot lights shine down their local −y
                 const on = Math.min(1, (t - e.start + 0.1) / 0.15);
                 spot.light!.intensity = 9 * on * (1 - fadeAll);
@@ -549,9 +551,12 @@ export const createCeremonyView = (
             });
             // Rings.
             ringMeshes.forEach(({ material }, k) => {
-                const level = ringLevel(plan!, k, t);
-                material.emissiveIntensity = level * 2.2;
-                material.update();
+                const intensity = ringLevel(plan!, k, t) * 2.2;
+                // Only re-upload the material when the ring's brightness actually changes.
+                if (material.emissiveIntensity !== intensity) {
+                    material.emissiveIntensity = intensity;
+                    material.update();
+                }
                 if (lastT < plan!.ring(k) && t >= plan!.ring(k)) events.struck.push(k);
             });
             centreLight.light!.intensity = Math.min(1, ringLevel(plan, 0, t)) * 2.4;
@@ -576,7 +581,7 @@ export const createCeremonyView = (
                     : target;
             smoothed = view;
             camera.setPosition(...view.eye);
-            camera.lookAt(new Vec3(...view.target));
+            camera.lookAt(aimAt.set(...view.target));
             camera.camera!.fov = view.fov;
             lastT = t;
             return events;

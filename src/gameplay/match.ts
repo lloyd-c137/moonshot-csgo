@@ -490,9 +490,20 @@ export const createMatch = ({
     );
     // ---------- fans: players out for the round walk the upper bowl (final ceremony and minute) ----------
     let fanMode = false;
+    const NO_IDS: readonly string[] = [];
+    /** Every roster id (hidden while the ceremony or MVP film owns the stage); one set reused across frames. */
+    const everyoneHiddenSet = new Set<string>();
+    const everyoneHidden = () => {
+        everyoneHiddenSet.clear();
+        for (const id of roster.keys()) everyoneHiddenSet.add(id);
+        return everyoneHiddenSet;
+    };
     /** Middle of the fans' section in the stands (the ceremony films the crowd there). */
     const fanFocus = fanSectionFocus(ringRadii(arenaOutline, arenaCenter), arenaCenter);
-    const parapetSeal = () => app.root.findByName(PARAPET_BARRIER_ENTITY_NAME) as Entity | null;
+    // Looked up once (a scene-graph search every frame is wasteful); retried until the arena has loaded.
+    let parapetEntity: Entity | null = null;
+    const parapetSeal = () =>
+        parapetEntity ?? (parapetEntity = app.root.findByName(PARAPET_BARRIER_ENTITY_NAME) as Entity | null);
     /** From the start of the final ceremony to the end of the round. */
     const standsOpenNow = () =>
         !!ceremonyRun ||
@@ -2512,7 +2523,8 @@ export const createMatch = ({
         if (wantFan && !fanMode) enterFanMode();
         else if (!wantFan && fanMode) leaveFanMode();
         const seal = parapetSeal();
-        if (seal && seal.enabled !== standsOpenNow()) seal.enabled = standsOpenNow();
+        const sealOn = standsOpenNow();
+        if (seal && seal.enabled !== sealOn) seal.enabled = sealOn;
         if (spectating && !fanMode) spectate(now);
         // In the dark the golden disc (and whoever carries it) is lit up for everyone to find.
         const goldAt = goldPosition();
@@ -3101,7 +3113,7 @@ export const createMatch = ({
             // The practice finisher also runs as a global finisher, so its end must be checked before the early return.
             finishPracticeFinisher();
             if (globalFinisher) {
-                avatars.update(poses, now, ceremonyRun || mvpRun ? new Set(roster.keys()) : executionView.hiddenIds());
+                avatars.update(poses, now, ceremonyRun || mvpRun ? everyoneHidden() : executionView.hiddenIds());
                 executionView.update(realRoomNow(), selfId());
                 const progress = executionProgress(globalExecution(globalFinisher), realRoomNow());
                 ui.executionPrompt(null);
@@ -3133,13 +3145,16 @@ export const createMatch = ({
             } else if (chargingSince !== null) ui.charge(null);
             if (chargingSince === null) chargeFullPlayed = false;
             updateCombatFeel(now);
+            const standsOpen = standsOpenNow();
             stands.update(
-                [
-                    ...[...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
-                    ...(labCeremony && ceremonyRun ? Array.from({ length: 14 }, (_, i) => `lab-fan-${i}`) : [])
-                ],
+                standsOpen
+                    ? [
+                          ...[...roster.values()].filter((entry) => entry.spectating).map((entry) => entry.id),
+                          ...(labCeremony && ceremonyRun ? Array.from({ length: 14 }, (_, i) => `lab-fan-${i}`) : [])
+                      ]
+                    : NO_IDS,
                 (id) => roster.get(id)?.colour ?? (id.startsWith('lab-fan-') ? (Number(id.slice(8)) * 53) % 360 : 0),
-                standsOpenNow(),
+                standsOpen,
                 now,
                 !!ceremonyRun,
                 net.fans(),
@@ -3175,7 +3190,7 @@ export const createMatch = ({
                 else poses.delete(labTargetId);
                 labUi?.dummy(labHp, Math.max(0, (labRespawnAt - now) / 1000));
             }
-            avatars.update(poses, now, ceremonyRun || mvpRun ? new Set(roster.keys()) : executionView.hiddenIds());
+            avatars.update(poses, now, ceremonyRun || mvpRun ? everyoneHidden() : executionView.hiddenIds());
             animateFeel(deltaTime, now);
             updateRound(now);
             effects.update(now < hitStopUntil ? 0 : deltaTime);

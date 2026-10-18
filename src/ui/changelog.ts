@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.30.1',
+        date: '2026.10.18',
+        title: '性能优化',
+        notes: [
+            '看台封口不再每帧遍历整个场景查找，Final 阶段的帧耗时更稳定。',
+            '入场仪式中灯圈只在亮度变化时更新材质，聚光灯和镜头不再每帧新建向量；非 Final 阶段跳过看台观众的整套计算。'
+        ]
+    },
+    {
         version: 'v0.30.0',
         date: '2026.10.18',
         title: '观众席集中与观众镜头',

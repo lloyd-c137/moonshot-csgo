@@ -58,6 +58,7 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
         return fan;
     };
     let assignment = new Map<string, number>();
+    let anyShown = false;
 
     return {
         /**
@@ -76,7 +77,10 @@ export const createStands = (app: AppBase, characters: CharacterAssetLoader, sea
             /** Not drawn at all (the local player, roaming in first person). */
             hide: string | null = null
         ) {
+            // Nothing to seat and nobody drawn: skip the per-frame work outside the final minute.
+            if (!active && assignment.size === 0 && !anyShown) return;
             assignment = active ? seatAssignment(spectatorIds, seats.length) : new Map();
+            anyShown = assignment.size > 0;
             const used = new Set(assignment.values());
             for (const [id, index] of assignment) {
                 const fan = fanAt(index);

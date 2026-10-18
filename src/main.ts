@@ -32,6 +32,7 @@ import type { GateState } from './gameplay/gateLobby';
 import { stepGate } from './gameplay/gateLobby';
 import { createIntro } from './gameplay/intro';
 import { createMatch } from './gameplay/match';
+import { PickupAssetLoader } from './gameplay/pickupAssetLoader';
 import { StuckDetector } from './gameplay/stuck';
 import { apiBase, createAuth } from './net/auth';
 import { addCampusCollisions } from './physics/collisionWorld';
@@ -236,7 +237,7 @@ const boot = async () => {
     let gateLive = false;
     const safeSpot = () => (gateState === 'lobby' ? SOUTH_GATE.spawn : undefined);
     shell.stage('characters', 'active');
-    const characters = await CharacterAssetLoader.load(app);
+    const [characters, pickupAssets] = await Promise.all([CharacterAssetLoader.load(app), PickupAssetLoader.load(app)]);
     shell.stage('characters', 'done');
     const atmosphere = setupAtmosphere(app, camera);
     const { sun, setNight } = atmosphere;
@@ -257,6 +258,7 @@ const boot = async () => {
         ui: shell,
         url: serverUrl,
         auth,
+        pickupAssets,
         arenaCenter: derivedWorld.arena.center as [number, number],
         characters,
         mirrors: dressing.mirrors,

@@ -1,0 +1,107 @@
+{
+  "generator": "tools/preparePickupModels.py",
+  "sources": [
+    {
+      "archive": "first-aid-kit-ggbotnet.zip",
+      "sha256": "c1dd2d49bfb9d19bc5d84362bcfa1e4a5e850d3cecf76b3b9bf3f48d4dc51a00",
+      "source": "https://opengameart.org/content/first-aid-kit-3d",
+      "title": "First Aid Kit 3D",
+      "author": "GGBotNet",
+      "license": "CC0"
+    },
+    {
+      "archive": "low-poly-monitor-mitylernal.zip",
+      "sha256": "6b83e7fc7069720bab576e426c354769f1b8d6c26eacc9e05a2a6b120223a0e8",
+      "source": "https://opengameart.org/content/low-poly-monitor",
+      "title": "Low-poly Monitor",
+      "author": "Mitylernal",
+      "license": "CC0"
+    },
+    {
+      "archive": "lowpoly-crystals-aredon.zip",
+      "sha256": "1dd81f2608cbb9893a89f1931261e937ba0b4198902aef6ba0c706b9c4cfb33c",
+      "source": "https://opengameart.org/content/lowpoly-crystals",
+      "title": "LowPoly Crystals",
+      "author": "Aredon",
+      "license": "CC0"
+    },
+    {
+      "archive": "gear-pack-elegant-crow.zip",
+      "sha256": "2ec380ee5499a79e742f7728295699f117d8ae8dd9ccbbb4a67bb191babd0c0a",
+      "source": "https://opengameart.org/content/gear-pack",
+      "title": "Gear Pack",
+      "author": "Elegant Crow",
+      "license": "CC-BY-SA-4.0"
+    }
+  ],
+  "models": [
+    {
+      "name": "revive-medkit",
+      "title": "First Aid Kit 3D",
+      "author": "GGBotNet",
+      "source": "https://opengameart.org/content/first-aid-kit-3d",
+      "license": "CC0",
+      "path": "/assets/pickups/revive-medkit.glb",
+      "bytes": 190740,
+      "sha256": "ebaf2390b397ca3ad9dee4b6ed229624e6923c5f014e7c4c5ac4736538f0bc02",
+      "triangles": 140,
+      "boundsMeters": [
+        0.823,
+        0.72,
+        0.246
+      ],
+      "heightMeters": 0.72
+    },
+    {
+      "name": "eye-monitor",
+      "title": "Low-poly Monitor",
+      "author": "Mitylernal",
+      "source": "https://opengameart.org/content/low-poly-monitor",
+      "license": "CC0",
+      "path": "/assets/pickups/eye-monitor.glb",
+      "bytes": 35076,
+      "sha256": "0a827f87de608cefd7ec89ab9e9ddabd920e5115e93a00a9e7e0a1d88821a2c9",
+      "triangles": 564,
+      "boundsMeters": [
+        0.994,
+        0.62,
+        0.303
+      ],
+      "heightMeters": 0.62
+    },
+    {
+      "name": "stealth-crystal",
+      "title": "LowPoly Crystals",
+      "author": "Aredon",
+      "source": "https://opengameart.org/content/lowpoly-crystals",
+      "license": "CC0",
+      "path": "/assets/pickups/stealth-crystal.glb",
+      "bytes": 12004,
+      "sha256": "a453316936423b9b3b39ac2cce25a21264a971b5daaab72502d71889453a8227",
+      "triangles": 80,
+      "boundsMeters": [
+        0.575,
+        0.78,
+        0.525
+      ],
+      "heightMeters": 0.78
+    },
+    {
+      "name": "creation-gear",
+      "title": "Gear Pack",
+      "author": "Elegant Crow",
+      "source": "https://opengameart.org/content/gear-pack",
+      "license": "CC-BY-SA-4.0",
+      "path": "/assets/pickups/creation-gear.glb",
+      "bytes": 239204,
+      "sha256": "18608877c5765c4b0b8b41d8d1745c6e74f181680e7ff72b0cbe5f9603c5b9b4",
+      "triangles": 864,
+      "boundsMeters": [
+        0.7,
+        0.7,
+        0.085
+      ],
+      "heightMeters": 0.7
+    }
+  ]
+}

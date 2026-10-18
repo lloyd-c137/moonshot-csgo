@@ -1,0 +1,9 @@
+Creation gear model derived from “Gear Pack” by Elegant Crow:
+https://opengameart.org/content/gear-pack
+
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: converted the gear_12 OBJ and 512 px texture to a self-contained GLB,
+centered it over the pickup origin, and uniformly scaled it to 0.70 m high.
+The derived model is distributed under CC BY-SA 4.0.

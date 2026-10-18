@@ -5,6 +5,16 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.19.0',
+        date: '2026.10.18',
+        title: '技能道具模型升级',
+        notes: [
+            '复活甲替换为医疗包模型，监控室之眼使用低多边形显示器，静止之力使用晶体，创造之力使用齿轮。',
+            'FRC 使用红色飞盘外观，并增加红色能量环与科技感光效。',
+            '道具模型来源与许可记录随资源清单提供；齿轮模型按 CC BY-SA 4.0 标注作者并附许可说明。'
+        ]
+    },
+    {
         version: 'v0.18.0',
         date: '2026.10.18',
         title: '技能与角色可视化',

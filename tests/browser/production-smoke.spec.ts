@@ -21,6 +21,7 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     page.on('response', (response) => {
         if (
             response.url().includes('/assets/campus/') ||
+            response.url().includes('/assets/pickups/') ||
             response.url().includes('/ammo/') ||
             response.url().includes('/assets/audio/')
         ) {
@@ -35,6 +36,9 @@ test('production preview loads FF-01, physics and pointer-lock entry flow', asyn
     expect(assets['/assets/campus/MAC_Campus_FF01.glb']).toBe(200);
     expect(assets['/assets/campus/rooms.json']).toBe(200);
     expect(assets['/ammo/ammo.wasm.wasm']).toBe(200);
+    for (const name of ['revive-medkit.glb', 'eye-monitor.glb', 'stealth-crystal.glb', 'creation-gear.glb']) {
+        expect(assets[`/assets/pickups/${name}`]).toBe(200);
+    }
     for (const name of ['world.json', 'ceiling-mask.png', 'minimap.png']) {
         expect(assets[`/assets/campus/derived/${name}`]).toBe(200);
     }

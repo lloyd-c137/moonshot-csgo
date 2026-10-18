@@ -71,6 +71,7 @@ import {
     inspectPose,
     TOSS_AT
 } from './inspect';
+import type { PickupAssetLoader } from './pickupAssetLoader';
 import { createPickupVisual } from './pickupVisuals';
 import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
@@ -90,6 +91,7 @@ type Options = {
     ui: Ui;
     url: string | null;
     auth: Auth;
+    pickupAssets: PickupAssetLoader;
     /** Middle of the 莲花球场 (X/Z): the final showdown is fought there. */
     arenaCenter: [number, number];
     characters: CharacterAssetLoader;
@@ -117,6 +119,7 @@ export const createMatch = ({
     ui,
     url,
     auth,
+    pickupAssets,
     arenaCenter,
     characters,
     mirrors,
@@ -183,7 +186,7 @@ export const createMatch = ({
     let creationNextAt = 0;
     const pickupMeshes = new Map<string, Entity>();
     for (const spawn of ITEM_SPAWNS) {
-        const entity = createPickupVisual(app, spawn.kind);
+        const entity = createPickupVisual(app, spawn.kind, pickupAssets);
         entity.setPosition(...spawn.at);
         pickupMeshes.set(spawn.id, entity);
     }

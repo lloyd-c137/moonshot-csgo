@@ -494,7 +494,9 @@ const boot = async () => {
         shell.notify('当前 HTTP 页面无法锁定鼠标；请将鼠标留在游戏窗口内转动视角');
     };
     const lockPointer = () => {
-        if (!window.isSecureContext || typeof canvas.requestPointerLock !== 'function') {
+        // Pointer Lock works on plain-HTTP pages too (it is not limited to secure contexts), so the campus LAN
+        // uses it like the public site; the mouse fallback is only for a browser that refuses it.
+        if (typeof canvas.requestPointerLock !== 'function') {
             if (hasEntered) resumeMouseFallback();
             else beginPlay(true);
             return;
@@ -505,7 +507,9 @@ const boot = async () => {
         });
     };
     window.addEventListener('mousemove', (event) => {
-        if (!fallbackInput || !hasEntered || introActive) return;
+        // A held button drags the view through the controller itself; only free moves turn it here (else the
+        // view turned twice as fast while charging a throw).
+        if (!fallbackInput || !hasEntered || introActive || event.buttons !== 0) return;
         const script = player.script?.get('firstPersonController') as
             | { _angles?: Vec3; lookSens?: number }
             | null;
@@ -568,6 +572,11 @@ const boot = async () => {
         if (document.pointerLockElement === canvas) {
             fallbackInput = false;
             canvas.dataset.gameplayInputActive = 'false';
+            // Back to locked mouse-look: the controller reads raw pointer-lock movement again.
+            const script = player.script?.get('firstPersonController') as
+                | { _desktopInput?: { _pointerLock: boolean } }
+                | null;
+            if (script?._desktopInput) script._desktopInput._pointerLock = true;
             match.homepageMusic(false);
             if (!hasEntered) beginPlay(false);
             rigidbodySystem.timeScale = 1;

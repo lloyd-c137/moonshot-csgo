@@ -187,13 +187,16 @@ test('item pickups are server-authoritative, bounded to the room point, and the 
     assert.equal(room.players.get('b').hasReviveArmor, true);
     assert.equal(room.items.get(revive.id).available, false);
     room.players.get('b').hp = 1;
-    // Move both players to a known unobstructed test lane after pickup, then exercise the real hit path.
-    pose('a', [0, 0.9, 0], 5000);
-    pose('b', [8, 0.9, 0], 5000);
+    // This test is about revive behavior, not traversal from M116. Teleport the
+    // fixtures and reset their lag-compensation histories so the hit has a
+    // deterministic, unobstructed pose in both local and parallel CI runs.
+    for (const [id, p] of [['a', [0, 0.9, 0]], ['b', [8, 0.9, 0]]])
+        room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0 }, tp: true }, 5000);
     room.message('a', { type: 'throw', throw: { id: 1, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, 5000);
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 5500);
     assert.equal(room.players.get('b').alive, true);
     assert.equal(room.players.get('b').hp, MAX_HP);
+    assert.ok(inbox.get('b').some((message) => message.type === 'struck' && message.revived));
     assert.ok(inbox.get('b').some((message) => message.type === 'revived'));
 });
 

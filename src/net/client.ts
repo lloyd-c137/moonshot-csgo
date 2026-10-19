@@ -4,6 +4,7 @@ import type { MomentCutscene } from '../gameplay/cutscenes/cutscenes';
 import type { Execution } from '../gameplay/execution';
 import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes';
 
+import { createNetworkDiagnostics } from './diagnostics';
 import { PoseBuffer, RENDER_DELAY, ServerClock } from './interpolation';
 import type {
     AccountStats,
@@ -17,12 +18,13 @@ import type {
     RoundState,
     Scores,
     ServerMessage,
+    StampedPose,
     ThrowRecord,
     Vec3Tuple,
     WorldItem
 } from './protocol';
 import { POSE_HZ, PROTOCOL_VERSION } from './protocol';
-import { createUuid } from './uuid';
+import { applyPoseDelta } from './snapshotDelta';
 
 export type NetState = 'offline' | 'connecting' | 'online' | 'rejected';
 
@@ -114,10 +116,15 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
     let lastPoseAt = 0;
     const history = new Map<string, PoseBuffer>();
     /** Latest pose of each fan roaming the stands (no interpolation buffer: it is decoration). */
-    let fans = new Map<string, PlayerPose>();
+    const fans = new Map<string, PlayerPose>();
+    let snapshotEpoch: number | null = null;
+    let snapshotSeq = 0;
+    let visiblePoses: Record<string, StampedPose> = {};
+    let visibleFans: Record<string, StampedPose> = {};
     const clock = new ServerClock();
     let latency: number | null = null;
     let simulatedRtt = 0;
+    const diagnostics = createNetworkDiagnostics();
     // Latency probe every 2 s while connected.
     window.setInterval(() => {
         if (state === 'online') send({ type: 'ping', c: Math.round(performance.now() * 10) / 10 });
@@ -125,15 +132,18 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
 
     const setState = (next: NetState, detail?: string) => {
         state = next;
+        diagnostics.state(next, socket?.bufferedAmount ?? 0);
         handlers.state(next, detail);
     };
     const send = (message: object) => {
         const current = socket;
         if (current?.readyState !== WebSocket.OPEN) return;
+        diagnostics.state(state, current.bufferedAmount);
         const payload = JSON.stringify(message);
         const delay = state === 'online' ? simulatedRtt / 2 : 0;
         if (!delay) {
             current.send(payload);
+            diagnostics.state(state, current.bufferedAmount);
             return;
         }
         window.setTimeout(() => {
@@ -201,15 +211,41 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 break;
             case 'snapshot': {
                 clock.observe(message.t, performance.now());
-                for (const [id, pose] of Object.entries(message.poses)) {
-                    if (id === me) continue;
-                    let buffer = history.get(id);
-                    if (!buffer) history.set(id, (buffer = new PoseBuffer()));
-                    // A room still running the previous version sends no receive stamp: fall back to the snapshot time.
-                    buffer.push(Number.isFinite(pose.t) ? pose.t : message.t, pose);
+                if (message.seq !== undefined) send({ type: 'snapshotAck', seq: message.seq });
+                snapshotEpoch = null;
+                snapshotSeq = message.seq ?? 0;
+                visiblePoses = message.poses;
+                visibleFans = message.fans ?? {};
+                applySnapshotPoses(message.poses, message.fans ?? {}, message.t);
+                break;
+            }
+            case 'snapshotFull': {
+                if (snapshotEpoch === message.epoch && message.seq <= snapshotSeq) break;
+                if (snapshotEpoch !== null && message.epoch !== snapshotEpoch) {
+                    history.clear();
+                    fans.clear();
                 }
-                for (const id of history.keys()) if (!(id in message.poses)) history.delete(id);
-                fans = new Map(Object.entries(message.fans ?? {}).filter(([id]) => id !== me));
+                snapshotEpoch = message.epoch;
+                snapshotSeq = message.seq;
+                visiblePoses = message.poses;
+                visibleFans = message.fans ?? {};
+                clock.observe(message.t, performance.now());
+                applySnapshotPoses(visiblePoses, visibleFans, message.t);
+                send({ type: 'snapshotAck', seq: message.seq });
+                break;
+            }
+            case 'snapshotDelta': {
+                if (snapshotEpoch !== message.epoch || message.baseSeq !== snapshotSeq || message.seq !== snapshotSeq + 1) {
+                    diagnostics.resync();
+                    send({ type: 'snapshotResync', epoch: snapshotEpoch ?? undefined, seq: snapshotSeq || undefined });
+                    break;
+                }
+                snapshotSeq = message.seq;
+                visiblePoses = applyPoseDelta(visiblePoses, message.updates, message.removed);
+                visibleFans = applyPoseDelta(visibleFans, message.fanUpdates ?? {}, message.fanRemoved ?? []);
+                clock.observe(message.t, performance.now());
+                applySnapshotPoses(visiblePoses, visibleFans, message.t);
+                send({ type: 'snapshotAck', seq: message.seq });
                 break;
             }
             case 'thrown':
@@ -281,6 +317,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             case 'pong': {
                 const rtt = performance.now() - message.c;
                 latency = latency === null ? rtt : latency + (rtt - latency) * 0.3;
+                diagnostics.rtt(rtt);
                 handlers.latency(Math.round(latency));
                 break;
             }
@@ -329,6 +366,22 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         }
     };
 
+    const applySnapshotPoses = (
+        poses: Record<string, StampedPose>,
+        fanPoses: Record<string, StampedPose>,
+        snapshotTime: number
+    ) => {
+        for (const id of history.keys()) if (!(id in poses)) history.delete(id);
+        for (const [id, pose] of Object.entries(poses)) {
+            if (id === me) continue;
+            let buffer = history.get(id);
+            if (!buffer) history.set(id, (buffer = new PoseBuffer()));
+            buffer.push(Number.isFinite(pose.t) ? pose.t : snapshotTime, pose);
+        }
+        for (const id of fans.keys()) if (!(id in fanPoses)) fans.delete(id);
+        for (const [id, pose] of Object.entries(fanPoses)) if (id !== me) fans.set(id, pose);
+    };
+
     const open = () => {
         if (!url) return setState('offline');
         setState('connecting');
@@ -345,6 +398,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     version: PROTOCOL_VERSION,
                     name: wantName,
                     phase: wantPhase,
+                    capabilities: { snapshotAck: true, snapshotDelta: true },
                     ...(wantToken ? { token: wantToken } : {})
                 })
             )
@@ -352,6 +406,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         current.addEventListener('message', (event) => {
             try {
                 const message = JSON.parse(String(event.data)) as ServerMessage;
+                if (message.type === 'snapshot' || message.type === 'snapshotFull' || message.type === 'snapshotDelta')
+                    diagnostics.snapshotText(String(event.data), message.seq);
                 const delay = state === 'online' ? simulatedRtt / 2 : 0;
                 if (!delay) onMessage(message);
                 else
@@ -474,7 +530,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             send({ type: 'skipMomentCutscene', id });
         },
         prepareExecution(target: string) {
-            const requestId = createUuid();
+            const requestId = crypto.randomUUID();
             send({ type: 'executionPrepare', requestId, target });
             return requestId;
         },

@@ -1,20 +1,23 @@
+import { createReadStream } from 'node:fs';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { PerformanceObserver, performance, monitorEventLoopDelay } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 
 import { SPAWN_POINTS } from '../../src/config/spawns.ts';
-import { parseClientMessage, SNAPSHOT_HZ } from '../../src/net/protocol.ts';
+import { GAME_TICK_HZ, parseClientMessage } from '../../src/net/protocol.ts';
 import type { ServerMessage } from '../../src/net/protocol.ts';
 import { sqlAccountDb } from '../accountDb.ts';
 import { Accounts } from '../accounts.ts';
 import { handleApi } from '../api.ts';
 import { originAllowed, requestOriginAllowed } from '../originPolicy.ts';
+import { isCriticalServerMessage, OutboundPolicy, SnapshotAcks, SnapshotDeltaPublisher } from '../outboundPolicy.ts';
+import { RealtimeMetrics } from '../realtimeMetrics.ts';
 import { Room } from '../room.ts';
 
 import { FileAvatarStore } from './avatars.ts';
@@ -85,61 +88,74 @@ const readConfig = async (cwd: string, overrides: Partial<CampusConfig> = {}): P
     };
 };
 
-const staticResponse = async (request: IncomingMessage, url: URL, root: string) => {
+const staticAsset = async (request: IncomingMessage, url: URL, root: string) => {
+    const lookupStarted = performance.now();
     let requested: string;
     try {
         requested = decodeURIComponent(url.pathname);
     } catch {
-        return new Response('Bad Request', { status: 400 });
+        return { status: 400, headers: new Headers(), filename: null as string | null };
     }
-    if (requested.includes('\\') || requested.split('/').includes('..')) return new Response('Forbidden', { status: 403 });
+    if (requested.includes('\\') || requested.split('/').includes('..'))
+        return { status: 403, headers: new Headers(), filename: null as string | null };
     const rootReal = await realpath(root);
     const candidate = resolve(rootReal, `.${requested}`);
     const relativePath = relative(rootReal, candidate);
     if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath))
-        return new Response('Forbidden', { status: 403 });
+        return { status: 403, headers: new Headers(), filename: null as string | null };
     let filename = candidate;
     try {
         if ((await stat(filename)).isDirectory()) filename = resolve(filename, 'index.html');
-        await stat(filename);
         const realFile = await realpath(filename);
         const rel = relative(rootReal, realFile);
-        if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return new Response('Forbidden', { status: 403 });
+        if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+            return { status: 403, headers: new Headers(), filename: null as string | null };
         filename = realFile;
     } catch {
         filename = resolve(rootReal, 'index.html');
         try {
-            await stat(filename);
+            await realpath(filename);
         } catch {
-            return new Response('Not Found', { status: 404 });
+            return { status: 404, headers: new Headers(), filename: null as string | null };
         }
     }
-    const extension = extname(filename).toLowerCase();
-    const contentType = filename.endsWith('.glb.gz') ? 'application/gzip' : (MIME[extension] ?? 'application/octet-stream');
     const rel = relative(rootReal, filename).split(sep).join('/');
+    const extension = extname(filename).toLowerCase();
+    const originalType = filename.endsWith('.glb.gz') ? 'application/gzip' : (MIME[extension] ?? 'application/octet-stream');
+    let encoding: 'br' | 'gzip' | null = null;
+    if (COMPRESSIBLE.has(extension)) {
+        const accept = String(request.headers['accept-encoding'] ?? '');
+        const variants: ['br' | 'gzip', string][] = [['br', `${filename}.br`], ['gzip', `${filename}.gz`]];
+        for (const [candidateEncoding, candidate] of variants) {
+            if (!new RegExp(`(?:^|,)\\s*${candidateEncoding}(?:\\s*;\\s*q=(?!0(?:\\.0*)?)[0-9.]+)?(?:\\s*,|$)`, 'i').test(accept)) continue;
+            try {
+                const realCandidate = await realpath(candidate);
+                const candidateStat = await stat(realCandidate);
+                const inside = relative(rootReal, realCandidate);
+                if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside) || !candidateStat.isFile()) continue;
+                filename = realCandidate;
+                encoding = candidateEncoding;
+                break;
+            } catch {
+                // A normal build without a precompressed sidecar remains serveable.
+            }
+        }
+    }
+    const fileStat = await stat(filename);
+    const etag = `W/"${fileStat.size.toString(16)}-${Math.trunc(fileStat.mtimeMs).toString(16)}-${encoding ?? 'identity'}"`;
     const headers = new Headers({
-        'content-type': contentType,
+        'content-type': originalType,
         'cache-control': rel.startsWith('build/')
             ? 'public, max-age=31536000, immutable'
             : /^(assets\/(audio|ui|branding)\/|ammo\/)/.test(rel)
               ? 'public, max-age=86400'
-              : 'no-cache'
+              : 'no-cache',
+        etag,
+        'content-length': String(fileStat.size)
     });
-    let bytes = new Uint8Array(await readFile(filename));
-    const acceptEncoding = request.headers['accept-encoding'] ?? '';
-    if (COMPRESSIBLE.has(extension) && typeof acceptEncoding === 'string') {
-        if (/\bbr\b/.test(acceptEncoding)) {
-            bytes = new Uint8Array(brotliCompressSync(bytes, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } }));
-            headers.set('content-encoding', 'br');
-            headers.set('vary', 'Accept-Encoding');
-        } else if (/\bgzip\b/.test(acceptEncoding)) {
-            bytes = new Uint8Array(gzipSync(bytes));
-            headers.set('content-encoding', 'gzip');
-            headers.set('vary', 'Accept-Encoding');
-        }
-    }
-    if (request.method === 'HEAD') return new Response(null, { headers });
-    return new Response(bytes, { headers });
+    if (COMPRESSIBLE.has(extension)) headers.set('vary', 'Accept-Encoding');
+    if (encoding) headers.set('content-encoding', encoding);
+    return { status: 200, headers, filename, lookupMs: performance.now() - lookupStarted };
 };
 
 const requestBody = async (request: IncomingMessage) => {
@@ -159,10 +175,19 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
     const config = await readConfig(cwd, options.config);
     await mkdir(config.DATA_DIR, { recursive: true });
     const databasePath = resolve(config.DATA_DIR, 'campus.sqlite');
-    const { database, storage } = openAccountDatabase(databasePath);
+    const metrics = new RealtimeMetrics();
+    const eventLoop = monitorEventLoopDelay({ resolution: 20 });
+    eventLoop.enable();
+    let lastElu = performance.eventLoopUtilization();
+    let lastCpu = process.cpuUsage();
+    const gcObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) metrics.observe('gcDurationMs', entry.duration);
+    });
+    gcObserver.observe({ entryTypes: ['gc'] });
+    const { database, storage } = openAccountDatabase(databasePath, (name, ms) => metrics.observe(name, ms));
     let accounts: Accounts;
     try {
-        accounts = inTransaction(database, () => new Accounts(sqlAccountDb(storage)));
+        accounts = inTransaction(database, () => new Accounts(sqlAccountDb(storage)), (name, ms) => metrics.observe(name, ms));
     } catch (error) {
         database.close();
         throw error;
@@ -171,26 +196,65 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
     const sockets = new Map<string, WebSocket>();
     let timer: NodeJS.Timeout | null = null;
     let counter = 0;
-    const send = (socket: WebSocket | undefined, message: ServerMessage) => {
+    const outbound = new OutboundPolicy();
+    const snapshotAcks = new SnapshotAcks();
+    const snapshotPublisher = new SnapshotDeltaPublisher();
+    const send = (id: string, socket: WebSocket | undefined, message: ServerMessage, serialized?: string) => {
         if (!socket?.readyState) return;
+        const start = performance.now();
+        let outgoing = message;
+        if (message.type === 'snapshot') {
+            const pressure = outbound.decide(id, message, socket.bufferedAmount, Date.now());
+            if (pressure === 'coalesce') {
+                metrics.increment('coalescedSnapshots');
+                return;
+            }
+            if (pressure === 'close') {
+                metrics.increment('slowConnections');
+                socket.close(1013, 'slow connection');
+                return;
+            }
+            const next = snapshotAcks.next(id, Date.now());
+            if (next.type === 'coalesce') {
+                metrics.increment('coalescedSnapshots');
+                return;
+            }
+            if (next.type === 'close') {
+                metrics.increment('slowConnections');
+                socket.close(1013, 'slow connection');
+                return;
+            }
+            outgoing = snapshotPublisher.encode(id, message, next.seq, Date.now());
+        }
+        const text = serialized && message.type !== 'snapshot' ? serialized : JSON.stringify(outgoing);
+        const bytes = Buffer.byteLength(text);
+        metrics.observe('snapshotSerializeMs', performance.now() - start);
+        metrics.observe('messageBytes', bytes);
+        if (message.type === 'snapshot') metrics.observe('snapshotBytes', bytes);
+        if (message.type !== 'snapshot' && outbound.decide(id, message, socket.bufferedAmount, Date.now()) === 'close') {
+            metrics.increment('slowConnections');
+            socket.close(1013, 'slow connection');
+            return;
+        }
         try {
-            socket.send(JSON.stringify(message));
+            const sendStarted = performance.now();
+            socket.send(text);
+            metrics.observe('websocketSendCallMs', performance.now() - sendStarted);
+            metrics.increment('outboundBytes', bytes);
+            metrics.increment(message.type === 'snapshot' || message.type === 'snapshotFull' || message.type === 'snapshotDelta' ? 'snapshots' : 'serverMessages');
+            if (isCriticalServerMessage(message)) metrics.increment('criticalEvents');
         } catch {
             // The connection closed between a room event and send.
         }
     };
     const room = new Room(
         {
-            to: (id, message) => send(sockets.get(id), message),
+            to: (id, message) => send(id, sockets.get(id), message),
             all: (message, except) => {
                 const text = JSON.stringify(message);
                 for (const [id, socket] of sockets) {
                     if (id === except || socket.readyState !== 1) continue;
-                    try {
-                        socket.send(text);
-                    } catch {
-                        // The connection closed between a room event and send.
-                    }
+                    send(id, socket, message, text);
                 }
             },
             close: (id) => sockets.get(id)?.close(1008, 'rejected')
@@ -206,7 +270,10 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
     const httpServer = createServer(async (incoming, outgoing) => {
         try {
             const url = new URL(incoming.url ?? '/', `http://${incoming.headers.host ?? 'localhost'}`);
+            const requestStarted = performance.now();
             if (url.pathname === '/health') {
+                metrics.increment('httpRequests');
+                metrics.observe('httpRequestMs', performance.now() - requestStarted);
                 outgoing.writeHead(200, { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' });
                 outgoing.end('ok');
                 return;
@@ -251,6 +318,8 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
                 Object.assign(headers, cors, { 'cache-control': 'no-store' });
                 outgoing.writeHead(response.status, headers);
                 outgoing.end(new Uint8Array(await response.arrayBuffer()));
+                metrics.increment('httpRequests');
+                metrics.observe('httpRequestMs', performance.now() - requestStarted);
                 return;
             }
             if (url.pathname === '/ws') {
@@ -263,14 +332,31 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
                 outgoing.end();
                 return;
             }
-            const response = await staticResponse(incoming, url, config.DIST_DIR);
-            const headers = Object.fromEntries(response.headers.entries());
-            outgoing.writeHead(response.status, headers);
-            outgoing.end(new Uint8Array(await response.arrayBuffer()));
+            const asset = await staticAsset(incoming, url, config.DIST_DIR);
+            metrics.observe('staticLookupMs', asset.lookupMs ?? performance.now() - requestStarted);
+            if (asset.status === 200 && incoming.headers['if-none-match'] === asset.headers.get('etag')) {
+                outgoing.writeHead(304, Object.fromEntries(asset.headers.entries()));
+                outgoing.end();
+                metrics.increment('staticNotModified');
+            } else {
+                outgoing.writeHead(asset.status, Object.fromEntries(asset.headers.entries()));
+                if (incoming.method === 'HEAD' || asset.status !== 200 || !asset.filename) outgoing.end();
+                else {
+                    const streamStarted = performance.now();
+                    const stream = createReadStream(asset.filename);
+                    stream.on('error', () => outgoing.destroy());
+                    stream.once('data', () => metrics.observe('staticFirstByteMs', performance.now() - streamStarted));
+                    stream.on('end', () => metrics.observe('staticTransferMs', performance.now() - streamStarted));
+                    stream.pipe(outgoing);
+                }
+            }
+            metrics.increment('httpRequests');
+            metrics.observe('httpRequestMs', performance.now() - requestStarted);
         } catch (error) {
             const status = (error as Error).message === 'Request body too large' ? 413 : 500;
             outgoing.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
             outgoing.end(status === 413 ? 'Payload Too Large' : 'Internal Server Error');
+            metrics.increment('httpErrors');
             if (status === 500) console.error('Request failed');
         }
     });
@@ -302,19 +388,70 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
                 budgetAt = now;
             }
             if (--budget < 0) return;
-            room.message(id, parseClientMessage(isBinary ? '' : data.toString()), now);
+            const inboundBytes = Array.isArray(data) ? data.reduce((sum, chunk) => sum + chunk.byteLength, 0) : data.byteLength;
+            metrics.increment('inboundBytes', inboundBytes);
+            const message = parseClientMessage(isBinary ? '' : data.toString());
+            if (message?.type === 'snapshotAck') {
+                snapshotAcks.acknowledge(id, message.seq);
+                snapshotPublisher.acknowledge(id, message.seq, now);
+                return;
+            }
+            if (message?.type === 'snapshotResync') {
+                snapshotAcks.resync(id);
+                snapshotPublisher.resync(id);
+                return;
+            }
+            if (message?.type === 'hello') {
+                room.message(id, message, now);
+                if (room.players.has(id)) snapshotPublisher.register(id, message.capabilities?.snapshotAck === true && message.capabilities.snapshotDelta === true);
+                return;
+            }
+            room.message(id, message, now);
         });
-        const drop = () => {
+        const drop = (reason: string) => {
             if (!sockets.delete(id)) return;
+            metrics.increment(`disconnect.${reason}`);
+            outbound.forget(id);
+            snapshotAcks.forget(id);
+            snapshotPublisher.forget(id);
             room.disconnect(id);
             if (!sockets.size && timer) {
                 clearInterval(timer);
                 timer = null;
             }
         };
-        socket.on('close', drop);
-        socket.on('error', drop);
-        if (!timer) timer = setInterval(() => room.tick(Date.now()), 1000 / SNAPSHOT_HZ);
+        socket.on('close', (code) => drop(`close${code}`));
+        socket.on('error', () => drop('error'));
+        if (!timer) {
+            const interval = 1000 / GAME_TICK_HZ;
+            let expectedTickAt = performance.now() + interval;
+            let lastTickStarted = 0;
+            let nextReportAt = Date.now() + 60_000;
+            timer = setInterval(() => {
+                const started = performance.now();
+                if (lastTickStarted) metrics.observe('tickFrequencyHz', 1000 / (started - lastTickStarted));
+                lastTickStarted = started;
+                metrics.observe('tickDriftMs', started - expectedTickAt);
+                expectedTickAt = started + interval;
+                room.tick(Date.now());
+                metrics.observe('roomTickMs', performance.now() - started);
+                if (Date.now() >= nextReportAt) {
+                    nextReportAt = Date.now() + 60_000;
+                    const elu = performance.eventLoopUtilization(lastElu);
+                    const cpu = process.cpuUsage(lastCpu);
+                    metrics.observe('eventLoopUtilization', elu.utilization);
+                    metrics.observe('cpuMsPerMinute', (cpu.user + cpu.system) / 1000);
+                    metrics.observe('rssBytes', process.memoryUsage().rss);
+                    metrics.observe('heapUsedBytes', process.memoryUsage().heapUsed);
+                    metrics.observe('eventLoopDelayP95Ms', eventLoop.percentile(95) / 1e6);
+                    metrics.observe('eventLoopDelayMaxMs', eventLoop.max / 1e6);
+                    console.log(JSON.stringify({ event: 'realtime-metrics', runtime: 'node', activeSockets: sockets.size, players: room.online, ...metrics.snapshot() }));
+                    eventLoop.reset();
+                    lastElu = performance.eventLoopUtilization();
+                    lastCpu = process.cpuUsage();
+                }
+            }, interval);
+        }
     });
     const listen = () => new Promise<void>((resolveListen, reject) => {
         httpServer.once('error', reject);
@@ -330,8 +467,10 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
         await new Promise<void>((resolveClose) => webSockets.close(() => resolveClose()));
         await new Promise<void>((resolveClose) => httpServer.close(() => resolveClose()));
         database.close();
+        eventLoop.disable();
+        gcObserver.disconnect();
     };
-    return { httpServer, webSockets, room, accounts, database, config, listen, close };
+    return { httpServer, webSockets, room, accounts, database, config, metrics, listen, close };
 };
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

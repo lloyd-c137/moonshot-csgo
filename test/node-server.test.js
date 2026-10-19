@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { brotliCompressSync } from 'node:zlib';
 
 import { WebSocket } from 'ws';
 
@@ -32,7 +33,12 @@ const connect = (url, origin) =>
     new Promise((resolve, reject) => {
         const socket = new WebSocket(url, { origin });
         socket.messages = [];
-        socket.on('message', (data) => socket.messages.push(JSON.parse(data.toString())));
+        socket.on('message', (data) => {
+            const message = JSON.parse(data.toString());
+            socket.messages.push(message);
+            if (message.type === 'snapshotFull' || message.type === 'snapshotDelta' || (message.type === 'snapshot' && message.seq))
+                socket.send(JSON.stringify({ type: 'snapshotAck', seq: message.seq }));
+        });
         socket.once('open', () => resolve(socket));
         socket.once('error', reject);
     });
@@ -54,6 +60,7 @@ test('Node campus server serves static/API, hosts authoritative multiplayer, rej
     await mkdir(join(dist, 'ammo'), { recursive: true });
     await writeFile(join(dist, 'index.html'), '<html>campus</html>');
     await writeFile(join(dist, 'build', 'app.js'), 'export const ok = true;');
+    await writeFile(join(dist, 'build', 'app.js.br'), brotliCompressSync('export const ok = true;'));
     await writeFile(join(dist, 'ammo', 'test.wasm'), new Uint8Array([0, 97, 115, 109]));
     const config = {
         PORT: 0,
@@ -76,6 +83,16 @@ test('Node campus server serves static/API, hosts authoritative multiplayer, rej
     const script = await fetch(`${base}/build/app.js`);
     assert.match(script.headers.get('content-type'), /javascript/);
     assert.equal(script.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    const compressed = await fetch(`${base}/build/app.js`, { headers: { 'accept-encoding': 'br' } });
+    assert.equal(compressed.headers.get('content-encoding'), 'br');
+    assert.match(compressed.headers.get('vary'), /Accept-Encoding/i);
+    assert.equal(compressed.headers.get('content-type'), script.headers.get('content-type'));
+    assert.equal(await compressed.text(), 'export const ok = true;');
+    const head = await fetch(`${base}/build/app.js`, { method: 'HEAD', headers: { 'accept-encoding': 'br' } });
+    assert.equal(head.headers.get('content-length'), String(brotliCompressSync('export const ok = true;').length));
+    assert.equal(await head.text(), '');
+    const cached = await fetch(`${base}/build/app.js`, { headers: { 'if-none-match': script.headers.get('etag') } });
+    assert.equal(cached.status, 304);
     const wasm = await fetch(`${base}/ammo/test.wasm`);
     assert.equal(wasm.headers.get('content-type'), 'application/wasm');
     assert.equal(wasm.headers.get('cache-control'), 'public, max-age=86400');
@@ -90,8 +107,9 @@ test('Node campus server serves static/API, hosts authoritative multiplayer, rej
         a.close();
         b.close();
     });
-    a.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'A', token: tokenA, phase: 'lobby' }));
-    b.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'B', token: tokenB, phase: 'lobby' }));
+    const capabilities = { snapshotAck: true, snapshotDelta: true };
+    a.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'A', token: tokenA, phase: 'lobby', capabilities }));
+    b.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'B', token: tokenB, phase: 'lobby', capabilities }));
     const welcomeA = await until(a, (message) => message.type === 'welcome');
     const welcomeB = await until(b, (message) => message.type === 'welcome');
     const playerA = welcomeA.players.find((player) => player.id === welcomeA.id);
@@ -117,10 +135,13 @@ test('Node campus server serves static/API, hosts authoritative multiplayer, rej
     a.send(JSON.stringify({ type: 'pose', pose: { p: aPos, yaw: 0, pitch: 0 } }));
     b.send(JSON.stringify({ type: 'pose', pose: { p: bPos, yaw: 0, pitch: 0 } }));
     a.send(JSON.stringify({ type: 'ping', c: 1 }));
-    const snapshotA = await until(a, (message) => message.type === 'snapshot' && message.poses?.[welcomeB.id]);
-    const snapshotB = await until(b, (message) => message.type === 'snapshot' && message.poses?.[welcomeA.id]);
-    assert.ok(snapshotA.poses[welcomeB.id]);
-    assert.ok(snapshotB.poses[welcomeA.id]);
+    const hasPose = (message, id) => message.type === 'snapshotFull'
+        ? Boolean(message.poses?.[id])
+        : message.type === 'snapshotDelta' && Boolean(message.updates?.[id]);
+    const snapshotA = await until(a, (message) => hasPose(message, welcomeB.id));
+    const snapshotB = await until(b, (message) => hasPose(message, welcomeA.id));
+    assert.ok(snapshotA.type === 'snapshotFull' ? snapshotA.poses[welcomeB.id] : snapshotA.updates[welcomeB.id]);
+    assert.ok(snapshotB.type === 'snapshotFull' ? snapshotB.poses[welcomeA.id] : snapshotB.updates[welcomeA.id]);
     a.send(JSON.stringify({ type: 'throw', throw: { id: 1, o: [-18, 1.5, -3], v: [15, 0, 0], tilt: 0 } }));
     await new Promise((resolve) => setTimeout(resolve, 400));
     a.send(JSON.stringify({ type: 'hit', throwId: 1, target: welcomeB.id, at: [-12, 1.2, -3] }));

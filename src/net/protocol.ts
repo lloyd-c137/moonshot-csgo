@@ -16,6 +16,8 @@ export type { PowerState } from '../gameplay/power.ts';
 
 export const PROTOCOL_VERSION = 15;
 export const MAX_PLAYERS = 32;
+/** Initial authoritative logic scheduler; stays aligned with snapshots until publication is separately scheduled. */
+export const GAME_TICK_HZ = 20;
 export const SNAPSHOT_HZ = 20;
 export const POSE_HZ = 20;
 /** Seconds a player stays out after a hit before respawning. */
@@ -177,7 +179,7 @@ export type WorldItem = {
 };
 
 /** A pose stamped with the room's receive time (ms, server clock). */
-export type StampedPose = PlayerPose & { t: number };
+export type StampedPose = PlayerPose & { t: number; /** Changes only when the authoritative pose changes, allowing cheap delta comparison. */ rev?: number };
 
 /** Lifetime stats of a registered account. */
 export type AccountStats = {
@@ -230,7 +232,14 @@ export type ThrowRecord = {
 };
 
 export type ClientMessage =
-    | { type: 'hello'; version: number; name: string; token?: string; phase?: 'lobby' | 'playing' }
+    | {
+          type: 'hello';
+          version: number;
+          name: string;
+          token?: string;
+          phase?: 'lobby' | 'playing';
+          capabilities?: { snapshotAck?: boolean; snapshotDelta?: boolean };
+      }
     | { type: 'joinRound' }
     | { type: 'interact'; target: string }
     | { type: 'toggleFrc' }
@@ -260,6 +269,9 @@ export type ClientMessage =
     | { type: 'caught' }
     /** Latency probe: the room echoes `c` straight back. */
     | { type: 'ping'; c: number }
+    /** App-level receipt used by the Worker runtime where writable-buffer size is unavailable. */
+    | { type: 'snapshotAck'; seq: number }
+    | { type: 'snapshotResync'; epoch?: number; seq?: number }
     | { type: 'respawned'; pose: PlayerPose };
 
 export type ServerMessage =
@@ -297,10 +309,31 @@ export type ServerMessage =
     | { type: 'left'; id: string }
     | {
           type: 'snapshot';
+          /** Monotonic per-connection sequence; optional for older servers. */
+          seq?: number;
           t: number;
           poses: Record<string, StampedPose>;
           /** Players out for the round roaming the upper bowl during the final ceremony and minute (no combat). */
           fans?: Record<string, StampedPose>;
+      }
+    | {
+          type: 'snapshotFull';
+          epoch: number;
+          seq: number;
+          t: number;
+          poses: Record<string, StampedPose>;
+          fans?: Record<string, StampedPose>;
+      }
+    | {
+          type: 'snapshotDelta';
+          epoch: number;
+          seq: number;
+          baseSeq: number;
+          t: number;
+          updates: Record<string, StampedPose>;
+          removed: string[];
+          fanUpdates?: Record<string, StampedPose>;
+          fanRemoved?: string[];
       }
     | { type: 'thrown'; from: string; t: number; throw: ThrowRecord }
     | {
@@ -383,6 +416,13 @@ export const colourFor = (id: string) => {
 };
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isSnapshotCapabilities = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const capabilities = value as Record<string, unknown>;
+    return Object.keys(capabilities).every((key) => key === 'snapshotAck' || key === 'snapshotDelta') &&
+        (capabilities.snapshotAck === undefined || typeof capabilities.snapshotAck === 'boolean') &&
+        (capabilities.snapshotDelta === undefined || typeof capabilities.snapshotDelta === 'boolean');
+};
 export const isVec3 = (value: unknown): value is Vec3Tuple =>
     Array.isArray(value) && value.length === 3 && value.every(isNumber);
 export const isPose = (value: unknown): value is PlayerPose => {
@@ -411,7 +451,8 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
             return isNumber(value.version) &&
                 typeof value.name === 'string' &&
                 (value.token === undefined || typeof value.token === 'string') &&
-                (value.phase === undefined || value.phase === 'lobby' || value.phase === 'playing')
+                (value.phase === undefined || value.phase === 'lobby' || value.phase === 'playing') &&
+                (value.capabilities === undefined || isSnapshotCapabilities(value.capabilities))
                 ? (value as ClientMessage)
                 : null;
         case 'joinRound':
@@ -427,6 +468,13 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
             return value as ClientMessage;
         case 'ping':
             return isNumber(value.c) ? (value as ClientMessage) : null;
+        case 'snapshotAck':
+            return Number.isSafeInteger(value.seq) && (value.seq as number) > 0 ? (value as ClientMessage) : null;
+        case 'snapshotResync':
+            return (value.epoch === undefined || Number.isSafeInteger(value.epoch)) &&
+                (value.seq === undefined || Number.isSafeInteger(value.seq))
+                ? (value as ClientMessage)
+                : null;
         case 'spotted':
         case 'pullBreaker':
             return value as ClientMessage;

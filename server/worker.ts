@@ -6,13 +6,15 @@
 import { DurableObject } from 'cloudflare:workers';
 
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { parseClientMessage, SNAPSHOT_HZ } from '../src/net/protocol.ts';
+import { GAME_TICK_HZ, parseClientMessage } from '../src/net/protocol.ts';
 import type { ServerMessage } from '../src/net/protocol.ts';
 
 import { sqlAccountDb } from './accountDb.ts';
 import { Accounts } from './accounts.ts';
 import { handleApi } from './api.ts';
 import { originAllowed, requestOriginAllowed } from './originPolicy.ts';
+import { isCriticalServerMessage, OutboundPolicy, SnapshotAcks, SnapshotDeltaPublisher } from './outboundPolicy.ts';
+import { RealtimeMetrics } from './realtimeMetrics.ts';
 import { Room } from './room.ts';
 
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
@@ -69,30 +71,81 @@ export class World extends DurableObject<Env> {
     private failures = new Map<string, number[]>();
     private readonly combatTestEnabled: boolean;
     private avatarUploads = new Map<string, number[]>();
+    private metrics = new RealtimeMetrics();
+    private outbound = new OutboundPolicy();
+    private snapshotAcks = new SnapshotAcks();
+    private snapshotPublisher = new SnapshotDeltaPublisher();
+    private encoder = new TextEncoder();
+    private nextMetricsLog = 0;
+    private expectedTickAt = 0;
+    private lastTickStarted = 0;
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
         this.combatTestEnabled = env.COMBAT_TEST === '1';
-        this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(ctx.storage.sql)));
-        const send = (socket: WebSocket | undefined, message: ServerMessage) => {
+        const sql = new Proxy(ctx.storage.sql, {
+            get: (target, property) => {
+                const value = Reflect.get(target, property, target);
+                if (property !== 'exec' || typeof value !== 'function') return value;
+                return (...args: unknown[]) => {
+                    const started = performance.now();
+                    try { return Reflect.apply(value, target, args); }
+                    finally { this.metrics.observe('sqliteOperationMs', performance.now() - started); }
+                };
+            }
+        });
+        this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(sql)));
+        const send = (id: string, socket: WebSocket | undefined, message: ServerMessage, text?: string) => {
+            if (!socket) return;
+            const started = performance.now();
+            let outgoing = message;
+            if (message.type === 'snapshot') {
+                const pressure = this.outbound.decide(id, message, (socket as WebSocket & { bufferedAmount?: number }).bufferedAmount ?? 0, Date.now());
+                if (pressure === 'coalesce') {
+                    this.metrics.increment('coalescedSnapshots');
+                    return;
+                }
+                if (pressure === 'close') {
+                    this.metrics.increment('slowConnections');
+                    try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
+                    return;
+                }
+                const next = this.snapshotAcks.next(id, Date.now());
+                if (next.type === 'coalesce') {
+                    this.metrics.increment('coalescedSnapshots');
+                    return;
+                }
+                if (next.type === 'close') {
+                    this.metrics.increment('slowConnections');
+                    try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
+                    return;
+                }
+                outgoing = this.snapshotPublisher.encode(id, message, next.seq, Date.now());
+            }
+            const encoded = text && message.type !== 'snapshot' ? text : JSON.stringify(outgoing);
+            this.metrics.observe('snapshotSerializeMs', performance.now() - started);
+            this.metrics.increment(message.type === 'snapshot' ? 'snapshots' : 'serverMessages');
+            if (isCriticalServerMessage(message)) this.metrics.increment('criticalEvents');
+            const bytes = this.encoder.encode(encoded).byteLength;
+            this.metrics.observe('messageBytes', bytes);
+            if (message.type === 'snapshot') this.metrics.observe('snapshotBytes', bytes);
             try {
-                socket?.send(JSON.stringify(message));
+                const sendStarted = performance.now();
+                socket.send(encoded);
+                this.metrics.observe('websocketSendCallMs', performance.now() - sendStarted);
+                this.metrics.increment('outboundBytes', bytes);
             } catch {
                 /* closed */
             }
         };
         this.room = new Room(
             {
-                to: (id, message) => send(this.sockets.get(id), message),
+                to: (id, message) => send(id, this.sockets.get(id), message),
                 all: (message, except) => {
-                    const text = JSON.stringify(message);
+                    const text = message.type === 'snapshot' ? undefined : JSON.stringify(message);
                     for (const [id, socket] of this.sockets) {
                         if (id === except) continue;
-                        try {
-                            socket.send(text);
-                        } catch {
-                            /* closed */
-                        }
+                        send(id, socket, message, text);
                     }
                 },
                 close: (id) => {
@@ -131,19 +184,58 @@ export class World extends DurableObject<Env> {
             }
             if (--budget < 0) return;
             const text = typeof event.data === 'string' ? event.data : '';
-            this.room.message(id, parseClientMessage(text), now);
+            this.metrics.increment('inboundBytes', this.encoder.encode(text).byteLength);
+            const message = parseClientMessage(text);
+            if (message?.type === 'snapshotAck') {
+                this.snapshotAcks.acknowledge(id, message.seq);
+                this.snapshotPublisher.acknowledge(id, message.seq, now);
+                return;
+            }
+            if (message?.type === 'snapshotResync') {
+                this.snapshotAcks.resync(id);
+                this.snapshotPublisher.resync(id);
+                return;
+            }
+            if (message?.type === 'hello') {
+                this.room.message(id, message, now);
+                if (this.room.players.has(id)) {
+                    this.snapshotPublisher.register(id, message.capabilities?.snapshotAck === true && message.capabilities.snapshotDelta === true);
+                }
+                return;
+            }
+            this.room.message(id, message, now);
         });
-        const drop = () => {
+        const drop = (reason: string) => {
             if (!this.sockets.delete(id)) return;
+            this.metrics.increment(`disconnect.${reason}`);
+            this.outbound.forget(id);
+            this.snapshotAcks.forget(id);
+            this.snapshotPublisher.forget(id);
             this.room.disconnect(id);
             if (!this.sockets.size && this.timer) {
                 clearInterval(this.timer);
                 this.timer = null;
             }
         };
-        server.addEventListener('close', drop);
-        server.addEventListener('error', drop);
-        if (!this.timer) this.timer = setInterval(() => this.room.tick(Date.now()), 1000 / SNAPSHOT_HZ);
+        server.addEventListener('close', (event) => drop(`close${event.code}`));
+        server.addEventListener('error', () => drop('error'));
+        if (!this.timer) {
+            const interval = 1000 / GAME_TICK_HZ;
+            this.expectedTickAt = performance.now() + interval;
+            this.timer = setInterval(() => {
+                const started = performance.now();
+                if (this.lastTickStarted) this.metrics.observe('tickFrequencyHz', 1000 / (started - this.lastTickStarted));
+                this.lastTickStarted = started;
+                this.metrics.observe('tickDriftMs', started - this.expectedTickAt);
+                this.expectedTickAt = started + interval;
+                this.room.tick(Date.now());
+                this.metrics.observe('roomTickMs', performance.now() - started);
+                if (Date.now() >= this.nextMetricsLog) {
+                    this.nextMetricsLog = Date.now() + 60_000;
+                    console.log(JSON.stringify({ event: 'realtime-metrics', runtime: 'cloudflare', activeSockets: this.sockets.size, players: this.room.online, unavailable: ['eventLoop', 'socketWritableBuffer'], ...this.metrics.snapshot() }));
+                }
+            }, interval);
+        }
         return new Response(null, { status: 101, webSocket: client });
     }
 

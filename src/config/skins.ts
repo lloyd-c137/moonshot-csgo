@@ -49,7 +49,7 @@ export const SKINS: readonly Skin[] = [
         id: 'classic',
         name: '经典白',
         tier: 'standard',
-        price: 20,
+        price: 99,
         blurb: '比赛级白色盘面，细银线勾边。',
         colours: [
             [0.95, 0.97, 1],
@@ -63,7 +63,7 @@ export const SKINS: readonly Skin[] = [
         id: 'steel',
         name: '拉丝钢',
         tier: 'standard',
-        price: 30,
+        price: 111,
         blurb: '整块拉丝钢面，飞行时迸出金属火花。',
         colours: [
             [0.78, 0.82, 0.88],
@@ -77,7 +77,7 @@ export const SKINS: readonly Skin[] = [
         id: 'pearl',
         name: '珍珠白',
         tier: 'deluxe',
-        price: 50,
+        price: 222,
         blurb: '珠光漩纹，拖出柔和的珍珠光点，淘汰时绽开光之漩涡。',
         colours: [
             [1, 0.96, 0.98],
@@ -91,7 +91,7 @@ export const SKINS: readonly Skin[] = [
         id: 'carbon',
         name: '碳纤维',
         tier: 'deluxe',
-        price: 60,
+        price: 333,
         blurb: '编织碳纤维，掠过时留下暗色气流，命中碎成六角碳片。',
         colours: [
             [0.22, 0.24, 0.28],
@@ -105,7 +105,7 @@ export const SKINS: readonly Skin[] = [
         id: 'goldline',
         name: '黑金线',
         tier: 'rare',
-        price: 90,
+        price: 444,
         blurb: '哑光黑盘描一道金线，飞行拉出细金丝，淘汰时金线环环扩散。',
         colours: [
             [0.95, 0.72, 0.32],
@@ -119,7 +119,7 @@ export const SKINS: readonly Skin[] = [
         id: 'chrome',
         name: '黑铬环',
         tier: 'rare',
-        price: 100,
+        price: 555,
         blurb: '黑盘嵌镜面铬环，沿途留下银色光圈，淘汰时铬环层层叠起。',
         colours: [
             [0.85, 0.88, 0.95],
@@ -133,7 +133,7 @@ export const SKINS: readonly Skin[] = [
         id: 'glacier',
         name: '冰川',
         tier: 'epic',
-        price: 150,
+        price: 666,
         blurb: '冰川彩绘盘面，飘落霜晶，淘汰时冰爆碎裂。',
         colours: [
             [0.55, 0.85, 1],
@@ -147,7 +147,7 @@ export const SKINS: readonly Skin[] = [
         id: 'neon',
         name: '霓虹',
         tier: 'epic',
-        price: 180,
+        price: 777,
         blurb: '品红与青色灯带，拖出双色霓虹，淘汰时故障闪烁。',
         colours: [
             [1, 0.25, 0.85],
@@ -161,7 +161,7 @@ export const SKINS: readonly Skin[] = [
         id: 'magma',
         name: '熔岩',
         tier: 'legendary',
-        price: 250,
+        price: 888,
         blurb: '黑岩裂出熔岩，飞行洒落余烬，淘汰时岩浆喷发。',
         colours: [
             [1, 0.35, 0.08],
@@ -175,7 +175,7 @@ export const SKINS: readonly Skin[] = [
         id: 'gilded',
         name: '鎏金',
         tier: 'legendary',
-        price: 300,
+        price: 999,
         blurb: '整盘拉丝鎏金，一路金粉，淘汰时金币四溅。（金飞盘仍带光柱，不会混淆。）',
         colours: [
             [1, 0.8, 0.3],

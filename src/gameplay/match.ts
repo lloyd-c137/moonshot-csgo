@@ -163,6 +163,7 @@ export const createMatch = ({
     const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
         auth.avatarUrl(id, version)
     );
+    avatars.skins = skinLibrary;
     for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, npc.hue);
     const roster = new Map<string, PlayerSummary>();
     const stands = createStands(app, characters, stadiumSeats);
@@ -3003,6 +3004,8 @@ export const createMatch = ({
             }
         }
         refreshLocalSkin();
+        // Everyone's equipped skin in their hand (cheap: only a changed skin rebuilds anything).
+        for (const [id, entry] of roster) if (id !== selfId()) avatars.setSkin(id, entry.skin ?? null, entry.skinCounter === true);
         ui.abilityStatus(abilityLabels.length ? abilityLabels.join('　·　') : null, abilityProgress.length ? Math.min(...abilityProgress) : 1);
 
         // Detention: frozen in place (looking around is allowed) until the time is up.

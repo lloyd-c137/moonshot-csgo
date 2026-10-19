@@ -39,9 +39,11 @@ test('the catalogue: ten skins, unique ids, prices rise with the tier, counter e
     }
     for (const skin of SKINS) assert.equal(skin.counterPrice, Math.round((skin.price * 0.5) / 5) * 5);
     const steel = skinById('steel');
-    assert.equal(purchasePrice(steel, undefined, false), 30);
-    assert.equal(purchasePrice(steel, undefined, true), 45);
-    assert.equal(purchasePrice(steel, { counter: false, kills: 0 }, true), 15);
+    assert.equal(purchasePrice(steel, undefined, false), 111);
+    assert.equal(purchasePrice(steel, undefined, true), 166);
+    assert.equal(purchasePrice(steel, { counter: false, kills: 0 }, true), 55);
+    // 鎏金 tops the shop at 999; every step down is cheaper.
+    assert.deepEqual(SKINS.map((skin) => skin.price), [99, 111, 222, 333, 444, 555, 666, 777, 888, 999]);
     assert.equal(purchasePrice(steel, { counter: true, kills: 0 }, true), null);
     assert.deepEqual(SKIN_POINTS, { kill: 1, win: 10 });
 });
@@ -53,13 +55,13 @@ test('buying needs enough points, equips the skin, and the counter upgrade keeps
     const poor = accounts.buySkin('买家', 'steel', false);
     assert.equal(poor.ok, false);
     assert.equal(poor.status, 402);
-    accounts.record('买家', { points: 60 });
+    accounts.record('买家', { points: 200 });
     const bought = accounts.buySkin('买家', 'steel', false);
     assert.equal(bought.ok, true);
-    assert.deepEqual([bought.account.points, bought.account.equippedSkin, bought.account.skins], [30, 'steel', { steel: { counter: false, kills: 0 } }]);
+    assert.deepEqual([bought.account.points, bought.account.equippedSkin, bought.account.skins], [89, 'steel', { steel: { counter: false, kills: 0 } }]);
     assert.equal(accounts.buySkin('买家', 'steel', false).status, 409, 'already owned');
     const upgraded = accounts.buySkin('买家', 'steel', true);
-    assert.deepEqual([upgraded.account.points, upgraded.account.skins.steel.counter], [15, true]);
+    assert.deepEqual([upgraded.account.points, upgraded.account.skins.steel.counter], [34, true]);
     assert.equal(accounts.buySkin('买家', 'nope', false).status, 400);
     assert.equal(accounts.equipSkin('买家', 'gilded').ok, false, 'not owned');
     assert.equal(accounts.equipSkin('买家', null).account.equippedSkin, null);
@@ -73,11 +75,11 @@ test('an elimination earns a point and ticks the thrower’s 计数器; a round 
     const accounts = new Accounts(new MemoryAccountDb());
     const a = await accounts.register('甲同学', 'secret1', 0);
     const b = await accounts.register('乙同学', 'secret1', 0);
-    accounts.record('甲同学', { points: 100 });
-    assert.equal(accounts.buySkin('甲同学', 'magma', true).ok, false, 'magma 计数器 costs 375');
-    assert.equal(accounts.resolve(a.token, 1).points, 100);
+    accounts.record('甲同学', { points: 200 });
+    assert.equal(accounts.buySkin('甲同学', 'magma', true).ok, false, 'magma 计数器 costs 1333');
+    assert.equal(accounts.resolve(a.token, 1).points, 200);
     accounts.buySkin('甲同学', 'classic', true);
-    assert.equal(accounts.resolve(a.token, 1).points, 70);
+    assert.equal(accounts.resolve(a.token, 1).points, 51);
     const { room, inbox, join, pose } = harness(accounts);
     join('a', a.token);
     join('b', b.token);
@@ -97,19 +99,19 @@ test('an elimination earns a point and ticks the thrower’s 计数器; a round 
     assert.equal(struck[2].counter, 1);
     assert.equal(room.players.get('a').skinKills, 1);
     const after = accounts.resolve(a.token, 4000);
-    assert.equal(after.points, 70 + SKIN_POINTS.kill);
+    assert.equal(after.points, 51 + SKIN_POINTS.kill);
     assert.equal(after.skins.classic.kills, 1);
     // Winning the round: +10.
     room.gold = { holder: 'a', at: [0, 0.92, 0] };
     room.tick(room.round.endsAt);
-    assert.equal(accounts.resolve(a.token, room.round.nextAt).points, 70 + SKIN_POINTS.kill + SKIN_POINTS.win);
+    assert.equal(accounts.resolve(a.token, room.round.nextAt).points, 51 + SKIN_POINTS.kill + SKIN_POINTS.win);
     assert.equal(accounts.resolve(b.token, room.round.nextAt).points, 0);
 });
 
 test('equipping from the shop reaches everyone in the room', async () => {
     const accounts = new Accounts(new MemoryAccountDb());
     const a = await accounts.register('甲同学', 'secret1', 0);
-    accounts.record('甲同学', { points: 30 });
+    accounts.record('甲同学', { points: 111 });
     const { room, inbox, join } = harness(accounts);
     join('a', a.token);
     join('b', (await accounts.register('乙同学', 'secret1', 0)).token);

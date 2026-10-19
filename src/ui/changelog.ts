@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.34.1',
+        date: '2026.10.19',
+        title: '皮肤定价调整与全局可见',
+        notes: [
+            '皮肤重新定价：鎏金 999、熔岩 888、霓虹 777、冰川 666、黑铬环 555、黑金线 444、碳纤维 333、珍珠白 222、拉丝钢 111、经典白 99 积分；计数器版仍加价一半。',
+            '其他玩家拿在手里的飞盘也会显示他们装备的皮肤（之前只有扔出去的飞盘显示）。'
+        ]
+    },
+    {
         version: 'v0.34.0',
         date: '2026.10.19',
         title: '皮肤商店与计数器',

@@ -261,7 +261,7 @@ const boot = async () => {
     const serverUrl =
         audioLab && !new URLSearchParams(window.location.search).has('server')
             ? null
-            : multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.hostname);
+            : multiplayerUrl(window.location.search, import.meta.env.PROD, window.location.host, window.location.protocol);
     const auth = createAuth(apiBase(serverUrl));
     const audioLabEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get('audioLab') === '1';
     shell.accountsAvailable(auth.available, audioLabEnabled);
@@ -336,6 +336,10 @@ const boot = async () => {
     // Stuck detection: movement keys held with no progress (or sunk into the floor) offers a one-key escape.
     const stuck = new StuckDetector();
     const moveKeys = new Set<string>();
+    let hasEntered = false;
+    let fallbackInput = false;
+    let introActive = false;
+    const controlsActive = () => document.pointerLockElement === canvas || fallbackInput;
     let stuckShown = false;
     let previousFinisherLocked = false;
     let closeChat: (() => void) | null = null;
@@ -393,7 +397,7 @@ const boot = async () => {
         }
         stepAssist.update(deltaTime);
         roomTracker.update([position.x, position.z], deltaTime);
-        if (document.pointerLockElement === canvas && match.alive) {
+        if (controlsActive() && match.alive) {
             const isStuck = stuck.update(
                 deltaTime,
                 performance.now() / 1000,
@@ -445,10 +449,72 @@ const boot = async () => {
             player.rigidbody.angularVelocity = Vec3.ZERO;
         }
     };
-    const lockPointer = () =>
+    const beginPlay = (useMouseFallback = false) => {
+        if (hasEntered) return;
+        fallbackInput = useMouseFallback;
+        canvas.dataset.gameplayInputActive = String(useMouseFallback);
+        if (useMouseFallback) {
+            const script = player.script?.get('firstPersonController') as
+                | { _desktopInput?: { _pointerLock: boolean } }
+                | null;
+            if (script?._desktopInput) script._desktopInput._pointerLock = false;
+        }
+        if (gateState === 'lobby') {
+            recoverPlayer(player, SOUTH_GATE.spawn);
+            shell.notify('南门待机：穿过闸机即加入正在进行的这一局');
+        }
+        match.start('', gateState === 'lobby' ? 'lobby' : 'playing');
+        gateLive = true;
+        hasEntered = true;
+        const query = new URLSearchParams(window.location.search);
+        if (!query.has('noIntro') && (!navigator.webdriver || query.has('intro'))) {
+            introActive = true;
+            match.setInputPaused(true);
+            match.setIntroPlaying(true);
+            intro.play(() => {
+                introActive = false;
+                match.setIntroPlaying(false);
+                match.setInputPaused(false);
+            }, !useMouseFallback);
+        }
+        rigidbodySystem.timeScale = 1;
+        shell.playing();
+        if (useMouseFallback) shell.notify('当前 HTTP 页面无法锁定鼠标；请将鼠标留在游戏窗口内转动视角');
+    };
+    const resumeMouseFallback = () => {
+        fallbackInput = true;
+        canvas.dataset.gameplayInputActive = 'true';
+        const script = player.script?.get('firstPersonController') as
+            | { _desktopInput?: { _pointerLock: boolean } }
+            | null;
+        if (script?._desktopInput) script._desktopInput._pointerLock = false;
+        clearVelocity();
+        rigidbodySystem.timeScale = 1;
+        shell.playing();
+        shell.notify('当前 HTTP 页面无法锁定鼠标；请将鼠标留在游戏窗口内转动视角');
+    };
+    const lockPointer = () => {
+        if (!window.isSecureContext || typeof canvas.requestPointerLock !== 'function') {
+            if (hasEntered) resumeMouseFallback();
+            else beginPlay(true);
+            return;
+        }
         void canvas.requestPointerLock().catch(() => {
-            shell.notify('浏览器没有允许锁定鼠标，请再点一次“进入校园”');
+            if (hasEntered) resumeMouseFallback();
+            else beginPlay(true);
         });
+    };
+    window.addEventListener('mousemove', (event) => {
+        if (!fallbackInput || !hasEntered || introActive) return;
+        const script = player.script?.get('firstPersonController') as
+            | { _angles?: Vec3; lookSens?: number }
+            | null;
+        const angles = script?._angles;
+        if (!angles) return;
+        const sensitivity = script.lookSens ?? 0.08;
+        const pitch = Math.max(-89, Math.min(89, angles.x - event.movementY * sensitivity));
+        setLook(player, pitch, angles.y - event.movementX * sensitivity);
+    });
     let signingIn = false;
     const enter = () => {
         // Resume synchronously from the button gesture before auth or pointer-lock flows.
@@ -498,34 +564,17 @@ const boot = async () => {
         match.teleported();
         shell.notify('已传送到莲花球场');
     };
-    let hasEntered = false;
     document.addEventListener('pointerlockchange', () => {
         if (document.pointerLockElement === canvas) {
+            fallbackInput = false;
+            canvas.dataset.gameplayInputActive = 'false';
             match.homepageMusic(false);
-            if (!hasEntered) {
-                if (gateState === 'lobby') {
-                    // Wait in the vestibule; the multiplayer room tracks lobby poses and chat before round entry.
-                    recoverPlayer(player, SOUTH_GATE.spawn);
-                    shell.notify('南门待机：穿过闸机即加入正在进行的这一局');
-                }
-                match.start('', gateState === 'lobby' ? 'lobby' : 'playing');
-                gateLive = true;
-                // First entry: the flyover over the campus and through the south gate, input held until it ends.
-                // Automated browsers skip it (tests drive input at once) unless ?intro=1 asks for it.
-                const query = new URLSearchParams(window.location.search);
-                if (!query.has('noIntro') && (!navigator.webdriver || query.has('intro'))) {
-                    match.setInputPaused(true);
-                    match.setIntroPlaying(true);
-                    intro.play(() => {
-                        match.setIntroPlaying(false);
-                        match.setInputPaused(false);
-                    });
-                }
-            }
-            hasEntered = true;
+            if (!hasEntered) beginPlay(false);
             rigidbodySystem.timeScale = 1;
             shell.playing();
         } else if (hasEntered) {
+            fallbackInput = false;
+            canvas.dataset.gameplayInputActive = 'false';
             clearVelocity();
             rigidbodySystem.timeScale = 0;
             if (match.finisherLocked) return;
@@ -538,9 +587,13 @@ const boot = async () => {
     document.addEventListener('pointerlockerror', () => shell.notify('浏览器没有允许锁定鼠标，请再点一次'));
     const pause = () => {
         clearVelocity();
+        const wasFallback = fallbackInput;
+        fallbackInput = false;
+        canvas.dataset.gameplayInputActive = 'false';
         rigidbodySystem.timeScale = 0;
         if (match.finisherLocked) return;
         if (document.pointerLockElement === canvas) document.exitPointerLock();
+        else if (wasFallback && !match.finisherLocked) shell.paused();
     };
     window.addEventListener('blur', pause);
     document.addEventListener('visibilitychange', () => {
@@ -560,7 +613,7 @@ const boot = async () => {
             if (
                 event.code === 'Enter' &&
                 !event.repeat &&
-                document.pointerLockElement === canvas &&
+                controlsActive() &&
                 match.activateActiveSkill()
             ) {
                 event.preventDefault();
@@ -569,7 +622,7 @@ const boot = async () => {
             }
             if (
                 (event.code === 'Enter' || event.code === 'KeyT') &&
-                document.pointerLockElement === canvas &&
+                controlsActive() &&
                 match.online
             ) {
                 event.preventDefault();
@@ -582,16 +635,17 @@ const boot = async () => {
                         match.setInputPaused(false);
                     }
                 );
-            } else if (event.code === 'Escape' && document.pointerLockElement === canvas) {
+            } else if (event.code === 'Escape' && controlsActive()) {
                 event.preventDefault();
-                document.exitPointerLock();
-            } else if (event.code === 'KeyR' && hasEntered && document.pointerLockElement === canvas) {
+                if (document.pointerLockElement === canvas) document.exitPointerLock();
+                else pause();
+            } else if (event.code === 'KeyR' && hasEntered && controlsActive()) {
                 event.preventDefault();
                 recover();
-            } else if (event.code === 'KeyG' && stuckShown && document.pointerLockElement === canvas) {
+            } else if (event.code === 'KeyG' && stuckShown && controlsActive()) {
                 event.preventDefault();
                 escapeStuck();
-            } else if (event.code === 'KeyM' && document.pointerLockElement === canvas) {
+            } else if (event.code === 'KeyM' && controlsActive()) {
                 event.preventDefault();
                 shell.toggleMap();
             }

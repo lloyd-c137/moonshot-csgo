@@ -8,6 +8,9 @@
         "assets:compress": "node tools/compressAssetsCli.ts",
         "audit:nav": "node tools/navAuditCli.ts",
         "build": "vite build && wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir dist --output-routes-path dist/_routes.json && mv dist/index.js dist/_worker.js",
+        "campus:build": "vite build && esbuild server/node/main.ts --bundle --platform=node --format=esm --target=node22 --packages=bundle --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/campus-server.mjs",
+        "campus:start": "node dist-server/campus-server.mjs",
+        "campus:pack": "node tools/packageCampus.mjs",
         "derive:rooms": "node tools/roomNamingCli.ts",
         "derive:world": "node tools/deriveWorldCli.ts",
         "dev": "vite",
@@ -22,19 +25,23 @@
         "test": "node --test",
         "test:e2e": "playwright test",
         "test:e2e:prod": "npm run build && playwright test --config playwright.production.config.ts",
-        "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json"
+        "typecheck": "tsc --noEmit -p . && tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p server/node/tsconfig.json"
     },
     "dependencies": {
         "@cf-wasm/photon": "^0.4.0",
         "@fontsource/barlow-condensed": "^5.3.0",
         "@fontsource/noto-sans-sc": "^5.3.1",
-        "playcanvas": "2.23.2"
+        "playcanvas": "2.23.2",
+        "ws": "^8.22.0"
     },
     "devDependencies": {
         "@cloudflare/workers-types": "5.20261016.1",
         "@playcanvas/eslint-config": "3.0.0-beta.8",
         "@playcanvas/inspector": "0.2.0",
         "@playwright/test": "1.64.1",
+        "@types/node": "^26.6.5",
+        "@types/ws": "^8.18.2",
+        "esbuild": "^0.28.2",
         "eslint": "9.39.5",
         "prettier": "3.9.10",
         "typescript": "6.0.3",

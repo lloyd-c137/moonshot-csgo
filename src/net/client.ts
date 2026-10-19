@@ -22,6 +22,7 @@ import type {
     WorldItem
 } from './protocol';
 import { POSE_HZ, PROTOCOL_VERSION } from './protocol';
+import { createUuid } from './uuid';
 
 export type NetState = 'offline' | 'connecting' | 'online' | 'rejected';
 
@@ -468,7 +469,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
             send({ type: 'skipMomentCutscene', id });
         },
         prepareExecution(target: string) {
-            const requestId = crypto.randomUUID();
+            const requestId = createUuid();
             send({ type: 'executionPrepare', requestId, target });
             return requestId;
         },

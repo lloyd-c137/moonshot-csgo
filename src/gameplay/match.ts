@@ -261,7 +261,7 @@ export const createMatch = ({
                 player.rigidbody!.angularVelocity = Vec3.ZERO;
             }
             player.rigidbody!.enabled = !spectating && (!active || !!globalFinisher);
-            rigidbody.timeScale = active ? 0 : document.pointerLockElement === canvas ? 1 : 0;
+            rigidbody.timeScale = active ? 0 : locked() ? 1 : 0;
             if (active) {
                 cancelCharge();
                 inspectSince = null;
@@ -1844,7 +1844,7 @@ export const createMatch = ({
         sound.goldChime(at);
     }
 
-    const locked = () => document.pointerLockElement === canvas;
+    const locked = () => document.pointerLockElement === canvas || canvas.dataset.gameplayInputActive === 'true';
     const cancelCharge = () => {
         chargingSince = null;
         aimSoundPlayed = false;

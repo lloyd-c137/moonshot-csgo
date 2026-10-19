@@ -20,6 +20,7 @@ export const createIntro = (app: AppBase, playerCamera: EntityType, ui: IntroUi)
     app.root.addChild(camera);
     let startedAt: number | null = null;
     let finish: (() => void) | null = null;
+    let requiresPointerLock = true;
     const look = new Vec3();
 
     const end = () => {
@@ -42,7 +43,7 @@ export const createIntro = (app: AppBase, playerCamera: EntityType, ui: IntroUi)
     window.addEventListener('keydown', skip);
     window.addEventListener('mousedown', skip);
     document.addEventListener('pointerlockchange', () => {
-        if (!document.pointerLockElement) end();
+        if (requiresPointerLock && !document.pointerLockElement) end();
     });
 
     app.on('update', () => {
@@ -65,9 +66,10 @@ export const createIntro = (app: AppBase, playerCamera: EntityType, ui: IntroUi)
 
     return {
         /** Plays the flyover once; `done` runs when it ends or is skipped. */
-        play(done: () => void) {
+        play(done: () => void, requirePointerLock = true) {
             if (startedAt !== null) return;
             finish = done;
+            requiresPointerLock = requirePointerLock;
             startedAt = performance.now();
             // The dome follows the player camera; scaled up it stays behind the whole campus in the aerial shots.
             app.root.findByName('sky-dome')?.setLocalScale(6, 6, 6);

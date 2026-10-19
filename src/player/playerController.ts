@@ -36,7 +36,7 @@ export const createPlayer = (app: AppBase, spawn: { x: number; y: number; z: num
     });
     camera.setLocalPosition(0, PLAYER.eyeOffset, 0);
     player.addChild(camera);
-    player.script!.create(FirstPersonController, {
+    const controller = player.script!.create(FirstPersonController, {
         properties: {
             camera,
             lookSens: 0.08,
@@ -46,6 +46,11 @@ export const createPlayer = (app: AppBase, spawn: { x: number; y: number; z: num
             jumpForce: 500
         }
     });
+    // Pointer Lock is restricted to secure contexts. On a campus LAN served over plain HTTP,
+    // keep keyboard input available and let the app provide relative mouse-look as a fallback.
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+        (controller as unknown as { _desktopInput: { _pointerLock: boolean } })._desktopInput._pointerLock = false;
+    }
     app.root.addChild(player);
     return { player, camera };
 };

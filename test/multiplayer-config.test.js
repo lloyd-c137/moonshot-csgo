@@ -18,3 +18,8 @@ test('local previews remain offline unless a local room is explicitly supplied',
         'ws://127.0.0.1:8787/ws'
     );
 });
+
+test('campus builds select ws or wss from the serving protocol and keep the explicit server override', () => {
+    assert.equal(multiplayerUrl('', true, '172.10.17.186:8000', 'http:'), 'ws://172.10.17.186:8000/ws');
+    assert.equal(multiplayerUrl('', true, 'moonshotacademy.space', 'https:'), 'wss://moonshotacademy.space/ws');
+});

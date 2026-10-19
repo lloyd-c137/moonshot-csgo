@@ -152,6 +152,10 @@ export type PlayerSummary = {
     ammoCapacity?: number;
     stealthUntil?: number;
     stealthCooldownUntil?: number;
+    /** Equipped disc skin (null: the default disc in the player's colour), its 计数器 and its count. */
+    skin?: string | null;
+    skinCounter?: boolean;
+    skinKills?: number;
     frcSelected?: boolean;
     frcCooldownUntil?: number;
     creationNextAt?: number;
@@ -184,6 +188,12 @@ export type AccountStats = {
     losses: number;
     avatarId?: string | null;
     avatarVersion?: string | null;
+    /** Skin points: +1 per elimination, +10 per round won. */
+    points?: number;
+    /** Owned disc skins (id → edition and counted eliminations). */
+    skins?: Record<string, { counter: boolean; kills: number }>;
+    /** The skin thrown in play, or null for the default disc. */
+    equippedSkin?: string | null;
 };
 
 /** The standing 淘汰王: the registered player with the most lifetime eliminations, held until beaten. */
@@ -311,6 +321,9 @@ export type ServerMessage =
           bank?: boolean;
           /** Metres the disc flew (along its bounces) before the hit. */
           range?: number;
+          /** The thrower's skin (for its kill effect) and, with a 计数器, the skin's new elimination count. */
+          skin?: string;
+          counter?: number;
           at: Vec3Tuple;
           scores: Scores;
       }

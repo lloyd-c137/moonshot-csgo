@@ -3,6 +3,7 @@
 import { SOUTH_GATE } from '../src/config/gameplay.ts';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
+import { SKIN_POINTS } from '../src/config/skins.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import { CUTSCENE_SECONDS, inCutscene  } from '../src/gameplay/cutscenes/cutscenes.ts';
 import type { MomentCutscene } from '../src/gameplay/cutscenes/cutscenes.ts';
@@ -16,6 +17,7 @@ import { nearBreaker, powerOut } from '../src/gameplay/power.ts';
 import type { PowerState } from '../src/gameplay/power.ts';
 import { teacherAt } from '../src/gameplay/teacher.ts';
 import type {
+    AccountStats,
     ChatLine,
     ClientMessage,
     GroundDisc,
@@ -439,6 +441,17 @@ export class Room {
         this.out.all({ type: 'profileUpdated', playerId: player.id, avatarId, avatarVersion });
     }
 
+    /** A player bought or switched skins (from the shop API): everyone sees the new disc from the next throw. */
+    updateSkin(account: AccountStats) {
+        const player = [...this.players.values()].find((entry) => entry.accountName === account.name);
+        if (!player) return;
+        const skin = account.equippedSkin ?? null;
+        player.skin = skin;
+        player.skinCounter = !!(skin && account.skins?.[skin]?.counter);
+        player.skinKills = skin ? (account.skins?.[skin]?.kills ?? 0) : 0;
+        this.broadcastAbility(player);
+    }
+
     private hello(
         id: string,
         version: number,
@@ -504,6 +517,9 @@ export class Room {
             accountName: account?.name ?? null,
             avatarId: account?.avatarId ?? null,
             avatarVersion: account?.avatarVersion ?? null,
+            skin: account?.equippedSkin ?? null,
+            skinCounter: !!(account?.equippedSkin && account.skins?.[account.equippedSkin]?.counter),
+            skinKills: account?.equippedSkin ? (account.skins?.[account.equippedSkin]?.kills ?? 0) : 0,
             chatTimes: [],
             ammo: this.startAmmo,
             spectating: false,
@@ -1049,6 +1065,16 @@ export class Room {
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
+        // Skins dress ordinary discs only (the golden disc and the FRC disc keep their own look).
+        const skinThrow = !entry.golden && entry.record.frc !== true && player.skin ? player.skin : null;
+        const skinned: { skin?: string; counter?: number } = skinThrow ? { skin: skinThrow } : {};
+        if (out && skinThrow && player.skinCounter && player.accountName && this.accounts) {
+            const counted = this.accounts.countSkinKill(player.accountName, skinThrow);
+            if (counted !== null) {
+                player.skinKills = counted;
+                skinned.counter = counted;
+            }
+        }
         this.out.all({
             type: 'struck',
             throwId: entry.record.id,
@@ -1064,6 +1090,7 @@ export class Room {
             revived,
             ...(verdict.bank ? { bank: true } : {}),
             range: verdict.range,
+            ...skinned,
             at,
             scores
         });
@@ -1295,6 +1322,7 @@ export class Room {
             const account = this.accounts?.record(name, {
                 rounds: 1,
                 wins: name === winner?.accountName ? 1 : 0,
+                points: name === winner?.accountName ? SKIN_POINTS.win : 0,
                 losses: winner && name !== winner.accountName ? 1 : 0
             });
             if (account) {
@@ -1577,7 +1605,8 @@ export class Room {
             const stats = this.accounts.record(attacker.accountName, {
                 hits: discHit ? 1 : 0,
                 kills: out ? 1 : 0,
-                score: POINTS.hit + (out ? POINTS.elimination : 0)
+                score: POINTS.hit + (out ? POINTS.elimination : 0),
+                points: out ? SKIN_POINTS.kill : 0
             });
             if (stats) {
                 this.out.to(attacker.id, { type: 'account', account: stats });
@@ -1723,7 +1752,10 @@ const summary = ({
     stealthCooldownUntil,
     frcSelected,
     frcCooldownUntil,
-    creationNextAt
+    creationNextAt,
+    skin,
+    skinCounter,
+    skinKills
 }: Player): PlayerSummary => ({
     id,
     name,
@@ -1751,5 +1783,8 @@ const summary = ({
     stealthCooldownUntil,
     frcSelected,
     frcCooldownUntil,
-    creationNextAt
+    creationNextAt,
+    skin,
+    skinCounter,
+    skinKills
 });

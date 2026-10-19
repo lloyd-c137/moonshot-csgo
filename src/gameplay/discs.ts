@@ -18,6 +18,7 @@ import {
 import { DISC_CONTACT } from '../config/bounce';
 import { SNIPER } from '../net/protocol';
 import { cylinder, merge, place, torus } from '../render/shapes';
+import type { SkinLibrary } from '../render/skinDisc';
 
 import type { DiscContact, V3 } from './frisbee';
 import {
@@ -47,6 +48,8 @@ type Disc = {
     hue: number;
     gold: boolean;
     frc: boolean;
+    /** The thrower's skin (ordinary discs only), for its look and trail. */
+    skin: string | null;
     flybyPlayed: boolean;
     /** Where a local disc has bounced off the level so far (sent with a hit claim so the room can check walls). */
     bounces: V3[];
@@ -104,6 +107,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
 
     let goldMaterial: StandardMaterial | null = null;
     let goldMesh: Mesh | null = null;
+    let skins: SkinLibrary | null = null;
     const orientation = new Quat();
     const up = new Vec3(0, 1, 0);
     const normalVec = new Vec3();
@@ -139,7 +143,13 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             frc?: boolean;
             /** Thrown by the golden disc's holder: drawn in gold. */
             gold?: boolean;
+            /** Disc skin (ignored for golden and FRC discs). */
+            skin?: string | null;
+            /** Ready-made mesh instances for this disc (the local player's 计数器 edition). */
+            instances?: MeshInstance[] | null;
         }) {
+            const skin = options.gold || options.frc ? null : (options.skin ?? null);
+            const skinned = skin ? (options.instances ?? skins?.instances(skin) ?? null) : null;
             if (discs.length >= MAX_DISCS) remove(discs[0]);
             const entity = new Entity(`disc-${options.owner}-${options.throwId}`);
             // The body keeps the disc's flight attitude; a child carries the mesh and spins for show.
@@ -148,7 +158,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 meshInstances:
                     options.gold && goldMaterial
                         ? [new MeshInstance(goldMesh ?? mesh, goldMaterial)]
-                        : meshFor(options.frc ? 0 : options.hue),
+                        : (skinned ?? meshFor(options.frc ? 0 : options.hue)),
                 castShadows: false
             });
             visual.setLocalPosition(0, -0.008, 0);
@@ -214,6 +224,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 hue: options.frc ? 0 : options.hue,
                 gold: options.gold === true,
                 frc: options.frc === true,
+                skin,
                 flybyPlayed: false,
                 bounces
             });
@@ -227,7 +238,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             targets: Map<string, V3>,
             onHit: (throwId: number, target: string, contact: DiscContact, velocity: V3, bounces: V3[]) => void,
             onBounce?: (at: V3, speed: number) => void,
-            onTracer?: (at: V3, hue: number, speed: number) => void,
+            onTracer?: (at: V3, hue: number, speed: number, skin: string | null) => void,
             onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void,
             listener?: V3,
             onFlyby?: (at: V3, speed: number) => void
@@ -260,7 +271,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                     const trailInterval = 0.06 / trailDensity;
                     if (disc.trailElapsed >= trailInterval) {
                         disc.trailElapsed %= trailInterval;
-                        onTracer?.(position, disc.gold ? -1 : disc.hue, speed);
+                        onTracer?.(position, disc.gold ? -1 : disc.hue, speed, disc.skin);
                     }
                 }
                 if (!disc.local && !disc.flybyPlayed && listener && speed > 7) {
@@ -306,6 +317,10 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             }
         },
         /** The golden disc's material, for discs its holder throws. */
+        /** Disc skins (render/skinDisc.ts). */
+        set skins(library: SkinLibrary) {
+            skins = library;
+        },
         set goldMesh(next: Mesh) {
             goldMesh = next;
         },

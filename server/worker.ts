@@ -238,6 +238,33 @@ export class World extends DurableObject<Env> {
                 ? json({ ok: true })
                 : json({ error: '当前没有进行中的回合' }, 409);
         }
+        if (url.pathname === '/api/__test/points' && request.method === 'POST') {
+            // Local browser tests only (COMBAT_TEST=1): grant skin points to the signed-in account.
+            if (!this.combatTestEnabled) return json({ error: 'not found' }, 404);
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            const body = (await request.json().catch(() => ({}))) as { points?: unknown };
+            if (typeof body.points !== 'number' || !Number.isInteger(body.points) || body.points < 0 || body.points > 10_000)
+                return json({ error: '无效的积分' }, 400);
+            return json({ account: this.accounts.record(account.name, { points: body.points }) });
+        }
+        if ((url.pathname === '/api/shop/buy' || url.pathname === '/api/shop/equip') && request.method === 'POST') {
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            let body: { skin?: unknown; counter?: unknown };
+            try {
+                body = (await request.json()) as typeof body;
+            } catch {
+                return json({ error: '请求格式不正确' }, 400);
+            }
+            const result =
+                url.pathname === '/api/shop/buy'
+                    ? this.accounts.buySkin(account.name, body.skin, body.counter)
+                    : this.accounts.equipSkin(account.name, body.skin ?? null);
+            if (!result.ok) return json({ error: result.error }, result.status);
+            this.room.updateSkin(result.account);
+            return json({ account: result.account });
+        }
         switch (`${request.method} ${url.pathname}`) {
             case 'GET /api/king':
                 return json({ king: this.accounts.king(), online: this.room.online });

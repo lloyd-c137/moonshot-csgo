@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.34.2',
+        date: '2026.10.19',
+        title: '断线重连保留本局状态',
+        notes: [
+            '刷新或短暂断线后会回到原来的本局状态：生命、复活等待、淘汰数、得分和飞盘数量不会被重置。',
+            '本局已经出局的玩家重连后仍会观战；执行期间目标断线也不能借刷新逃过结算。',
+            '房间暂时无人时保留对局 120 秒，期间回来可继续原局；新一局开始后会清除上一局战况。',
+            '金飞盘和可掉落技能仍按原规则掉落，重连不会复制道具。'
+        ]
+    },
+    {
         version: 'v0.34.1',
         date: '2026.10.19',
         title: '皮肤定价调整与全局可见',

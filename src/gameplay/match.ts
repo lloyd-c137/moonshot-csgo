@@ -1228,9 +1228,19 @@ export const createMatch = ({
             creationNextAt = me.creationNextAt ?? 0;
             roster.clear();
             if (me.spectating) {
+                deadUntil = 0;
+                killer = '';
                 setAlive(false);
                 startSpectating('本局已出局：观战，下一局开始时加入');
+            } else if (!me.alive) {
+                stopSpectating();
+                setAlive(false);
+                killer = '已淘汰';
+                const remaining = Math.max(0, (me.respawnAt ?? extra.matchTime) - extra.matchTime);
+                deadUntil = performance.now() + remaining;
             } else {
+                deadUntil = 0;
+                killer = '';
                 stopSpectating();
                 setAlive(me.alive);
             }

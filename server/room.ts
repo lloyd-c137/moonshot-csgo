@@ -935,6 +935,7 @@ export class Room {
         const matchNow = this.matchNow(now);
         if (attacker?.alive && target?.alive && this.round?.phase === 'playing') {
             const revived = this.reviveOnLethal(target, matchNow);
+            const counter = !revived ? this.countSkinElimination(attacker) : null;
             if (!revived) {
                 target.hp = 0;
                 target.alive = false;
@@ -957,6 +958,7 @@ export class Room {
                 final: !revived,
                 execution: true,
                 revived,
+                ...(counter ?? {}),
                 at: [...target.pose!.p],
                 scores: this.scores()
             });
@@ -1064,6 +1066,7 @@ export class Room {
         }
         this.executions.delete(execution.id);
         const revived = this.reviveOnLethal(target, now);
+        const counter = !revived ? this.countSkinElimination(attacker) : null;
         if (!revived) {
             target.hp = 0;
             target.alive = false;
@@ -1087,6 +1090,7 @@ export class Room {
             final: !revived,
             execution: true,
             revived,
+            ...(counter ?? {}),
             at: [...target.pose!.p],
             scores: this.scores()
         });
@@ -1204,13 +1208,7 @@ export class Room {
         // Skins dress ordinary discs only (the golden disc and the FRC disc keep their own look).
         const skinThrow = !entry.golden && entry.record.frc !== true && player.skin ? player.skin : null;
         const skinned: { skin?: string; counter?: number } = skinThrow ? { skin: skinThrow } : {};
-        if (out && skinThrow && player.skinCounter && player.accountName && this.accounts) {
-            const counted = this.accounts.countSkinKill(player.accountName, skinThrow);
-            if (counted !== null) {
-                player.skinKills = counted;
-                skinned.counter = counted;
-            }
-        }
+        const counter = out ? this.countSkinElimination(player) : null;
         this.out.all({
             type: 'struck',
             throwId: entry.record.id,
@@ -1227,6 +1225,7 @@ export class Room {
             ...(verdict.bank ? { bank: true } : {}),
             range: verdict.range,
             ...skinned,
+            ...(counter ?? {}),
             at,
             scores
         });
@@ -1244,6 +1243,15 @@ export class Room {
             this.out.all({ type: 'discs', discs: this.discs });
         }
         this.checkLastStanding(now);
+    }
+
+    /** A counter edition tracks every credited elimination in the round, regardless of the finishing move. */
+    private countSkinElimination(player: Player): { counter: number } | null {
+        if (!player.skin || !player.skinCounter || !player.accountName || !this.accounts) return null;
+        const counted = this.accounts.countSkinKill(player.accountName, player.skin);
+        if (counted === null) return null;
+        player.skinKills = counted;
+        return { counter: counted };
     }
 
     /** Room time when the lights go out this round (null: not playing). */

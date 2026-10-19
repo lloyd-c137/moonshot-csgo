@@ -108,6 +108,29 @@ test('an elimination earns a point and ticks the thrower’s 计数器; a round 
     assert.equal(accounts.resolve(b.token, room.round.nextAt).points, 0);
 });
 
+test('the counter also advances when a counter-skin owner finishes with the golden disc', async () => {
+    const accounts = new Accounts(new MemoryAccountDb());
+    const a = await accounts.register('金盘手', 'secret1', 0);
+    const b = await accounts.register('目标同学', 'secret1', 0);
+    accounts.record('金盘手', { points: 200 });
+    accounts.buySkin('金盘手', 'classic', true);
+    const { room, inbox, join, pose } = harness(accounts);
+    join('a', a.token);
+    join('b', b.token);
+    room.gold = { holder: 'a', at: [500, 0.92, 500] };
+    room.players.get('b').hp = 1;
+    pose('a', [0, 0.9, 0], 100);
+    pose('b', [8, 0.9, 0], 100);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, 1000);
+    room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 1500);
+
+    const struck = inbox.get('a').findLast((message) => message.type === 'struck');
+    assert.equal(struck.counter, 1);
+    assert.equal(struck.skin, undefined, 'gold keeps its own appearance');
+    assert.equal(accounts.resolve(a.token, 1600).skins.classic.kills, 1);
+    assert.equal(room.players.get('a').skinKills, 1);
+});
+
 test('equipping from the shop reaches everyone in the room', async () => {
     const accounts = new Accounts(new MemoryAccountDb());
     const a = await accounts.register('甲同学', 'secret1', 0);

@@ -5,6 +5,12 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.34.4',
+        date: '2026.10.19',
+        title: '计数器淘汰同步修正',
+        notes: ['计数器版皮肤现在会记录持有者的所有有效淘汰，包括金飞盘、FRC 和处决；新计数会即时同步到局内界面并保存到账户。']
+    },
+    {
         version: 'v0.34.3',
         date: '2026.10.19',
         title: '积分历史补发',

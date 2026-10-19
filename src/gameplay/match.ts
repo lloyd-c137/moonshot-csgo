@@ -1444,13 +1444,23 @@ export const createMatch = ({
                     ? `strike:${by}:${target}:${at.map((value) => Math.round(value * 100)).join(',')}:${targetHp}`
                     : `strike:${by}:${throwId}`;
             const presentation = feedback.submit({ id: eventId, kind: feedbackKind }, performance.now());
+            // State updates are authoritative and must not be dropped by the transient-effects deduper.
+            const entryFinal = roster.get(target);
+            const thrower = roster.get(by);
+            if (entryFinal && final) entryFinal.spectating = true;
+            if (shot?.counter !== undefined && thrower) thrower.skinKills = shot.counter;
+            for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
+                const entry = roster.get(id);
+                if (entry) Object.assign(entry, { score, kills, deaths });
+            }
+            const entry = roster.get(target);
+            if (entry) Object.assign(entry, { hp: targetHp, alive: !out });
+            if (shot?.counter !== undefined && by === selfId()) refreshLocalSkin();
             if (!presentation.accepted) return;
             if (by === selfId() && throwId !== undefined) {
                 pendingHitClaims.delete(throwId);
                 hitsClaimed++;
             }
-            const entryFinal = roster.get(target);
-            if (entryFinal && final) entryFinal.spectating = true;
             const snipe = sniper && head && out;
             const headshotDistance =
                 head && typeof shot?.range === 'number' ? ` · 爆头距离 ${shot.range.toFixed(1)} m` : '';
@@ -1458,10 +1468,7 @@ export const createMatch = ({
             effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
             if (out && shot?.skin) skinFx.kill(shot.skin, at);
             if (shot?.counter !== undefined) {
-                const thrower = roster.get(by);
-                if (thrower) thrower.skinKills = shot.counter;
                 if (by === selfId()) {
-                    refreshLocalSkin();
                     ui.skinCounterTick(shot.counter);
                     // Milestones on the counter: every 10, louder every 100.
                     if (shot.counter % 100 === 0) ui.popup(`计数器 ${shot.counter} · 百人斩`, 'gold');
@@ -1469,12 +1476,6 @@ export const createMatch = ({
                 }
             }
             if (snipe) effects.snipe(at);
-            for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
-                const entry = roster.get(id);
-                if (entry) Object.assign(entry, { score, kills, deaths });
-            }
-            const entry = roster.get(target);
-            if (entry) Object.assign(entry, { hp: targetHp, alive: !out });
             const me = selfId();
             avatars.flash(target, performance.now());
             avatars.react(target, head, out, poses.get(target), performance.now());

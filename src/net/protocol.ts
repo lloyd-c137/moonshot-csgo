@@ -58,6 +58,8 @@ export const SNIPER = { speed: 34, minSpeed: 30, straightSeconds: 1.6 } as const
 export const ROUND = {
     roundSeconds: 600,
     intermissionSeconds: 10,
+    /** Keep an abandoned room's active round available for signed-in players to reconnect. */
+    emptyRoomGraceSeconds: 120,
     pickupRadius: 1.6,
     pickupDelay: 0.8,
     /**
@@ -133,6 +135,8 @@ export type PlayerSummary = {
     alive: boolean;
     /** Out for the rest of the round (eliminated after the lights went out): watching only. */
     spectating?: boolean;
+    /** Match-clock deadline for an ordinary elimination; sent in welcome so refresh cannot skip the wait. */
+    respawnAt?: number;
     hp: number;
     score: number;
     kills: number;

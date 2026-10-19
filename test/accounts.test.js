@@ -156,14 +156,17 @@ test('round stats persist once, deduplicate reconnects, include leavers and excl
     assert.equal(new Accounts(db).resolve(tokens.winner, end + 2).rounds, 2);
 });
 
-test('an abandoned empty round records no result and cannot carry participants into a later round', async () => {
+test('a brief empty-room disconnect preserves the same round and its participants', async () => {
     const accounts = new Accounts(new MemoryAccountDb());
     const { token } = await accounts.register('abandoned', 'secret1', 0);
     const { room, join } = harness(accounts);
     join('a', '', token);
+    const roundId = room.roundId;
+    const roundEndsAt = room.round.endsAt;
     room.disconnect('a', 1000);
-    assert.equal(room.round, null);
+    assert.equal(room.roundId, roundId);
     join('b', '', token, 2000);
+    assert.equal(room.round.endsAt, roundEndsAt);
     room.gold.holder = 'b';
     room.tick(room.round.endsAt);
     assert.deepEqual(

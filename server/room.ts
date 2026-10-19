@@ -123,6 +123,26 @@ type FinisherPreparation = {
     preparedAt: number;
     commitRequested: boolean;
 };
+/** Account-scoped state that must survive a socket replacement for the current round. */
+type RoundStanding = {
+    roundId: number;
+    phase: 'lobby' | 'playing';
+    alive: boolean;
+    spectating: boolean;
+    finalOut: boolean;
+    respawnAt: number;
+    hp: number;
+    score: number;
+    kills: number;
+    deaths: number;
+    ammo: number;
+    ammoCapacity: number;
+    /** A round-long talent rather than a dropped world item. */
+    coachGift: boolean;
+    reviveTaken: boolean;
+    fanPose: PlayerPose | null;
+    lastSeen: number;
+};
 
 export type Outbox = {
     /** Send to one connection. */
@@ -138,6 +158,7 @@ export class Room {
     private pending = new Set<string>();
     /** Accounts that actually joined play this round; retained across disconnects, deduplicated on reconnect. */
     private roundParticipants = new Set<string>();
+    private roundStanding = new Map<string, RoundStanding>();
     private spawnCursor = 0;
     private readonly spawnCount: number;
     private readonly out: Outbox;
@@ -169,6 +190,8 @@ export class Room {
     private roundPeakPlayers = 0;
     /** Match-time offset grows only while the authoritative world is globally frozen. */
     private matchClockOffset = 0;
+    /** Real-time start of the current empty-room grace period. */
+    private emptySince: number | null = null;
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
     /** Discs a newcomer carries (tests raise it to throw repeatedly). */
@@ -211,28 +234,30 @@ export class Room {
         this.pending.delete(id);
         const player = this.players.get(id);
         if (!player) return;
-        if (this.globalFinisher && (this.globalFinisher.attacker.id === id || this.globalFinisher.target.id === id))
+        const global = this.globalFinisher;
+        const execution = this.executionFor(id);
+        // A target cannot dodge an already-started execution by refreshing. The server resolves it before removing
+        // the socket. An attacker disconnect still cancels the scene without eliminating the target.
+        if (global?.target.id === id) this.settleDisconnectedExecutionTarget(player, global.attacker.id, now, realNow);
+        else if (execution?.target.id === id) this.settleDisconnectedExecutionTarget(player, execution.attacker.id, now, realNow);
+        if (global && (global.attacker.id === id || global.target.id === id))
             this.cancelGlobalFinisher('处决参与者断开连接', realNow);
         this.preparations.delete(id);
-        this.cancelExecutionFor(id, '玩家离开');
+        if (execution) {
+            this.executions.delete(execution.id);
+            this.out.all({ type: 'executionEnded', id: execution.id, completed: execution.target.id === id, reason: '玩家离开' });
+        }
         this.interactionTimes.delete(id);
         this.dropHeldItems(player, now);
         // Leaving with the golden disc drops it where they stood.
         if (this.gold.holder === id) this.dropGold(player, now);
+        this.saveStanding(player, realNow);
         this.players.delete(id);
         this.out.all({ type: 'left', id });
         this.checkLastStanding(now);
         // An empty room forgets its round; the next arrival starts a fresh one.
         if (!this.players.size) {
-            this.globalFinisher = null;
-            this.matchClockOffset = 0;
-            this.preparations.clear();
-            this.round = null;
-            this.executedAccounts.clear();
-            this.power = { pulledAt: null };
-            this.roundParticipants.clear();
-            this.discs = [];
-            this.officeAt = null;
+            this.emptySince = realNow;
         }
     }
 
@@ -461,7 +486,7 @@ export class Room {
         phase: 'lobby' | 'playing'
     ) {
         if (!this.pending.has(id)) return;
-        const now = this.matchNow(realNow);
+        let now = this.matchNow(realNow);
         // Production Worker rooms never trust the client's initial phase claim; the turnstile is the only entry.
         phase = this.requireLobbyEntry ? 'lobby' : phase;
         this.pending.delete(id);
@@ -469,15 +494,23 @@ export class Room {
             this.out.to(id, { type: 'rejected', reason: 'version' });
             return this.out.close(id);
         }
-        if (this.players.size >= MAX_PLAYERS) {
-            this.out.to(id, { type: 'rejected', reason: 'full' });
-            return this.out.close(id);
-        }
         const account = this.accounts?.resolve(token, realNow) ?? null;
         // With accounts enabled every player must be signed in (there is no guest entry).
         if (this.accounts && !account) {
             this.out.to(id, { type: 'rejected', reason: 'auth' });
             return this.out.close(id);
+        }
+        const replacingAccount = !!account && [...this.players.values()].some((player) => player.accountName === account.name);
+        if (this.players.size >= MAX_PLAYERS && !replacingAccount) {
+            this.out.to(id, { type: 'rejected', reason: 'full' });
+            return this.out.close(id);
+        }
+        if (!this.players.size && this.emptySince !== null) {
+            if (realNow - this.emptySince >= ROUND.emptyRoomGraceSeconds * 1000) {
+                if (this.round?.phase === 'playing' && now >= this.round.endsAt) this.advanceRound(now);
+                this.clearEmptyRoom();
+            } else this.advanceRound(now);
+            now = this.matchNow(realNow);
         }
         let name: string;
         if (account) {
@@ -496,22 +529,25 @@ export class Room {
             name = base;
             for (let suffix = 2; taken.has(name); suffix++) name = `${base}·${suffix}`;
         }
+        const standing = account && this.roundStanding.get(account.name);
+        const resumed = standing?.roundId === this.roundId ? standing : undefined;
+        if (resumed?.phase === 'playing') phase = 'playing';
         const player: Player = {
             id,
             name,
             phase,
             colour: this.freeColour(id),
-            alive: true,
-            hp: MAX_HP,
-            score: 0,
-            kills: 0,
-            deaths: 0,
+            alive: resumed?.alive ?? true,
+            hp: resumed?.hp ?? MAX_HP,
+            score: resumed?.score ?? 0,
+            kills: resumed?.kills ?? 0,
+            deaths: resumed?.deaths ?? 0,
             pose: phase === 'lobby'
                 ? { p: [SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.y, SOUTH_GATE.spawn.z], yaw: 0, pitch: 0 }
                 : null,
             poseAt: phase === 'lobby' ? now : 0,
             lastThrowAt: -Infinity,
-            respawnAt: 0,
+            respawnAt: resumed ? (resumed.alive || resumed.finalOut ? 0 : Math.max(now, resumed.respawnAt)) : 0,
             hurtAt: 0,
             spawnedAt: this.matchNow(realNow),
             accountName: account?.name ?? null,
@@ -521,10 +557,10 @@ export class Room {
             skinCounter: !!(account?.equippedSkin && account.skins?.[account.equippedSkin]?.counter),
             skinKills: account?.equippedSkin ? (account.skins?.[account.equippedSkin]?.kills ?? 0) : 0,
             chatTimes: [],
-            ammo: this.startAmmo,
-            spectating: false,
-            fanPose: null,
-            fanPoseAt: 0,
+            ammo: resumed?.ammo ?? this.startAmmo,
+            spectating: resumed?.finalOut === true || resumed?.spectating === true,
+            fanPose: resumed?.fanPose ? structuredClone(resumed.fanPose) : null,
+            fanPoseAt: resumed?.fanPose ? now : 0,
             goldThrows: 0,
             goldCooldownUntil: 0,
             detainedUntil: 0,
@@ -537,31 +573,44 @@ export class Room {
             lastJoinAttemptAt: -Infinity,
             lastBoundaryCorrectionAt: -Infinity,
             hasReviveArmor: false,
-            reviveUsed: false,
-            reviveTaken: false,
+            reviveUsed: resumed?.reviveTaken ?? false,
+            reviveTaken: resumed?.reviveTaken ?? false,
             hasFrc: false,
             hasEye: false,
             hasStealth: false,
             hasCreation: false,
             hasFlashlight: false,
-            coachGift: false,
-            ammoCapacity: AMMO.max,
+            coachGift: resumed?.coachGift ?? false,
+            ammoCapacity: resumed?.ammoCapacity ?? AMMO.max,
             frcSelected: false,
             frcCooldownUntil: 0,
             stealthUntil: 0,
             stealthCooldownUntil: 0,
             creationNextAt: now + ITEM_RULES.creationRefillMs
         };
+        if (resumed?.finalOut) {
+            player.alive = false;
+            player.spectating = true;
+            player.respawnAt = 0;
+        } else if (resumed && !resumed.alive) {
+            player.alive = false;
+            player.spectating = false;
+            // An expired wait remains eligible for the next authoritative respawn tick.
+            player.respawnAt = Math.max(now, resumed.respawnAt);
+        }
         this.players.set(id, player);
+        this.emptySince = null;
         if (!this.round) this.startRound(this.matchNow(realNow), false);
         if (phase === 'playing') this.roundPeakPlayers = Math.max(this.roundPeakPlayers, this.playingPlayerCount());
         // Arriving after the lights went out: watch until the next round.
-        if (phase === 'playing' && (this.blackout(now) || (account && this.executedAccounts.has(account.name)))) {
+        if (phase === 'playing' && (player.spectating || this.blackout(now) || (account && this.executedAccounts.has(account.name)))) {
             player.alive = false;
             player.spectating = true;
+            player.respawnAt = 0;
         }
         if (phase === 'playing' && this.round?.phase === 'playing' && !player.spectating && player.accountName)
             this.roundParticipants.add(player.accountName);
+        this.saveStanding(player, realNow);
         this.out.to(id, {
             type: 'welcome',
             id,
@@ -583,6 +632,85 @@ export class Room {
             matchTime: this.matchNow(realNow)
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
+    }
+
+    private saveStanding(player: Player, realNow: number) {
+        if (!player.accountName || !this.round) return;
+        this.roundStanding.set(player.accountName, {
+            roundId: this.roundId,
+            phase: player.phase,
+            alive: player.alive,
+            spectating: player.spectating,
+            finalOut: player.phase === 'playing' && player.spectating,
+            respawnAt: player.respawnAt,
+            hp: player.hp,
+            score: player.score,
+            kills: player.kills,
+            deaths: player.deaths,
+            ammo: player.ammo,
+            ammoCapacity: player.ammoCapacity,
+            coachGift: player.coachGift,
+            reviveTaken: player.reviveTaken,
+            fanPose: player.fanPose ? structuredClone(player.fanPose) : null,
+            lastSeen: realNow
+        });
+    }
+
+    private clearEmptyRoom() {
+        this.globalFinisher = null;
+        this.matchClockOffset = 0;
+        this.preparations.clear();
+        this.round = null;
+        this.roundStanding.clear();
+        this.executedAccounts.clear();
+        this.power = { pulledAt: null };
+        this.roundParticipants.clear();
+        this.discs = [];
+        this.items.clear();
+        this.officeAt = null;
+        this.emptySince = null;
+    }
+
+    private settleDisconnectedExecutionTarget(target: Player, attackerId: string, now: number, realNow: number) {
+        if (!target.alive || target.spectating || !target.pose) return;
+        const attacker = this.players.get(attackerId);
+        const revived = this.reviveOnLethal(target, now);
+        if (!revived) {
+            target.hp = 0;
+            target.alive = false;
+            target.spectating = true;
+            target.respawnAt = 0;
+            target.deaths++;
+            if (target.accountName) this.executedAccounts.add(target.accountName);
+            if (attacker?.alive) {
+                attacker.kills++;
+                attacker.score += POINTS.elimination;
+            }
+        }
+        this.out.all({
+            type: 'struck',
+            target: target.id,
+            by: attackerId,
+            hp: revived ? MAX_HP : 0,
+            out: !revived,
+            head: false,
+            sniper: false,
+            gold: false,
+            final: !revived,
+            execution: true,
+            revived,
+            at: [...target.pose.p],
+            scores: this.scores()
+        });
+        if (attacker) this.persist(attacker, target, !revived, now, false);
+        else if (!revived && target.accountName && this.accounts) {
+            const stats = this.accounts.record(target.accountName, { deaths: 1 });
+            if (stats) this.out.to(target.id, { type: 'account', account: stats });
+        }
+        if (!revived) this.fallen(target, now);
+        else this.out.all({ type: 'revived', id: target.id, at: [...target.pose.p] });
+        this.saveStanding(target, realNow);
+        if (attacker) this.saveStanding(attacker, realNow);
     }
 
     private validLobbyPose(p: Vec3Tuple) {
@@ -611,12 +739,19 @@ export class Room {
         player.alive = true;
         player.spectating = false;
         player.respawnAt = 0;
-        if (this.blackout(now) || (player.accountName && this.executedAccounts.has(player.accountName))) {
+        const standing = player.accountName ? this.roundStanding.get(player.accountName) : undefined;
+        if (
+            (standing?.roundId === this.roundId && standing.finalOut) ||
+            this.blackout(now) ||
+            (player.accountName && this.executedAccounts.has(player.accountName))
+        ) {
             player.alive = false;
             player.spectating = true;
+            player.respawnAt = 0;
         }
         if (this.round?.phase === 'playing' && !player.spectating && player.accountName)
             this.roundParticipants.add(player.accountName);
+        this.saveStanding(player, realNow);
         this.out.all({ type: 'phaseChanged', id: player.id, phase: 'playing' });
     }
 
@@ -1061,6 +1196,7 @@ export class Room {
             if (this.blackout(now) || powerOut(now, this.power)) {
                 target.spectating = true;
                 target.respawnAt = 0;
+                if (target.accountName) this.executedAccounts.add(target.accountName);
             }
         }
         const scores: Scores = {};
@@ -1155,6 +1291,7 @@ export class Room {
             player.deaths++;
             player.spectating = true;
             player.respawnAt = 0;
+            if (player.accountName) this.executedAccounts.add(player.accountName);
         }
         this.out.all({
             type: 'struck',
@@ -1221,6 +1358,7 @@ export class Room {
 
     private startRound(now: number, announce = true) {
         this.cancelAllExecutions('新一局开始');
+        this.roundStanding.clear();
         this.executedAccounts.clear();
         this.power = { pulledAt: null };
         this.roundParticipants.clear();
@@ -1285,7 +1423,7 @@ export class Room {
     }
 
     private advanceRound(now: number) {
-        if (!this.round || !this.players.size) return;
+        if (!this.round) return;
         if (this.round.phase === 'playing' && now >= this.round.endsAt) {
             const holder = this.gold.holder ? this.players.get(this.gold.holder) : undefined;
             this.endRound(
@@ -1733,6 +1871,7 @@ const summary = ({
     colour,
     alive,
     spectating,
+    respawnAt,
     hp,
     score,
     kills,
@@ -1764,6 +1903,7 @@ const summary = ({
     colour,
     alive,
     spectating,
+    respawnAt,
     hp,
     score,
     kills,

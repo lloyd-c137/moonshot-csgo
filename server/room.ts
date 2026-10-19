@@ -378,10 +378,16 @@ export class Room {
                 player.stealthUntil = 0;
                 this.broadcastAbility(player);
             }
-            if (player.hasCreation && player.alive && player.ammo < player.ammoCapacity && now >= player.creationNextAt) {
-                player.ammo++;
-                player.creationNextAt = now + ITEM_RULES.creationRefillMs;
-                this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+            if (player.hasCreation) {
+                if (!player.alive || player.ammo >= player.ammoCapacity) {
+                    // The refill timer only runs while there is room for a disc (and its holder is alive): a full
+                    // stack holds it at a whole interval, so the first throw never refills on the spot.
+                    player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+                } else if (now >= player.creationNextAt) {
+                    player.ammo++;
+                    player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+                    this.sendAmmo(player);
+                }
             }
             if (!player.alive && !player.spectating && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
@@ -389,7 +395,7 @@ export class Room {
                 const respawnAmmo = Math.min(this.startAmmo, player.ammoCapacity);
                 if (player.ammo < respawnAmmo) {
                     player.ammo = respawnAmmo;
-                    this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+                    this.sendAmmo(player);
                 }
                 this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
             }
@@ -966,7 +972,7 @@ export class Room {
         } else {
             if (player.ammo <= 0) return;
             player.ammo--;
-            this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+            this.sendAmmo(player);
         }
         player.lastThrowAt = now;
         if (player.stealthUntil) {
@@ -1322,6 +1328,10 @@ export class Room {
         const [gx, gy, gz] = this.gold.at;
         if (Math.hypot(x - gx, z - gz) > ROUND.pickupRadius || Math.abs(y - gy) > 1.6) return;
         this.gold = { holder: player.id, at: [x, y, z] };
+        // Each hold starts a fresh burst count, as the client counts it (a count carried over from an earlier hold
+        // made the room refuse throws the holder's HUD allowed).
+        player.goldThrows = 0;
+        player.goldCooldownUntil = 0;
         this.out.all({ type: 'gold', gold: this.gold, event: 'taken' });
         if (!this.goldCutscenePlayed && player.pose) {
             this.goldCutscenePlayed = true;
@@ -1393,7 +1403,7 @@ export class Room {
         const picked = taken.slice(0, room);
         player.ammo += picked.length;
         this.discs = this.discs.filter((disc) => !picked.includes(disc));
-        this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+        this.sendAmmo(player);
         this.out.all({ type: 'discs', discs: this.discs });
     }
 
@@ -1445,7 +1455,7 @@ export class Room {
             player.coachGift = true;
             player.ammoCapacity = 5;
             player.ammo = Math.min(5, player.ammo + 2);
-            this.out.to(player.id, { type: 'ammo', ammo: player.ammo });
+            this.sendAmmo(player);
             this.broadcastAbility(player);
             this.system(`${player.name} 获得飞盘天赋：携带上限提升至 5`, now);
             return;
@@ -1492,7 +1502,11 @@ export class Room {
         const previous = this.interactionTimes.get(player.id) ?? -Infinity;
         if (now - previous < ITEM_RULES.interactionIntervalMs) return;
         this.interactionTimes.set(player.id, now);
-        if (player.phase !== 'playing' || !player.alive || !player.hasStealth || now < player.stealthCooldownUntil || this.executionFor(player.id)) return;
+        if (player.phase !== 'playing' || !player.alive || !player.hasStealth || now < player.stealthCooldownUntil || this.executionFor(player.id)) {
+            // Refused: resend the true cooldown so the presser's HUD matches the room.
+            if (player.hasStealth) this.out.to(player.id, { type: 'ability', id: player.id, player: summary(player), item: null });
+            return;
+        }
         player.stealthUntil = now + ITEM_RULES.stealthDurationMs;
         player.stealthCooldownUntil = now + ITEM_RULES.stealthCooldownMs;
         this.broadcastAbility(player);
@@ -1524,6 +1538,15 @@ export class Room {
 
     private broadcastItems() {
         this.out.all({ type: 'items', items: [...this.items.values()] });
+    }
+
+    /** The player's disc count, with 创造之力's next refill time so their countdown stays true. */
+    private sendAmmo(player: Player) {
+        this.out.to(player.id, {
+            type: 'ammo',
+            ammo: player.ammo,
+            ...(player.hasCreation ? { creationNextAt: player.creationNextAt } : {})
+        });
     }
 
     private broadcastAbility(player: Player, item: WorldItem | null = null) {
@@ -1697,6 +1720,7 @@ const summary = ({
     coachGift,
     ammoCapacity,
     stealthUntil,
+    stealthCooldownUntil,
     frcSelected,
     frcCooldownUntil,
     creationNextAt
@@ -1724,6 +1748,7 @@ const summary = ({
     coachGift,
     ammoCapacity,
     stealthUntil,
+    stealthCooldownUntil,
     frcSelected,
     frcCooldownUntil,
     creationNextAt

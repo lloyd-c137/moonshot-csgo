@@ -151,6 +151,7 @@ export type PlayerSummary = {
     coachGift?: boolean;
     ammoCapacity?: number;
     stealthUntil?: number;
+    stealthCooldownUntil?: number;
     frcSelected?: boolean;
     frcCooldownUntil?: number;
     creationNextAt?: number;
@@ -327,7 +328,8 @@ export type ServerMessage =
     | { type: 'round'; round: RoundState; scores: Scores }
     | { type: 'caught'; id: string }
     /** Your disc count changed. */
-    | { type: 'ammo'; ammo: number }
+    /** `creationNextAt`: with 创造之力, when the next disc is added (room clock; the timer only runs while not full). */
+    | { type: 'ammo'; ammo: number; creationNextAt?: number }
     /** Discs lying around changed (`added`: a fresh one appeared, e.g. at the PE office). */
     | { type: 'discs'; discs: GroundDisc[]; added?: { id: number; office: boolean } }
     | { type: 'pong'; c: number }

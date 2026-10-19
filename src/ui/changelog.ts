@@ -5,6 +5,17 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.33.1',
+        date: '2026.10.19',
+        title: '技能冷却修正',
+        notes: [
+            '创造之力的“下次补充”倒计时不再卡在 0 秒：每次补充后服务器都会同步下一次的时间。',
+            '创造之力在飞盘已满时显示“飞盘已满”并暂停计时，扔出飞盘后从头计时，不会再出现一扔就立刻补回的情况。',
+            '请假条的冷却改由服务器同步：联机时用完后会正确显示 60 秒冷却，不会再提前显示“就绪”却按不出来。',
+            '金飞盘连投 5 次后的冷却改为每次拿到金飞盘重新计数，界面和服务器不再对不上。'
+        ]
+    },
+    {
         version: 'v0.33.0',
         date: '2026.10.19',
         title: '金飞盘新造型',

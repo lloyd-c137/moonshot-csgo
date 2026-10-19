@@ -953,3 +953,49 @@ test('a round that ends without a gold holder or final survivor is reported as a
     assert.equal(ended.round.winnerId, null);
     assert.equal(ended.round.outcome, 'draw');
 });
+
+test('创造之力 refill timer only runs while the stack has room, and every ammo update carries the next refill time', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    room.gold = { holder: null, at: [500, 0.92, 500] };
+    const mark = NPC_SPAWNS.find((npc) => npc.id === 'mark').at;
+    pose('a', mark, 2000);
+    room.message('a', { type: 'interact', target: 'mark' }, 2300);
+    const a = room.players.get('a');
+    assert.equal(a.hasCreation, true);
+    a.ammo = a.ammoCapacity;
+    // Full for 40 s: no refill can bank up while there is no room for a disc.
+    room.tick(40_000);
+    assert.equal(a.ammo, a.ammoCapacity);
+    assert.equal(a.creationNextAt, 40_000 + ITEM_RULES.creationRefillMs);
+    pose('a', [mark[0], 0.9, mark[2]], 40_500);
+    room.message('a', { type: 'throw', throw: { id: 1, o: [mark[0], 1.5, mark[2]], v: [15, 0, 0], tilt: 0 } }, 41_000);
+    assert.equal(a.ammo, a.ammoCapacity - 1);
+    const afterThrow = inbox.get('a').findLast((message) => message.type === 'ammo');
+    assert.equal(afterThrow.ammo, a.ammoCapacity - 1);
+    assert.ok(afterThrow.creationNextAt >= 41_000 + ITEM_RULES.creationRefillMs - 1_000, `${afterThrow.creationNextAt}`);
+    // The first throw after a full stack does not refill on the spot.
+    room.tick(42_000);
+    assert.equal(a.ammo, a.ammoCapacity - 1);
+    // A whole interval later it does, and the message names the next refill.
+    room.tick(afterThrow.creationNextAt + 10);
+    assert.equal(a.ammo, a.ammoCapacity);
+    const refill = inbox.get('a').findLast((message) => message.type === 'ammo');
+    assert.equal(refill.creationNextAt, afterThrow.creationNextAt + 10 + ITEM_RULES.creationRefillMs);
+});
+
+test('请假条 cooldown travels in the player summary, and a refused activation resends it', () => {
+    const { room, join, inbox } = harness();
+    join('a', 'A');
+    room.gold = { holder: null, at: [500, 0.92, 500] };
+    const a = room.players.get('a');
+    a.hasStealth = true;
+    room.message('a', { type: 'activateStealth' }, 1_000);
+    const used = inbox.get('a').findLast((message) => message.type === 'ability' && message.id === 'a');
+    assert.equal(used.player.stealthCooldownUntil, 1_000 + ITEM_RULES.stealthCooldownMs);
+    const before = inbox.get('a').length;
+    room.message('a', { type: 'activateStealth' }, 5_000);
+    const resent = inbox.get('a').slice(before).find((message) => message.type === 'ability' && message.id === 'a');
+    assert.ok(resent, 'refused activation resends the cooldown');
+    assert.equal(resent.player.stealthCooldownUntil, 1_000 + ITEM_RULES.stealthCooldownMs);
+});

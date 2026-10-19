@@ -96,7 +96,7 @@ type Handlers = {
     momentCutsceneStarted: (cutscene: MomentCutscene) => void;
     momentCutsceneEnded: (id: string) => void;
     caught: (id: string) => void;
-    ammo: (ammo: number) => void;
+    ammo: (ammo: number, creationNextAt?: number) => void;
     discs: (discs: GroundDisc[], added?: { id: number; office: boolean }) => void;
     /** Round-trip time to the room (ms), smoothed; null when not connected. */
     latency: (ms: number | null) => void;
@@ -267,7 +267,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 handlers.caught(message.id);
                 break;
             case 'ammo':
-                handlers.ammo(message.ammo);
+                handlers.ammo(message.ammo, message.creationNextAt);
                 break;
             case 'discs':
                 handlers.discs(message.discs, message.added);

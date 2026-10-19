@@ -1180,6 +1180,7 @@ export const createMatch = ({
             localFrcSelected = me.frcSelected === true;
             localFrcCooldownUntil = me.frcCooldownUntil ?? 0;
             localStealthUntil = me.stealthUntil ?? 0;
+            localStealthCooldownUntil = me.stealthCooldownUntil ?? 0;
             creationNextAt = me.creationNextAt ?? 0;
             roster.clear();
             if (me.spectating) {
@@ -1287,6 +1288,12 @@ export const createMatch = ({
                 localFrcSelected = next.frcSelected === true;
                 localFrcCooldownUntil = next.frcCooldownUntil ?? item?.cooldownUntil ?? localFrcCooldownUntil;
                 localStealthUntil = next.stealthUntil ?? 0;
+                // An older room omits it; an activation it accepted then still starts the cooldown here.
+                localStealthCooldownUntil =
+                    next.stealthCooldownUntil ??
+                    (localStealthUntil > previousStealthUntil
+                        ? localStealthUntil - ITEM_RULES.stealthDurationMs + ITEM_RULES.stealthCooldownMs
+                        : localStealthCooldownUntil);
                 creationNextAt = next.creationNextAt ?? creationNextAt;
                 if (!wasFrcSelected && localFrcSelected) {
                     setViewmodelSkin(holdingGold() ? 'gold' : 'frc');
@@ -1584,6 +1591,9 @@ export const createMatch = ({
                 const where: V3 = gold.holder === me ? viewmodelWorld() : (positionOf(gold.holder) ?? gold.at);
                 goldView.flourish(where);
                 if (gold.holder === me) {
+                    // A fresh burst count for each hold (the room resets its count on pickup too).
+                    goldThrowCount = 0;
+                    goldCooldownUntil = 0;
                     sound.goldTaken();
                     ui.popup('夺得金飞盘！', 'gold');
                     ui.feed('你持有金飞盘 · 坚持到倒计时结束就能获胜', 'mine');
@@ -1688,10 +1698,13 @@ export const createMatch = ({
             ui.finisherMode(false);
             ui.notify(`全场处决已取消：${reason}`);
         },
-        ammo: (next) => {
+        ammo: (next, nextRefillAt) => {
+            if (nextRefillAt !== undefined) creationNextAt = nextRefillAt;
+            // An older room sends no refill time: a refill restarts the interval.
+            else if (localAbilities.creation && next > ammo) creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
             if (next > ammo) {
                 sound.pickup();
-                ui.feed(`捡起飞盘 · ${next}/${AMMO.max}`, 'mine');
+                ui.feed(`捡起飞盘 · ${next}/${localAmmoCapacity}`, 'mine');
             }
             ammo = next;
             ui.ammo(ammo, localAmmoCapacity);
@@ -2917,9 +2930,15 @@ export const createMatch = ({
         if (localAbilities.eye) abilityLabels.push('监控室之眼 · 全场位置已标记');
         if (localAbilities.flashlight) abilityLabels.push('手电筒 · 照亮视线前方');
         if (localAbilities.creation) {
-            const remaining = Math.max(0, creationNextAt - clockNow);
-            abilityLabels.push(`创造之力 · 下次补充 ${Math.ceil(remaining / 1000)} 秒`);
-            abilityProgress.push(1 - remaining / ITEM_RULES.creationRefillMs);
+            if (ammo >= localAmmoCapacity) {
+                // Full: the room holds the refill timer until a disc is thrown.
+                abilityLabels.push('创造之力 · 飞盘已满');
+                abilityProgress.push(1);
+            } else {
+                const remaining = Math.min(ITEM_RULES.creationRefillMs, Math.max(0, creationNextAt - clockNow));
+                abilityLabels.push(`创造之力 · 下次补充 ${Math.max(1, Math.ceil(remaining / 1000))} 秒`);
+                abilityProgress.push(1 - remaining / ITEM_RULES.creationRefillMs);
+            }
         }
         ui.abilityStatus(abilityLabels.length ? abilityLabels.join('　·　') : null, abilityProgress.length ? Math.min(...abilityProgress) : 1);
 
@@ -3191,6 +3210,9 @@ export const createMatch = ({
         },
         update(deltaTime: number) {
             const now = performance.now();
+            // Offline practice mirrors the room: the refill timer is held while the stack is full.
+            if (net.state !== 'online' && localAbilities.creation && ammo >= localAmmoCapacity)
+                creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
             if (net.state !== 'online' && localAbilities.creation && ammo < localAmmoCapacity && roomNow() >= creationNextAt) {
                 ammo++;
                 creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;

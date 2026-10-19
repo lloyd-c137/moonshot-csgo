@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
@@ -8,7 +8,11 @@ import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
 import { createCampusServer } from '../../server/node/main.ts';
 
-const mode = process.env.MODE === 'baseline' ? 'baseline-sync-zlib' : 'optimized-precompressed-stream';
+const mode = process.env.MODE === 'baseline'
+    ? 'baseline-equivalent-async-read-sync-zlib'
+    : process.env.MODE === 'legacy'
+      ? 'baseline-historical-readFileSync-sync-zlib'
+      : 'optimized-precompressed-stream';
 const requests = Math.max(20, Number(process.env.REQUESTS ?? 160));
 const concurrency = Math.max(1, Number(process.env.CONCURRENCY ?? 4));
 const dist = resolve(process.env.DIST_DIR ?? 'dist');
@@ -39,9 +43,9 @@ let server;
 let campusServer;
 
 try {
-    if (mode === 'baseline-sync-zlib') {
-        server = createServer((request, response) => {
-            const bytes = readFileSync(target);
+    if (mode.startsWith('baseline-')) {
+        server = createServer(async (request, response) => {
+            const bytes = mode === 'baseline-historical-readFileSync-sync-zlib' ? readFileSync(target) : await readFile(target);
             const accept = String(request.headers['accept-encoding'] ?? '');
             const body = /(?:^|,)\s*br(?:\s*,|$)/i.test(accept)
                 ? brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } })
@@ -68,29 +72,39 @@ try {
     }, 50);
     let completed = 0;
     let wireBytes = 0;
+    let completedResponses = 0;
+    let minResponseBytes = Number.POSITIVE_INFINITY;
+    let maxResponseBytes = 0;
     const worker = async () => {
         while (completed < requests) {
             completed++;
-            wireBytes += await new Promise((resolveRequest, rejectRequest) => {
+            const responseBytes = await new Promise((resolveRequest, rejectRequest) => {
                 const req = request({ hostname: '127.0.0.1', port, path: urlPath, headers: { 'accept-encoding': 'br,gzip' } });
                 let bytes = 0;
                 req.on('response', (response) => {
                     response.on('data', (chunk) => { bytes += chunk.byteLength; });
-                    response.on('end', () => resolveRequest(bytes));
+                    response.on('end', () => {
+                        completedResponses++;
+                        minResponseBytes = Math.min(minResponseBytes, bytes);
+                        maxResponseBytes = Math.max(maxResponseBytes, bytes);
+                        resolveRequest(bytes);
+                    });
                 });
                 req.on('error', rejectRequest);
                 req.end();
             });
+            wireBytes += responseBytes;
         }
     };
     await Promise.all(Array.from({ length: concurrency }, worker));
+    if (completedResponses !== requests) throw new Error(`Expected ${requests} completed responses, got ${completedResponses}`);
     clearInterval(timer);
     delay.disable();
     const elapsed = performance.now() - started;
     const cpu = process.cpuUsage(cpuStart);
     const sortedDrift = drift.sort((a, b) => a - b);
     const percentile = (p) => sortedDrift[Math.max(0, Math.ceil(sortedDrift.length * p) - 1)] ?? 0;
-    console.log(JSON.stringify({ mode, requests, concurrency, path: urlPath, elapsedMs: +elapsed.toFixed(1), wireBytes, cpuMs: +((cpu.user + cpu.system) / 1000).toFixed(1), eventLoopDelayP95Ms: +(delay.percentile(95) / 1e6).toFixed(2), eventLoopDelayMaxMs: +(delay.max / 1e6).toFixed(2), timerDriftP95Ms: +percentile(.95).toFixed(2), timerDriftMaxMs: +(sortedDrift.at(-1) ?? 0).toFixed(2), rssDeltaBytes: process.memoryUsage().rss - rssStart }));
+    console.log(JSON.stringify({ mode, requests, completedResponses, concurrency, path: urlPath, minResponseBytes, maxResponseBytes, elapsedMs: +elapsed.toFixed(1), wireBytes, cpuMs: +((cpu.user + cpu.system) / 1000).toFixed(1), eventLoopDelayP95Ms: +(delay.percentile(95) / 1e6).toFixed(2), eventLoopDelayMaxMs: +(delay.max / 1e6).toFixed(2), timerDriftP95Ms: +percentile(.95).toFixed(2), timerDriftMaxMs: +(sortedDrift.at(-1) ?? 0).toFixed(2), rssDeltaBytes: process.memoryUsage().rss - rssStart }));
 } finally {
     if (campusServer) await campusServer.close();
     else if (server?.listening) await new Promise((resolveClose) => server.close(() => resolveClose()));

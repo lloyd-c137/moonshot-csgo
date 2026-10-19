@@ -231,7 +231,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 visibleFans = message.fans ?? {};
                 clock.observe(message.t, performance.now());
                 applySnapshotPoses(visiblePoses, visibleFans, message.t);
-                send({ type: 'snapshotAck', seq: message.seq });
+                send({ type: 'snapshotAck', seq: message.seq, epoch: message.epoch });
                 break;
             }
             case 'snapshotDelta': {
@@ -245,7 +245,7 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                 visibleFans = applyPoseDelta(visibleFans, message.fanUpdates ?? {}, message.fanRemoved ?? []);
                 clock.observe(message.t, performance.now());
                 applySnapshotPoses(visiblePoses, visibleFans, message.t);
-                send({ type: 'snapshotAck', seq: message.seq });
+                send({ type: 'snapshotAck', seq: message.seq, epoch: message.epoch });
                 break;
             }
             case 'thrown':

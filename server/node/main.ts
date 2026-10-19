@@ -199,11 +199,22 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
     const outbound = new OutboundPolicy();
     const snapshotAcks = new SnapshotAcks();
     const snapshotPublisher = new SnapshotDeltaPublisher();
+    const connectionStats = new Map<string, { sentBytes: number; frames: number; maxBufferedBytes: number }>();
+    const recentConnectionStats: { sentBytes: number; frames: number; maxBufferedBytes: number; reason: string }[] = [];
+    const rememberConnectionEnd = (id: string, reason: string) => {
+        const stats = connectionStats.get(id);
+        if (!stats) return;
+        recentConnectionStats.push({ ...stats, reason });
+        if (recentConnectionStats.length > 32) recentConnectionStats.shift();
+        connectionStats.delete(id);
+    };
     const send = (id: string, socket: WebSocket | undefined, message: ServerMessage, serialized?: string) => {
         if (!socket?.readyState) return;
         const start = performance.now();
         let outgoing = message;
+        let reservedSeq: number | null = null;
         if (message.type === 'snapshot') {
+            metrics.observe('websocketBufferedBytes', socket.bufferedAmount);
             const pressure = outbound.decide(id, message, socket.bufferedAmount, Date.now());
             if (pressure === 'coalesce') {
                 metrics.increment('coalescedSnapshots');
@@ -211,6 +222,7 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
             }
             if (pressure === 'close') {
                 metrics.increment('slowConnections');
+                rememberConnectionEnd(id, 'slow-buffer');
                 socket.close(1013, 'slow connection');
                 return;
             }
@@ -221,9 +233,11 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
             }
             if (next.type === 'close') {
                 metrics.increment('slowConnections');
+                rememberConnectionEnd(id, 'slow-ack-timeout');
                 socket.close(1013, 'slow connection');
                 return;
             }
+            reservedSeq = next.seq;
             outgoing = snapshotPublisher.encode(id, message, next.seq, Date.now());
         }
         const text = serialized && message.type !== 'snapshot' ? serialized : JSON.stringify(outgoing);
@@ -233,17 +247,32 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
         if (message.type === 'snapshot') metrics.observe('snapshotBytes', bytes);
         if (message.type !== 'snapshot' && outbound.decide(id, message, socket.bufferedAmount, Date.now()) === 'close') {
             metrics.increment('slowConnections');
+            rememberConnectionEnd(id, 'slow-buffer');
             socket.close(1013, 'slow connection');
             return;
         }
         try {
             const sendStarted = performance.now();
             socket.send(text);
+            if (reservedSeq !== null) {
+                snapshotAcks.commit(id, reservedSeq, Date.now());
+                snapshotPublisher.commit(id, reservedSeq);
+            }
             metrics.observe('websocketSendCallMs', performance.now() - sendStarted);
             metrics.increment('outboundBytes', bytes);
+            const stat = connectionStats.get(id);
+            if (stat) {
+                stat.sentBytes += bytes;
+                stat.frames++;
+                stat.maxBufferedBytes = Math.max(stat.maxBufferedBytes, socket.bufferedAmount);
+            }
             metrics.increment(message.type === 'snapshot' || message.type === 'snapshotFull' || message.type === 'snapshotDelta' ? 'snapshots' : 'serverMessages');
             if (isCriticalServerMessage(message)) metrics.increment('criticalEvents');
         } catch {
+            if (reservedSeq !== null) {
+                snapshotAcks.abort(id, reservedSeq);
+                snapshotPublisher.abort(id, reservedSeq);
+            }
             // The connection closed between a room event and send.
         }
     };
@@ -378,6 +407,7 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
     webSockets.on('connection', (socket) => {
         const id = `${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         sockets.set(id, socket);
+        connectionStats.set(id, { sentBytes: 0, frames: 0, maxBufferedBytes: socket.bufferedAmount });
         room.connect(id);
         let budget = 60;
         let budgetAt = Date.now();
@@ -392,18 +422,24 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
             metrics.increment('inboundBytes', inboundBytes);
             const message = parseClientMessage(isBinary ? '' : data.toString());
             if (message?.type === 'snapshotAck') {
-                snapshotAcks.acknowledge(id, message.seq);
-                snapshotPublisher.acknowledge(id, message.seq, now);
+                if (snapshotAcks.acknowledge(id, message.seq, now, message.epoch)) {
+                    snapshotPublisher.acknowledge(id, message.epoch, message.seq, now);
+                }
                 return;
             }
             if (message?.type === 'snapshotResync') {
-                snapshotAcks.resync(id);
-                snapshotPublisher.resync(id);
+                const epoch = snapshotPublisher.resync(id);
+                if (epoch !== null) snapshotAcks.resync(id, epoch);
                 return;
             }
             if (message?.type === 'hello') {
                 room.message(id, message, now);
-                if (room.players.has(id)) snapshotPublisher.register(id, message.capabilities?.snapshotAck === true && message.capabilities.snapshotDelta === true);
+                if (room.players.has(id)) {
+                    const ackEnabled = message.capabilities?.snapshotAck === true;
+                    const deltaEnabled = ackEnabled && message.capabilities?.snapshotDelta === true;
+                    const epoch = snapshotPublisher.register(id, deltaEnabled);
+                    snapshotAcks.register(id, ackEnabled, epoch);
+                }
                 return;
             }
             room.message(id, message, now);
@@ -414,6 +450,7 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
             outbound.forget(id);
             snapshotAcks.forget(id);
             snapshotPublisher.forget(id);
+            rememberConnectionEnd(id, reason);
             room.disconnect(id);
             if (!sockets.size && timer) {
                 clearInterval(timer);
@@ -470,7 +507,22 @@ export const createCampusServer = async (options: { cwd?: string; config?: Parti
         eventLoop.disable();
         gcObserver.disconnect();
     };
-    return { httpServer, webSockets, room, accounts, database, config, metrics, listen, close };
+    return {
+        httpServer, webSockets, room, accounts, database, config, metrics, listen, close,
+        connectionDiagnostics: () => ({
+            active: Array.from(connectionStats.values(), (value) => ({ ...value })),
+            recent: recentConnectionStats.map((value) => ({ ...value }))
+        }),
+        realtimeDiagnostics: () => {
+            const elu = performance.eventLoopUtilization(lastElu);
+            return {
+                metrics: metrics.snapshot(),
+                eventLoopDelayP95Ms: eventLoop.percentile(95) / 1e6,
+                eventLoopDelayMaxMs: eventLoop.max / 1e6,
+                eventLoopUtilization: elu.utilization
+            };
+        }
+    };
 };
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

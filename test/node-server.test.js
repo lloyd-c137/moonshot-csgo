@@ -204,16 +204,22 @@ test('Node campus WebSocket routes a prepared GLOBAL FINISHER and settles it onc
     const base = `http://127.0.0.1:${port}`;
     const tokenA = await auth(base, 'FinisherAlice');
     const tokenB = await auth(base, 'FinisherBob');
+    const tokenSlow = await auth(base, 'FinisherSlow');
     const a = await connect(`ws://127.0.0.1:${port}/ws`, base);
     const b = await connect(`ws://127.0.0.1:${port}/ws`, base);
+    const slow = await connect(`ws://127.0.0.1:${port}/ws`, base);
     t.after(() => {
         a.close();
         b.close();
+        slow.terminate();
     });
-    a.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'A', token: tokenA, phase: 'lobby' }));
-    b.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'B', token: tokenB, phase: 'lobby' }));
-    await until(a, (message) => message.type === 'welcome');
+    const capabilities = { snapshotAck: true, snapshotDelta: true };
+    a.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'A', token: tokenA, phase: 'lobby', capabilities }));
+    b.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'B', token: tokenB, phase: 'lobby', capabilities }));
+    slow.send(JSON.stringify({ type: 'hello', version: PROTOCOL_VERSION, name: 'Slow', token: tokenSlow, phase: 'lobby', capabilities: { snapshotAck: true, snapshotDelta: true } }));
+    const welcomeA = await until(a, (message) => message.type === 'welcome');
     const welcomeB = await until(b, (message) => message.type === 'welcome');
+    await until(slow, (message) => message.type === 'welcome');
     const joinRound = async (socket, x) => {
         socket.send(JSON.stringify({
             type: 'pose',
@@ -224,7 +230,20 @@ test('Node campus WebSocket routes a prepared GLOBAL FINISHER and settles it onc
     };
     await joinRound(a, -9.5);
     await joinRound(b, -7.5);
+    await joinRound(slow, -8.5);
+    // Stop the third real ws client from reading after it has entered the room. Its ACK window
+    // must coalesce stale snapshots while the other two sockets continue to receive gameplay.
+    slow._socket.pause();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const healthySnapshotsBefore = a.messages.filter((message) => message.type === 'snapshotFull' || message.type === 'snapshotDelta').length;
     await new Promise((resolve) => setTimeout(resolve, 3100));
+    a.send(JSON.stringify({ type: 'pose', pose: { p: [-18, 0.9, -3], yaw: 0, pitch: 0 } }));
+    b.send(JSON.stringify({ type: 'pose', pose: { p: [-12, 0.9, -3], yaw: 0, pitch: 0 } }));
+    a.send(JSON.stringify({ type: 'throw', throw: { id: 73, o: [-18, 1.5, -3], v: [15, 0, 0], tilt: 0 } }));
+    await new Promise((resolve) => setTimeout(resolve, 410));
+    a.send(JSON.stringify({ type: 'hit', throwId: 73, target: welcomeB.id, at: [-12, 1.2, -3] }));
+    const hit = await until(b, (message) => message.type === 'struck' && message.by === welcomeA.id && message.execution !== true);
+    assert.equal(hit.hp, 2, 'healthy websocket peers still exchange authoritative hit results');
     const attackerPose = { p: [-44, 0.92, 39.6], yaw: 90, pitch: 0 };
     const victimPose = { p: [-45, 0.92, 39.6], yaw: 90, pitch: 0 };
     a.send(JSON.stringify({ type: 'pose', pose: attackerPose }));
@@ -242,4 +261,40 @@ test('Node campus WebSocket routes a prepared GLOBAL FINISHER and settles it onc
     assert.equal(settled.target, welcomeB.id);
     assert.equal(settled.out, true);
     assert.equal(b.messages.filter((message) => message.type === 'struck' && message.execution === true).length, 1);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const healthySnapshotsAfter = a.messages.filter((message) => message.type === 'snapshotFull' || message.type === 'snapshotDelta').length;
+    assert.ok(healthySnapshotsAfter - healthySnapshotsBefore >= 10, 'healthy websocket keeps receiving snapshots while peer read is paused');
+    const metrics = server.metrics.snapshot();
+    assert.ok(metrics.metrics.roomTickMs?.count > 0);
+    assert.ok(metrics.metrics.tickDriftMs?.count > 0);
+    assert.ok(metrics.metrics.websocketBufferedBytes?.count > 0);
+    assert.ok(metrics.counters.coalescedSnapshots > 0, 'slow peer caused replaceable state to coalesce');
+    assert.ok(metrics.counters.slowConnections > 0, 'stalled peer is isolated after the bounded timeout');
+    assert.ok(server.connectionDiagnostics().recent.some((entry) => entry.reason === 'slow-ack-timeout' && entry.frames > 0));
+    const pingRtts = [];
+    for (let i = 0; i < 5; i++) {
+        const sentAt = Date.now();
+        a.send(JSON.stringify({ type: 'ping', c: sentAt }));
+        const pong = await until(a, (message) => message.type === 'pong' && message.c === sentAt);
+        pingRtts.push(Date.now() - pong.c);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const realtime = server.realtimeDiagnostics();
+    assert.ok(realtime.eventLoopDelayMaxMs < 100, `local loopback event loop max delay was ${realtime.eventLoopDelayMaxMs}ms`);
+    console.log(JSON.stringify({
+        event: 'ws-slow-client-isolation', evidence: 'REAL_LOCAL_WS', players: 3, gameTickHz: 20,
+        healthyPingRttMs: pingRtts,
+        tickDriftMs: realtime.metrics.metrics.tickDriftMs,
+        tickDurationMs: realtime.metrics.metrics.roomTickMs,
+        eventLoopDelayP95Ms: realtime.eventLoopDelayP95Ms,
+        eventLoopDelayMaxMs: realtime.eventLoopDelayMaxMs,
+        sqliteOperationMs: realtime.metrics.metrics.sqliteOperationMs,
+        sqliteTransactionMs: realtime.metrics.metrics.sqliteTransactionMs,
+        socketBufferedBytes: realtime.metrics.metrics.websocketBufferedBytes,
+        connectionDiagnostics: server.connectionDiagnostics(),
+        outboundBytes: realtime.metrics.counters.outboundBytes,
+        coalescedSnapshots: realtime.metrics.counters.coalescedSnapshots,
+        slowConnections: realtime.metrics.counters.slowConnections,
+        rssBytes: process.memoryUsage().rss
+    }));
 });

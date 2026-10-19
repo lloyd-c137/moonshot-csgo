@@ -5,6 +5,12 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.34.3',
+        date: '2026.10.19',
+        title: '积分历史补发',
+        notes: ['现有账号按已显示的累计淘汰数和胜场一次性补发积分：每次淘汰 1 分、每场胜利 10 分；之后仍按新事件正常累计。']
+    },
+    {
         version: 'v0.34.2',
         date: '2026.10.19',
         title: '断线重连保留本局状态',

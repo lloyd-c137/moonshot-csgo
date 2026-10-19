@@ -64,9 +64,12 @@ const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
 const REACH_SLACK = 1.5;
 /** Minimum time (ms) between two crowd emotes from one spectator. */
 const EMOTE_INTERVAL = 1000;
+const samePlayerPose = (a: PlayerPose | null, b: PlayerPose) =>
+    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
+    poseRevision: number;
     poseAt: number;
     lastThrowAt: number;
     respawnAt: number;
@@ -309,6 +312,7 @@ export class Room {
                     player.alive = true;
                     player.spawnedAt = now;
                 }
+                if (!samePlayerPose(player.pose, message.pose)) player.poseRevision++;
                 player.pose = message.pose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 // Lag-compensation history runs on the real room clock (the one snapshots and hit claims use), not the
@@ -441,7 +445,7 @@ export class Room {
                     // Stealth positions are omitted per recipient, never merely hidden by a presentation flag.
                     if (player.id === recipient.id || player.stealthUntil > now) continue;
                     if (player.pose && player.alive)
-                        poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now) };
+                        poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now), rev: player.poseRevision };
                 }
                 const fans: Record<string, StampedPose> = {};
                 if (this.standsOpen(now))
@@ -545,6 +549,7 @@ export class Room {
             pose: phase === 'lobby'
                 ? { p: [SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.y, SOUTH_GATE.spawn.z], yaw: 0, pitch: 0 }
                 : null,
+            poseRevision: 0,
             poseAt: phase === 'lobby' ? now : 0,
             lastThrowAt: -Infinity,
             respawnAt: resumed ? (resumed.alive || resumed.finalOut ? 0 : Math.max(now, resumed.respawnAt)) : 0,

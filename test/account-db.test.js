@@ -37,14 +37,14 @@ test('SQLite migration preserves accounts; recorded wins, rounds and legacy loss
                 avatarVersion: null,
                 skins: null,
                 equipped: null,
-                points: 0
+                points: 5
             }
         );
         new Accounts(db).record('Old', { wins: 1, rounds: 2, points: 3 });
         db = sqlAccountDb(sql);
         assert.equal(db.findUser('old').rounds, 2);
         assert.equal(db.findUser('old').wins, 1);
-        assert.equal(db.findUser('old').points, 3);
+        assert.equal(db.findUser('old').points, 8);
         db.setWallet('old', 1, '{"steel":{"counter":true,"kills":4}}', 'steel');
         assert.deepEqual(new Accounts(sqlAccountDb(sql)).equipSkin('Old', 'steel').account.skins, { steel: { counter: true, kills: 4 } });
         new Accounts(db).record('Old', { losses: 1 });
@@ -92,12 +92,14 @@ test('owner reset backs up old round stats once and preserves new results after 
         assert.deepEqual(JSON.parse(backup).previous, [{ key: 'old', wins: 2, rounds: 5 }]);
         const lossBackup = db.getMeta('winrate-loss-only-v1');
         assert.deepEqual(JSON.parse(lossBackup).previous, [{ key: 'old', losses: 0 }]);
+        assert.equal(db.findUser('old').points, 8, 'legacy eliminations receive their one-time point credit');
         new Accounts(db).record('Old', { rounds: 1, losses: 1 });
         assert.equal(db.findUser('old').losses, 1);
         db = sqlAccountDb(sql);
         assert.equal(db.findUser('old').rounds, 1, 'a restart must not reset new play');
         assert.equal(db.getMeta('winrate-reset-100-v1'), backup);
         assert.equal(db.getMeta('winrate-loss-only-v1'), lossBackup);
+        assert.equal(db.findUser('old').points, 8, 'reinitializing must not credit legacy stats again');
         new Accounts(db).record('Old', { wins: 1, rounds: 1 });
         assert.equal(db.findUser('old').wins, 1);
         db.insertUser({
@@ -119,6 +121,39 @@ test('owner reset backs up old round stats once and preserves new results after 
             ['New', 'Old'],
             'initial 100% sorts consistently'
         );
+    } finally {
+        sqlite.close();
+    }
+});
+
+test('legacy points backfill credits visible eliminations and wins exactly once', () => {
+    const sqlite = new DatabaseSync(':memory:');
+    try {
+        sqlite.exec(`CREATE TABLE users (key TEXT PRIMARY KEY, name TEXT, salt TEXT, hash TEXT,
+            kills INTEGER, deaths INTEGER, hits INTEGER, score INTEGER, created INTEGER,
+            wins INTEGER, rounds INTEGER, losses INTEGER, points INTEGER);
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO meta VALUES ('winrate-reset-100-v1', '{}');
+            INSERT INTO meta VALUES ('winrate-loss-only-v1', '{}');
+            INSERT INTO users VALUES ('lloyd', 'lloyd', 'salt', 'hash', 141, 265, 0, 141, 1, 4, 50, 0, 0)`);
+        const sql = {
+            exec: (query, ...args) => {
+                const rows = sqlite.prepare(query).all(...args);
+                return { toArray: () => rows };
+            }
+        };
+
+        let db = sqlAccountDb(sql);
+        assert.equal(db.findUser('lloyd').points, 181);
+        assert.deepEqual(JSON.parse(db.getMeta('skin-points-stats-backfill-v1')), {
+            accounts: 1,
+            killPoints: 141,
+            winPoints: 40,
+            totalPoints: 181
+        });
+
+        db = sqlAccountDb(sql);
+        assert.equal(db.findUser('lloyd').points, 181);
     } finally {
         sqlite.close();
     }

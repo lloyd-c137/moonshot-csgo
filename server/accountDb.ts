@@ -1,3 +1,5 @@
+import { SKIN_POINTS } from '../src/config/skins.ts';
+
 import type { AccountDb, UserRow } from './accounts.ts';
 
 /** AccountDb on Durable Object SQLite. */
@@ -19,7 +21,6 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
     for (const column of ['avatarId', 'avatarVersion', 'skins', 'equipped']) {
         if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
     }
-    // Skin points start at zero for everyone (no back-pay from lifetime stats).
     if (!columns.has('points')) sql.exec('ALTER TABLE users ADD COLUMN points INTEGER NOT NULL DEFAULT 0');
     sql.exec('CREATE INDEX IF NOT EXISTS users_kills ON users (kills DESC, score DESC)');
     sql.exec(
@@ -48,6 +49,27 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
             'INSERT INTO meta (key, value) VALUES (?, ?)',
             lossRateKey,
             JSON.stringify({ initialRate: 100, previous })
+        );
+    }
+    // Credit legacy visible stats once. The caller wraps initialization in transactionSync.
+    const pointsBackfillKey = 'skin-points-stats-backfill-v1';
+    if (!sql.exec('SELECT value FROM meta WHERE key = ?', pointsBackfillKey).toArray().length) {
+        const totals = sql
+            .exec(
+                'SELECT COUNT(*) AS accounts, COALESCE(SUM(COALESCE(kills, 0)), 0) AS kills, COALESCE(SUM(COALESCE(wins, 0)), 0) AS wins FROM users'
+            )
+            .toArray()[0];
+        const killPoints = Number(totals.kills) * SKIN_POINTS.kill;
+        const winPoints = Number(totals.wins) * SKIN_POINTS.win;
+        sql.exec(
+            'UPDATE users SET points = COALESCE(points, 0) + COALESCE(kills, 0) * ? + COALESCE(wins, 0) * ?',
+            SKIN_POINTS.kill,
+            SKIN_POINTS.win
+        );
+        sql.exec(
+            'INSERT INTO meta (key, value) VALUES (?, ?)',
+            pointsBackfillKey,
+            JSON.stringify({ accounts: Number(totals.accounts), killPoints, winPoints, totalPoints: killPoints + winPoints })
         );
     }
     const one = <T>(cursor: SqlStorageCursor<Record<string, SqlStorageValue>>) => {

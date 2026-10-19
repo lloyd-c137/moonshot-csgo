@@ -2,6 +2,7 @@ import type { ServerMessage, StampedPose } from '../src/net/protocol.ts';
 import { diffPoses, poseChangeCount } from '../src/net/snapshotDelta.ts';
 
 export const OUTBOUND_LIMITS = { recoveryBytes: 64 * 1024, pauseSnapshotBytes: 256 * 1024, slowBytes: 512 * 1024, slowMs: 2000 } as const;
+export const SNAPSHOT_WINDOW = { min: 3, max: 12, defaultRttMs: 50, tickHz: 20 } as const;
 const REPLACEABLE = new Set(['snapshot']);
 const CRITICAL = new Set([
     'welcome', 'rejected', 'joined', 'left', 'struck', 'revived', 'respawn', 'round', 'account',
@@ -35,133 +36,225 @@ export class OutboundPolicy {
         return 'send';
     }
 
-    forget(id: string) {
-        this.slowSince.delete(id);
-    }
+    forget(id: string) { this.slowSince.delete(id); }
 }
 
-type SnapshotState = { sent: number; acked: number; sentAt: number; capable: boolean };
+type InFlight = { sentAt: number };
+type AckState = {
+    enabled: boolean;
+    epoch: number;
+    sent: number;
+    acked: number;
+    rttMs: number;
+    inFlight: Map<number, InFlight>;
+    prepared: number | null;
+};
 
-/** Cloudflare does not expose bufferedAmount; this bounds snapshots to one unacknowledged application frame. */
+/**
+ * Bounded application-level delivery window for runtimes without a writable-buffer API.
+ * ACKs are cumulative because WebSocket messages on a connection are ordered. The RTT estimate
+ * controls a hard-bounded BDP window; it never expands without limit.
+ */
 export class SnapshotAcks {
-    private readonly states = new Map<string, SnapshotState>();
+    private readonly states = new Map<string, AckState>();
+    private readonly hardMax: number;
     coalesced = 0;
     slow = 0;
+    maxInFlightObserved = 0;
 
-    acknowledge(id: string, seq: number) {
+    constructor(hardMax = SNAPSHOT_WINDOW.max) {
+        this.hardMax = Math.max(1, Math.min(SNAPSHOT_WINDOW.max, Math.floor(hardMax)));
+    }
+
+    register(id: string, enabled: boolean, epoch = 0) {
+        this.states.set(id, { enabled, epoch, sent: 0, acked: 0, rttMs: SNAPSHOT_WINDOW.defaultRttMs, inFlight: new Map(), prepared: null });
+    }
+
+    acknowledge(id: string, seq: number, now: number, epoch?: number) {
         const state = this.states.get(id);
-        if (!state || seq > state.sent || seq < state.acked) return false;
-        state.capable = true;
+        if (!state?.enabled || state.prepared !== null || (epoch !== undefined && epoch !== state.epoch) || seq > state.sent || seq <= state.acked) return false;
+        const acknowledged = state.inFlight.get(seq);
+        if (!acknowledged) return false;
+        const sample = Math.max(1, now - acknowledged.sentAt);
+        state.rttMs = state.rttMs * 0.8 + sample * 0.2;
+        for (const sentSeq of state.inFlight.keys()) if (sentSeq <= seq) state.inFlight.delete(sentSeq);
         state.acked = seq;
         return true;
     }
 
-    resync(id: string) {
+    /** Resets sequencing after a client asks for a new protocol baseline. */
+    resync(id: string, epoch: number) {
         const state = this.states.get(id);
         if (!state) return false;
-        state.acked = state.sent;
-        state.capable = true;
+        state.epoch = epoch;
+        state.sent = 0;
+        state.acked = 0;
+        state.inFlight.clear();
+        state.prepared = null;
         return true;
     }
 
-    next(id: string, now: number): { type: 'send'; seq: number } | { type: 'coalesce' } | { type: 'close' } {
+    next(id: string, now: number): { type: 'send'; seq: number; epoch: number } | { type: 'coalesce' } | { type: 'close' } {
         let state = this.states.get(id);
         if (!state) {
-            state = { sent: 0, acked: 0, sentAt: 0, capable: false };
-            this.states.set(id, state);
+            this.register(id, false);
+            state = this.states.get(id)!;
         }
-        if (state.capable && state.acked < state.sent) {
-            if (now - state.sentAt >= OUTBOUND_LIMITS.slowMs) {
+        if (state.prepared !== null) {
+            this.coalesced++;
+            return { type: 'coalesce' };
+        }
+        if (state.enabled) {
+            const oldest = state.inFlight.values().next().value as InFlight | undefined;
+            if (oldest && now - oldest.sentAt >= OUTBOUND_LIMITS.slowMs) {
                 this.states.delete(id);
                 this.slow++;
                 return { type: 'close' };
             }
-            this.coalesced++;
-            return { type: 'coalesce' };
+            const window = Math.min(this.hardMax, SNAPSHOT_WINDOW.max, Math.max(SNAPSHOT_WINDOW.min,
+                Math.ceil(state.rttMs * SNAPSHOT_WINDOW.tickHz / 1000) + 2));
+            if (state.inFlight.size >= window) {
+                this.coalesced++;
+                return { type: 'coalesce' };
+            }
         }
-        state.sent++;
-        state.sentAt = now;
-        return { type: 'send', seq: state.sent };
+        state.prepared = state.sent + 1;
+        return { type: 'send', seq: state.prepared, epoch: state.epoch };
     }
 
-    forget(id: string) {
-        this.states.delete(id);
+    /** Commit only after the runtime accepted socket.send(), so skipped/failed frames never consume a sequence. */
+    commit(id: string, seq: number, now: number) {
+        const state = this.states.get(id);
+        if (!state || state.prepared !== seq) return false;
+        state.prepared = null;
+        state.sent = seq;
+        if (state.enabled) {
+            state.inFlight.set(seq, { sentAt: now });
+            this.maxInFlightObserved = Math.max(this.maxInFlightObserved, state.inFlight.size);
+        }
+        return true;
     }
+
+    abort(id: string, seq: number) {
+        const state = this.states.get(id);
+        if (!state || state.prepared !== seq) return false;
+        state.prepared = null;
+        return true;
+    }
+
+    windowSize(id: string) {
+        const state = this.states.get(id);
+        if (!state?.enabled) return 0;
+        return Math.min(this.hardMax, SNAPSHOT_WINDOW.max, Math.max(SNAPSHOT_WINDOW.min,
+            Math.ceil(state.rttMs * SNAPSHOT_WINDOW.tickHz / 1000) + 2));
+    }
+
+    inFlightCount(id: string) { return this.states.get(id)?.inFlight.size ?? 0; }
+    rttEstimate(id: string) { return this.states.get(id)?.rttMs ?? null; }
+    epoch(id: string) { return this.states.get(id)?.epoch ?? null; }
+    forget(id: string) { this.states.delete(id); }
 }
 
 type PoseSet = { poses: Record<string, StampedPose>; fans: Record<string, StampedPose> };
 type PublisherState = {
     epoch: number;
     enabled: boolean;
-    baseSeq: number;
-    base: PoseSet | null;
-    pending: { seq: number; poses: PoseSet } | null;
-    fullAt: number;
+    sentSeq: number;
+    sentBase: PoseSet | null;
+    prepared: { seq: number; poses: PoseSet; full: boolean } | null;
+    fullSeq: number | null;
+    nextFullAt: number;
 };
 
-/** Keeps a recipient-only baseline and advances it only after that client acknowledges application. */
+/** Per-recipient encoder. Delta bases advance on successful enqueue, never on ACK, preserving ordered frames. */
 export class SnapshotDeltaPublisher {
     private readonly states = new Map<string, PublisherState>();
     private epoch = 0;
+    private static readonly FULL_INTERVAL_MS = 10_000;
 
     register(id: string, enabled: boolean) {
-        this.states.set(id, { epoch: ++this.epoch, enabled, baseSeq: 0, base: null, pending: null, fullAt: 0 });
+        const epoch = ++this.epoch;
+        this.states.set(id, { epoch, enabled, sentSeq: 0, sentBase: null, prepared: null, fullSeq: null, nextFullAt: 0 });
+        return epoch;
     }
 
-    encode(id: string, snapshot: Extract<ServerMessage, { type: 'snapshot' }>, seq: number, now: number): ServerMessage {
+    encode(id: string, snapshot: Extract<ServerMessage, { type: 'snapshot' }>, seq: number, now: number, encoding: 'auto' | 'delta' = 'auto'): ServerMessage {
         const state = this.states.get(id);
         if (!state || !state.enabled) return { ...snapshot, seq };
         const current = { poses: snapshot.poses, fans: snapshot.fans ?? {} };
+        const fullDue = !state.sentBase || (state.fullSeq === null && now >= state.nextFullAt);
         const full = () => ({
             type: 'snapshotFull' as const, epoch: state.epoch, seq, t: snapshot.t,
             poses: current.poses, ...(Object.keys(current.fans).length ? { fans: current.fans } : {})
         });
-        if (!state.base || now >= state.fullAt) {
-            state.pending = { seq, poses: current };
+        if (fullDue) {
+            state.prepared = { seq, poses: current, full: true };
             return full();
         }
+        const base = state.sentBase!;
         const total = Object.keys(current.poses).length + Object.keys(current.fans).length +
-            Object.keys(state.base.poses).length + Object.keys(state.base.fans).length;
-        const changeThreshold = Math.max(1, Math.ceil(total * 0.25));
-        const changed = poseChangeCount(state.base.poses, current.poses, changeThreshold + 1) +
-            poseChangeCount(state.base.fans, current.fans, changeThreshold + 1);
-        if (changed > changeThreshold) {
-            state.pending = { seq, poses: current };
-            return full();
+            Object.keys(base.poses).length + Object.keys(base.fans).length;
+        const threshold = Math.max(1, Math.ceil(total * 0.25));
+        if (encoding === 'auto') {
+            const changed = poseChangeCount(base.poses, current.poses, threshold + 1) +
+                poseChangeCount(base.fans, current.fans, threshold + 1);
+            if (changed > threshold) {
+                state.prepared = { seq, poses: current, full: true };
+                return full();
+            }
         }
-        const poseDelta = diffPoses(state.base.poses, current.poses);
-        const fanDelta = diffPoses(state.base.fans, current.fans);
-        state.pending = { seq, poses: current };
+        const poseDelta = diffPoses(base.poses, current.poses);
+        const fanDelta = diffPoses(base.fans, current.fans);
+        state.prepared = { seq, poses: current, full: false };
         return {
-            type: 'snapshotDelta', epoch: state.epoch, seq, baseSeq: state.baseSeq, t: snapshot.t,
+            type: 'snapshotDelta', epoch: state.epoch, seq, baseSeq: state.sentSeq, t: snapshot.t,
             updates: poseDelta.updates, removed: poseDelta.removed,
             ...(Object.keys(fanDelta.updates).length ? { fanUpdates: fanDelta.updates } : {}),
             ...(fanDelta.removed.length ? { fanRemoved: fanDelta.removed } : {})
         };
     }
 
-    acknowledge(id: string, seq: number, now: number) {
+    /** Called after socket.send succeeds. Failed or coalesced frames must call abort instead. */
+    commit(id: string, seq: number) {
         const state = this.states.get(id);
-        if (!state || state.pending?.seq !== seq) return false;
-        state.baseSeq = seq;
-        state.base = state.pending.poses;
-        state.pending = null;
-        state.fullAt = now + 10_000;
+        const prepared = state?.prepared;
+        if (!state || !prepared || prepared.seq !== seq) return false;
+        state.sentSeq = seq;
+        state.sentBase = prepared.poses;
+        if (prepared.full) state.fullSeq = seq;
+        state.prepared = null;
+        return true;
+    }
+
+    abort(id: string, seq: number) {
+        const state = this.states.get(id);
+        if (!state?.prepared || state.prepared.seq !== seq) return false;
+        state.prepared = null;
+        return true;
+    }
+
+    acknowledge(id: string, epoch: number | undefined, seq: number, now: number) {
+        const state = this.states.get(id);
+        if (!state || (epoch !== undefined && epoch !== state.epoch) || seq > state.sentSeq || seq < 1) return false;
+        if (state.fullSeq !== null && seq >= state.fullSeq) {
+            state.fullSeq = null;
+            state.nextFullAt = now + SnapshotDeltaPublisher.FULL_INTERVAL_MS;
+        }
         return true;
     }
 
     resync(id: string) {
         const state = this.states.get(id);
-        if (!state) return false;
+        if (!state) return null;
         state.epoch = ++this.epoch;
-        state.baseSeq = 0;
-        state.base = null;
-        state.pending = null;
-        state.fullAt = 0;
-        return true;
+        state.sentSeq = 0;
+        state.sentBase = null;
+        state.prepared = null;
+        state.fullSeq = null;
+        state.nextFullAt = 0;
+        return state.epoch;
     }
 
-    forget(id: string) {
-        this.states.delete(id);
-    }
+    epochFor(id: string) { return this.states.get(id)?.epoch ?? null; }
+    forget(id: string) { this.states.delete(id); }
 }

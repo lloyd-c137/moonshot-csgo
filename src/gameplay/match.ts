@@ -3629,6 +3629,10 @@ export const createMatch = ({
                 }
             }),
             avatarAction: (id: string) => avatars.actionState(id),
+            remotePosition: (id: string) => {
+                const point = positionOf(id);
+                return point ? [...point] : null;
+            },
             avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),
             avatarHeadTextured: (id: string) => avatars.hasHeadImage(id),
             /** 纪老师 right now (position and facing). */

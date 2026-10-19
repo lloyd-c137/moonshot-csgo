@@ -99,6 +99,7 @@ export class World extends DurableObject<Env> {
             if (!socket) return;
             const started = performance.now();
             let outboundMessage = message;
+            let reservedSnapshot: { seq: number; epoch: number } | null = null;
             if (message.type === 'snapshot') {
                 const bufferedAmount = (socket as WebSocket & { bufferedAmount?: number }).bufferedAmount;
                 const decision = this.outbound.decide(id, message, bufferedAmount ?? 0, Date.now());
@@ -121,6 +122,7 @@ export class World extends DurableObject<Env> {
                     try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
                     return;
                 }
+                reservedSnapshot = { seq: snapshot.seq, epoch: snapshot.epoch };
                 outboundMessage = this.snapshotPublisher.encode(id, message, snapshot.seq, Date.now());
             }
             const encoded = text ?? JSON.stringify(outboundMessage);
@@ -143,8 +145,16 @@ export class World extends DurableObject<Env> {
             }
             try {
                 socket.send(encoded);
+                if (reservedSnapshot) {
+                    this.snapshotAcks.commit(id, reservedSnapshot.seq, Date.now());
+                    this.snapshotPublisher.commit(id, reservedSnapshot.seq);
+                }
                 this.metrics.increment('outboundBytes', bytes);
             } catch {
+                if (reservedSnapshot) {
+                    this.snapshotAcks.abort(id, reservedSnapshot.seq);
+                    this.snapshotPublisher.abort(id, reservedSnapshot.seq);
+                }
                 /* closed */
             }
         };
@@ -196,20 +206,23 @@ export class World extends DurableObject<Env> {
             const text = typeof event.data === 'string' ? event.data : '';
             const message = parseClientMessage(text);
             if (message?.type === 'snapshotAck') {
-                this.snapshotAcks.acknowledge(id, message.seq);
-                this.snapshotPublisher.acknowledge(id, message.seq, now);
+                if (this.snapshotAcks.acknowledge(id, message.seq, now, message.epoch)) {
+                    this.snapshotPublisher.acknowledge(id, message.epoch, message.seq, now);
+                }
                 return;
             }
             if (message?.type === 'snapshotResync') {
-                this.snapshotAcks.resync(id);
-                this.snapshotPublisher.resync(id);
+                const epoch = this.snapshotPublisher.resync(id);
+                if (epoch !== null) this.snapshotAcks.resync(id, epoch);
                 return;
             }
             if (message?.type === 'hello') {
                 this.room.message(id, message, now);
                 if (this.room.players.has(id)) {
-                    const enabled = message.capabilities?.snapshotAck === true && message.capabilities.snapshotDelta === true;
-                    this.snapshotPublisher.register(id, enabled);
+                    const ackEnabled = message.capabilities?.snapshotAck === true;
+                    const deltaEnabled = ackEnabled && message.capabilities?.snapshotDelta === true;
+                    const epoch = this.snapshotPublisher.register(id, deltaEnabled);
+                    this.snapshotAcks.register(id, ackEnabled, epoch);
                 }
                 return;
             }

@@ -270,7 +270,7 @@ export type ClientMessage =
     /** Latency probe: the room echoes `c` straight back. */
     | { type: 'ping'; c: number }
     /** App-level receipt used by the Worker runtime where writable-buffer size is unavailable. */
-    | { type: 'snapshotAck'; seq: number }
+    | { type: 'snapshotAck'; seq: number; epoch?: number }
     | { type: 'snapshotResync'; epoch?: number; seq?: number }
     | { type: 'respawned'; pose: PlayerPose };
 
@@ -469,7 +469,10 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
         case 'ping':
             return isNumber(value.c) ? (value as ClientMessage) : null;
         case 'snapshotAck':
-            return Number.isSafeInteger(value.seq) && (value.seq as number) > 0 ? (value as ClientMessage) : null;
+            return Number.isSafeInteger(value.seq) && (value.seq as number) > 0 &&
+                (value.epoch === undefined || Number.isSafeInteger(value.epoch))
+                ? (value as ClientMessage)
+                : null;
         case 'snapshotResync':
             return (value.epoch === undefined || Number.isSafeInteger(value.epoch)) &&
                 (value.seq === undefined || Number.isSafeInteger(value.seq))

@@ -11,6 +11,7 @@ import type { MapMarkers } from './minimap';
 import { roundResultCopy } from './roundResult';
 import type { Settings } from './settings';
 import { SETTING_RANGES } from './settings';
+import { createSkinShop } from './skinShop';
 import '@fontsource/barlow-condensed/latin-500.css';
 import '@fontsource/barlow-condensed/latin-600.css';
 import '@fontsource/barlow-condensed/latin-700.css';
@@ -44,6 +45,9 @@ type Actions = {
     loadBoard: () => Promise<BoardView>;
     settingsChanged: (settings: Settings) => void;
     uploadAvatar: (image: Blob) => Promise<AccountView>;
+    buySkin: (skin: string, counter: boolean) => Promise<AccountView>;
+    equipSkin: (skin: string | null) => Promise<AccountView>;
+    refreshAccount: () => Promise<AccountView | null>;
     deleteAvatar: () => Promise<AccountView>;
     avatarUrl: (id: string, version: string) => string | null;
     setLocalTestAvatar: (image: Blob | null) => Promise<void>;
@@ -114,6 +118,7 @@ const MARKUP = `
       <nav class="title-tabs" role="tablist" aria-label="菜单">
         <button type="button" role="tab" data-tab="play" aria-selected="true">开始游戏</button>
         <button type="button" role="tab" data-tab="board" aria-selected="false">排行榜</button>
+        <button type="button" role="tab" data-tab="shop" aria-selected="false">皮肤商店</button>
         <button type="button" role="tab" data-tab="help" aria-selected="false">操作说明</button>
         <button type="button" role="tab" data-tab="changelog" aria-selected="false">更新日志</button>
       </nav>
@@ -141,6 +146,7 @@ const MARKUP = `
                 <div><dt>胜场</dt><dd id="account-wins">0</dd></div>
                 <div><dt>被淘汰</dt><dd id="account-deaths">0</dd></div>
                 <div><dt>已结算局数</dt><dd id="account-rounds">0</dd></div>
+                <div><dt>积分</dt><dd id="account-points">0</dd></div>
               </dl>
             </div>
             <p class="operator-error" id="auth-error" role="alert" hidden></p>
@@ -149,6 +155,10 @@ const MARKUP = `
         <section class="tab-panel" data-panel="board" hidden>
           <h2 class="panel-title">全服累计排行</h2>
           <table class="board-table"><thead><tr><th>#</th><th>玩家</th><th>淘汰数</th><th>胜场</th></tr></thead><tbody id="board-rows"><tr><td colspan="4">加载中…</td></tr></tbody></table>
+        </section>
+        <section class="tab-panel shop-panel" data-panel="shop" hidden>
+          <h2 class="panel-title">皮肤商店</h2>
+          <div class="shop" id="skin-shop"></div>
         </section>
         <section class="tab-panel changelog-panel" data-panel="changelog" hidden>
           <h2 class="panel-title">更新日志</h2>
@@ -254,6 +264,7 @@ const MARKUP = `
     <p class="broadcast" id="broadcast" aria-live="assertive" hidden></p>
     <div class="status-cluster" id="status-cluster">
       <div class="status-block hp-block"><small>生命</small><div class="health" id="health" aria-label="生命"></div></div>
+      <div class="status-block skin-counter" id="skin-counter" hidden><small>计数器</small><div class="skin-counter-led"><b id="skin-counter-value">000</b><i class="skin-counter-plus" aria-hidden="true">+1</i></div></div>
       <div class="status-block ammo-block"><small>飞盘</small><div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div></div>
       <div class="status-block skill-block" id="skill-block" data-empty="true"><small>技能</small><div class="ability-status" id="ability-status" hidden><i class="ability-ring"><b></b></i><span id="ability-label"></span></div></div>
     </div>
@@ -320,6 +331,7 @@ const MARKUP = `
         <nav class="pause-tabs" role="tablist" aria-label="暂停菜单">
           <button type="button" role="tab" data-pause-tab="game" aria-selected="true">游戏</button>
           <button type="button" role="tab" data-pause-tab="video" aria-selected="false">画面与操作</button>
+          <button type="button" role="tab" data-pause-tab="shop" aria-selected="false">皮肤</button>
           <button type="button" role="tab" data-pause-tab="audio" aria-selected="false">音频</button>
           <button type="button" role="tab" data-pause-tab="keys" aria-selected="false">按键</button>
         </nav>
@@ -339,6 +351,9 @@ const MARKUP = `
           <output id="avatar-status" role="status" aria-live="polite"></output>
         </div>
       </fieldset>
+      </div>
+      <div class="pause-panel shop-panel" data-pause-panel="shop" hidden>
+        <div class="shop" id="skin-shop-pause"></div>
       </div>
       <div class="pause-panel" data-pause-panel="video" hidden>
       <fieldset>
@@ -457,6 +472,7 @@ export const createUi = () => {
                 other.setAttribute('aria-selected', String(other === tab));
             for (const panel of document.querySelectorAll<HTMLElement>('[data-pause-panel]'))
                 panel.hidden = panel.dataset.pausePanel !== name;
+            if (name === 'shop') void shops[1]?.open();
         });
     // Event lane: newest first, at most four, each leaving with a short slide.
     const pushEvent = ({ text, tone = 'neutral', icon, colour, who }: FeedEvent) => {
@@ -576,8 +592,10 @@ export const createUi = () => {
         error.textContent = message;
         error.hidden = false;
     };
+    let shops: ReturnType<typeof createSkinShop>[] = [];
     const renderAccount = (account: AccountView | null) => {
         currentAccount = account;
+        for (const shop of shops) shop.set(account, $('#operator').dataset.accounts !== 'false');
         signedIn = !!account;
         $('#operator').dataset.mode = signedIn ? 'signed' : 'form';
         $('#avatar-settings').hidden =
@@ -590,6 +608,7 @@ export const createUi = () => {
             $('#account-wins').textContent = String(account.wins);
             $('#account-deaths').textContent = String(account.deaths);
             $('#account-rounds').textContent = String(account.rounds ?? 0);
+            $('#account-points').textContent = String(account.points ?? 0);
         }
         const preview = $<HTMLImageElement>('#avatar-preview');
         const hasImage = localTestAvatar ? localTestAvatarSet : !!(account?.avatarId && account.avatarVersion);
@@ -643,6 +662,7 @@ export const createUi = () => {
                 for (const panel of document.querySelectorAll<HTMLElement>('.tab-panel')) {
                     panel.hidden = panel.dataset.panel !== tab.dataset.tab;
                 }
+                if (tab.dataset.tab === 'shop') void shops[0]?.open();
                 if (tab.dataset.tab === 'board') {
                     actions
                         .loadBoard()
@@ -728,6 +748,13 @@ export const createUi = () => {
         },
         ready: (actions: Actions, settings: Settings) => {
             makeAvatarUrl = actions.avatarUrl;
+            shops = ['#skin-shop', '#skin-shop-pause'].map((root) =>
+                createSkinShop(
+                    $(root),
+                    { buy: actions.buySkin, equip: actions.equipSkin, refresh: actions.refreshAccount },
+                    (account) => renderAccount(account)
+                )
+            );
             localTestAvatar = $('#operator').dataset.testAvatar === 'true';
             $('#avatar-settings p')!.textContent = localTestAvatar
                 ? '测试环境中，这张图片只会应用到固定测试人偶，并在当前页面内有效。'
@@ -1521,6 +1548,24 @@ export const createUi = () => {
             broadcastTimer = window.setTimeout(() => (banner.hidden = true), 2600 * combatHudDurationScale);
         },
         /** Discs in hand (null: offline practice, unlimited). */
+        /** The equipped 计数器: its count in the HUD (null hides it). */
+        skinCounter: (state: { skin: string; kills: number } | null) => {
+            const root = $('#skin-counter');
+            const shown = state !== null;
+            if (root.hidden === shown) root.hidden = !shown;
+            if (!state) return;
+            const text = String(Math.min(9999, state.kills)).padStart(state.kills > 999 ? 4 : 3, '0');
+            const value = $('#skin-counter-value');
+            if (value.textContent !== text) value.textContent = text;
+            if (root.dataset.skin !== state.skin) root.dataset.skin = state.skin;
+        },
+        /** An elimination on the 计数器: the digits flip and a +1 rises. */
+        skinCounterTick: (kills: number) => {
+            const root = $('#skin-counter');
+            root.dataset.tick = '';
+            void root.offsetWidth;
+            root.dataset.tick = String(kills);
+        },
         ammo: (count: number | null, max: number) => {
             const element = $('#ammo');
             element.dataset.empty = String(count === 0);

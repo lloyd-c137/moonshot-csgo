@@ -1,6 +1,8 @@
 // Player accounts for the shared world: register/login with a username and password, sessions, persistent stats and
 // the standing 淘汰王 (all-time most eliminations). Storage is behind a small synchronous interface so the Durable
 // Object can back it with SQLite and tests with maps. Passwords are PBKDF2-SHA256 (100k iterations, 16-byte salt).
+import { purchasePrice, skinById } from '../src/config/skins.ts';
+import type { OwnedSkin } from '../src/config/skins.ts';
 import { cleanName } from '../src/net/protocol.ts';
 import type { AccountStats, King } from '../src/net/protocol.ts';
 
@@ -19,29 +21,35 @@ export type UserRow = {
     created: number;
     avatarId?: string | null;
     avatarVersion?: string | null;
+    /** Skin points, owned skins (JSON: id → { counter, kills }) and the equipped skin. */
+    points?: number;
+    skins?: string | null;
+    equipped?: string | null;
+};
+
+type StatsDelta = {
+    kills: number;
+    deaths: number;
+    hits: number;
+    score: number;
+    wins: number;
+    rounds: number;
+    losses: number;
+    points: number;
 };
 
 export type AccountDb = {
     findUser(key: string): UserRow | null;
     insertUser(row: UserRow): void;
-    addStats(
-        key: string,
-        delta: {
-            kills: number;
-            deaths: number;
-            hits: number;
-            score: number;
-            wins: number;
-            rounds: number;
-            losses: number;
-        }
-    ): void;
+    addStats(key: string, delta: StatsDelta): void;
     insertSession(token: string, key: string, expires: number): void;
     findSession(token: string): { key: string; expires: number } | null;
     deleteSession(token: string): void;
     getMeta(key: string): string | null;
     setMeta(key: string, value: string): void;
     setAvatar(key: string, avatarId: string | null, avatarVersion: string | null): void;
+    /** Replaces the skin wallet (points, owned skins as JSON, equipped skin). */
+    setWallet(key: string, points: number, skins: string, equipped: string | null): void;
     top(limit: number): UserRow[];
 };
 
@@ -80,6 +88,23 @@ const sameHex = (a: string, b: string) => {
     return diff === 0;
 };
 
+/** Owned skins from their stored JSON, dropping anything unknown or malformed. */
+export const parseOwnedSkins = (raw: string | null | undefined): Record<string, OwnedSkin> => {
+    const owned: Record<string, OwnedSkin> = {};
+    if (!raw) return owned;
+    try {
+        const value = JSON.parse(raw) as Record<string, { counter?: unknown; kills?: unknown }>;
+        for (const [id, entry] of Object.entries(value ?? {})) {
+            if (!skinById(id) || !entry || typeof entry !== 'object') continue;
+            const kills = typeof entry.kills === 'number' && Number.isFinite(entry.kills) ? Math.max(0, Math.floor(entry.kills)) : 0;
+            owned[id] = { counter: entry.counter === true, kills };
+        }
+    } catch {
+        /* unreadable: treated as nothing owned */
+    }
+    return owned;
+};
+
 const statsOf = (row: UserRow): AccountStats => ({
     name: row.name,
     kills: row.kills,
@@ -90,8 +115,13 @@ const statsOf = (row: UserRow): AccountStats => ({
     rounds: row.rounds,
     losses: row.losses ?? 0,
     avatarId: row.avatarId ?? null,
-    avatarVersion: row.avatarVersion ?? null
+    avatarVersion: row.avatarVersion ?? null,
+    points: row.points ?? 0,
+    skins: parseOwnedSkins(row.skins),
+    equippedSkin: row.equipped && skinById(row.equipped) ? row.equipped : null
 });
+
+export type ShopResult = { ok: true; account: AccountStats } | { ok: false; error: string; status: number };
 
 export type AuthResult =
     | { ok: true; token: string; account: AccountStats; created?: boolean }
@@ -184,23 +214,54 @@ export class Accounts {
         return row ? statsOf(row) : null;
     }
 
-    /** Adds to an account's lifetime stats; returns the new totals. */
-    record(
-        name: string,
-        delta: {
-            kills?: number;
-            deaths?: number;
-            hits?: number;
-            score?: number;
-            wins?: number;
-            rounds?: number;
-            losses?: number;
-        }
-    ) {
+    /** Adds to an account's lifetime stats (and skin points); returns the new totals. */
+    record(name: string, delta: Partial<StatsDelta>) {
         const key = usernameKey(name);
-        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0, losses: 0, ...delta });
+        this.db.addStats(key, { kills: 0, deaths: 0, hits: 0, score: 0, wins: 0, rounds: 0, losses: 0, points: 0, ...delta });
         const row = this.db.findUser(key);
         return row ? statsOf(row) : null;
+    }
+
+    /** Buys a skin (plain or 计数器 edition, or the counter upgrade of an owned one) and equips it. */
+    buySkin(name: string, skinId: unknown, counter: unknown): ShopResult {
+        const key = usernameKey(name);
+        const row = this.db.findUser(key);
+        if (!row) return { ok: false, error: '账号不存在', status: 404 };
+        const skin = typeof skinId === 'string' ? skinById(skinId) : null;
+        if (!skin) return { ok: false, error: '没有这款皮肤', status: 400 };
+        const owned = parseOwnedSkins(row.skins);
+        const price = purchasePrice(skin, owned[skin.id], counter === true);
+        if (price === null) return { ok: false, error: '已经拥有这款皮肤', status: 409 };
+        const points = row.points ?? 0;
+        if (points < price) return { ok: false, error: `积分不足：需要 ${price}，当前 ${points}`, status: 402 };
+        owned[skin.id] = { counter: counter === true || owned[skin.id]?.counter === true, kills: owned[skin.id]?.kills ?? 0 };
+        this.db.setWallet(key, points - price, JSON.stringify(owned), skin.id);
+        return { ok: true, account: statsOf(this.db.findUser(key)!) };
+    }
+
+    /** Equips an owned skin, or the default disc with null. */
+    equipSkin(name: string, skinId: unknown): ShopResult {
+        const key = usernameKey(name);
+        const row = this.db.findUser(key);
+        if (!row) return { ok: false, error: '账号不存在', status: 404 };
+        const owned = parseOwnedSkins(row.skins);
+        if (skinId !== null && (typeof skinId !== 'string' || !owned[skinId]))
+            return { ok: false, error: '还没有拥有这款皮肤', status: 400 };
+        this.db.setWallet(key, row.points ?? 0, JSON.stringify(owned), skinId as string | null);
+        return { ok: true, account: statsOf(this.db.findUser(key)!) };
+    }
+
+    /** One elimination on a 计数器 skin; returns its new count (null when the skin has no counter). */
+    countSkinKill(name: string, skinId: string) {
+        const key = usernameKey(name);
+        const row = this.db.findUser(key);
+        if (!row) return null;
+        const owned = parseOwnedSkins(row.skins);
+        const entry = owned[skinId];
+        if (!entry?.counter) return null;
+        entry.kills++;
+        this.db.setWallet(key, row.points ?? 0, JSON.stringify(owned), row.equipped ?? null);
+        return entry.kills;
     }
 
     king(): King | null {
@@ -248,20 +309,10 @@ export class MemoryAccountDb implements AccountDb {
     insertUser(row: UserRow) {
         this.users.set(row.key, { ...row, losses: row.losses ?? 0 });
     }
-    addStats(
-        key: string,
-        delta: {
-            kills: number;
-            deaths: number;
-            hits: number;
-            score: number;
-            wins: number;
-            rounds: number;
-            losses: number;
-        }
-    ) {
+    addStats(key: string, delta: StatsDelta) {
         const row = this.users.get(key);
         if (!row) return;
+        row.points = (row.points ?? 0) + delta.points;
         row.kills += delta.kills;
         row.deaths += delta.deaths;
         row.hits += delta.hits;
@@ -289,6 +340,10 @@ export class MemoryAccountDb implements AccountDb {
     setAvatar(key: string, avatarId: string | null, avatarVersion: string | null) {
         const row = this.users.get(key);
         if (row) Object.assign(row, { avatarId, avatarVersion });
+    }
+    setWallet(key: string, points: number, skins: string, equipped: string | null) {
+        const row = this.users.get(key);
+        if (row) Object.assign(row, { points, skins, equipped });
     }
     top(limit: number) {
         return [...this.users.values()]

@@ -688,6 +688,9 @@ const boot = async () => {
                 shell.account(null);
             },
             uploadAvatar: (image) => auth.uploadAvatar(image),
+            buySkin: (skin, counter) => auth.buySkin(skin, counter),
+            equipSkin: (skin) => auth.equipSkin(skin),
+            refreshAccount: () => auth.restore(),
             deleteAvatar: () => auth.deleteAvatar(),
             avatarUrl: (id, version) => auth.avatarUrl(id, version),
             setLocalTestAvatar: (image) => match.setTrainingDummyAvatar(image),

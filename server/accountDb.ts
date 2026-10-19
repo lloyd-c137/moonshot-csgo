@@ -16,9 +16,11 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
     for (const column of ['wins', 'rounds', 'losses']) {
         if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
     }
-    for (const column of ['avatarId', 'avatarVersion']) {
+    for (const column of ['avatarId', 'avatarVersion', 'skins', 'equipped']) {
         if (!columns.has(column)) sql.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
     }
+    // Skin points start at zero for everyone (no back-pay from lifetime stats).
+    if (!columns.has('points')) sql.exec('ALTER TABLE users ADD COLUMN points INTEGER NOT NULL DEFAULT 0');
     sql.exec('CREATE INDEX IF NOT EXISTS users_kills ON users (kills DESC, score DESC)');
     sql.exec(
         'CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, key TEXT NOT NULL, expires INTEGER NOT NULL)'
@@ -72,7 +74,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
             ),
         addStats: (key, d) =>
             void sql.exec(
-                'UPDATE users SET kills = kills + ?, deaths = deaths + ?, hits = hits + ?, score = score + ?, wins = wins + ?, rounds = rounds + ?, losses = losses + ? WHERE key = ?',
+                'UPDATE users SET kills = kills + ?, deaths = deaths + ?, hits = hits + ?, score = score + ?, wins = wins + ?, rounds = rounds + ?, losses = losses + ?, points = points + ? WHERE key = ?',
                 d.kills,
                 d.deaths,
                 d.hits,
@@ -80,6 +82,7 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
                 d.wins,
                 d.rounds,
                 d.losses,
+                d.points,
                 key
             ),
         insertSession: (token, key, expires) =>
@@ -101,6 +104,8 @@ export const sqlAccountDb = (sql: SqlStorage): AccountDb => {
                 avatarVersion,
                 key
             ),
+        setWallet: (key, points, skins, equipped) =>
+            void sql.exec('UPDATE users SET points = ?, skins = ?, equipped = ? WHERE key = ?', points, skins, equipped, key),
         top: (limit) =>
             sql
                 .exec('SELECT * FROM users ORDER BY kills DESC, losses ASC, key ASC LIMIT ?', limit)

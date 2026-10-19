@@ -133,6 +133,18 @@ export const createAuth = (base: string | null) => {
             account = body.account;
             return account;
         },
+        /** Buys a skin (or its 计数器 upgrade); the room equips it. */
+        async buySkin(skin: string, counter: boolean) {
+            if (!token) throw new Error('请先登录后再购买皮肤');
+            account = (await call<{ account: AccountStats }>('/api/shop/buy', { method: 'POST', body: JSON.stringify({ skin, counter }) })).account;
+            return account;
+        },
+        /** Equips an owned skin, or the default disc with null. */
+        async equipSkin(skin: string | null) {
+            if (!token) throw new Error('请先登录');
+            account = (await call<{ account: AccountStats }>('/api/shop/equip', { method: 'POST', body: JSON.stringify({ skin }) })).account;
+            return account;
+        },
         board: () => call<Board>('/api/leaderboard')
     };
 };

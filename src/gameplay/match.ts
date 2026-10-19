@@ -9,6 +9,7 @@ import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../config/gameplayItems';
 import type { ItemKind } from '../config/gameplayItems';
+import { skinById } from '../config/skins';
 import { SPAWN_POINTS } from '../config/spawns';
 import { BREAKER_CABINET, SPECIAL_LOCATIONS } from '../config/specialLocations';
 import { apiBase } from '../net/auth';
@@ -31,6 +32,7 @@ import {
 import { PARAPET_BARRIER_ENTITY_NAME } from '../physics/collisionWorld';
 import { setLook } from '../player/playerController';
 import { box, merge, place, torus } from '../render/shapes';
+import { createSkinLibrary } from '../render/skinDisc';
 import type { AudioLabUi } from '../ui/audioLab';
 import { killIcons } from '../ui/killFeed';
 import type { EventIcon, Ui } from '../ui/shell';
@@ -88,6 +90,7 @@ import { nearBreaker, powerOut, powerPhase } from './power';
 import type { PowerState } from './power';
 import { createRestroomMirrors } from './restroomMirrors';
 import { aimProgress, aimReady, fovFactor, SCOPE, sensitivityFactor } from './scope';
+import { createSkinEffects } from './skinEffects';
 import { createSound } from './sound';
 import { createStands } from './stands';
 import type { Emote } from './stands';
@@ -155,9 +158,12 @@ export const createMatch = ({
 }: Options) => {
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const discs = createDiscs(app, PLAYER.gravity);
+    const skinLibrary = createSkinLibrary(app);
+    discs.skins = skinLibrary;
     const avatars = createAvatars(app, camera, ui.nameTagLayer(), characters, (id, version) =>
         auth.avatarUrl(id, version)
     );
+    avatars.skins = skinLibrary;
     for (const npc of NPC_SPAWNS) avatars.add(npc.id, npc.name, npc.hue);
     const roster = new Map<string, PlayerSummary>();
     const stands = createStands(app, characters, stadiumSeats);
@@ -239,6 +245,31 @@ export const createMatch = ({
     let hp = MAX_HP;
     const sound = createSound();
     const effects = createEffects(app);
+    const skinFx = createSkinEffects(effects);
+    /** Developer preview of a skin offline (?skin=magma&skinKills=12, dev builds only). */
+    const previewSkin = (() => {
+        if (!import.meta.env.DEV) return null;
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('skin');
+        return skinById(id) ? { skin: id!, skinCounter: params.get('skinCounter') !== '0', skinKills: Number(params.get('skinKills') ?? 0) || 0 } : null;
+    })();
+    /** The local player's equipped skin (from the room's summary of us; the dev preview offline). */
+    const localSkin = (): { skin: string; counter: boolean; kills: number } | null => {
+        const me = roster.get(selfId());
+        const source = me?.skin ? me : net.state === 'online' ? null : previewSkin;
+        return source?.skin ? { skin: source.skin, counter: source.skinCounter === true, kills: source.skinKills ?? 0 } : null;
+    };
+    let shownSkinKey = '';
+    /** Refreshes the viewmodel and the 计数器 HUD when our skin (or its count) changed. */
+    const refreshLocalSkin = () => {
+        const mine = localSkin();
+        const key = mine ? `${mine.skin}:${mine.counter}` : '';
+        ui.skinCounter(mine?.counter ? { skin: mine.skin, kills: mine.kills } : null);
+        if (mine?.counter) skinLibrary.setLocalKills(mine.kills);
+        if (key === shownSkinKey) return;
+        shownSkinKey = key;
+        if (viewmodelSkin === 'normal') setViewmodelSkin('normal', true);
+    };
     const feedback = new CombatFeedbackDirector();
     const cameraImpulses = new CameraImpulseController();
     let executionFrozen = false;
@@ -828,7 +859,11 @@ export const createMatch = ({
             return;
         }
         const hue = skin === 'frc' ? 0 : viewmodelHue < 0 ? colourFor('local') : viewmodelHue;
-        viewmodel.render!.meshInstances = discs.meshInstances(hue);
+        const mine = skin === 'normal' ? localSkin() : null;
+        const skinned = mine ? skinLibrary.localInstances(mine.skin, mine.counter, mine.kills) : null;
+        viewmodel.render!.meshInstances = skinned ?? discs.meshInstances(hue);
+        // The racing stripe belongs to the plain disc; a skin carries its own art.
+        stripe.enabled = !skinned;
         if (skin === 'frc') {
             stripeMaterial.diffuse.set(0.18, 0.9, 1);
             stripeMaterial.emissive.set(0.05, 0.65, 1);
@@ -892,6 +927,15 @@ export const createMatch = ({
         if (out && golden) sound.snipeConfirm(head, true);
         else sound.hitConfirm(out, head);
         effects.burst(at, colourFor(labTargetId), out ? 'out' : 'hit');
+        // The equipped skin's elimination effect (and the dev preview's 计数器) on the dummy too.
+        const mine = golden || frc || execution ? null : localSkin();
+        if (out && mine) {
+            skinFx.kill(mine.skin, at);
+            if (mine.counter && previewSkin && net.state !== 'online') {
+                previewSkin.skinKills++;
+                ui.skinCounterTick(previewSkin.skinKills);
+            }
+        }
         avatars.flash(labTargetId, now);
         avatars.react(labTargetId, head, out, labTargetPose, now);
         cameraImpulses.trigger(out ? 0.4 : 0.16);
@@ -1368,7 +1412,8 @@ export const createMatch = ({
                 local: false,
                 sniper: record.sniper === true,
                 gold: from === goldHolder(),
-                frc: record.frc === true
+                frc: record.frc === true,
+                skin: thrower?.skin ?? null
             });
             if (from === goldHolder()) goldThrowFlourish(record.o);
         },
@@ -1401,6 +1446,18 @@ export const createMatch = ({
                 head && typeof shot?.range === 'number' ? ` · 爆头距离 ${shot.range.toFixed(1)} m` : '';
             if (goldKill) goldView.flourish(at);
             effects.burst(at, roster.get(by)?.colour ?? 0, out ? 'out' : head ? 'head' : 'hit');
+            if (out && shot?.skin) skinFx.kill(shot.skin, at);
+            if (shot?.counter !== undefined) {
+                const thrower = roster.get(by);
+                if (thrower) thrower.skinKills = shot.counter;
+                if (by === selfId()) {
+                    refreshLocalSkin();
+                    ui.skinCounterTick(shot.counter);
+                    // Milestones on the counter: every 10, louder every 100.
+                    if (shot.counter % 100 === 0) ui.popup(`计数器 ${shot.counter} · 百人斩`, 'gold');
+                    else if (shot.counter % 10 === 0) ui.popup(`计数器 ${shot.counter}`, 'gold');
+                }
+            }
             if (snipe) effects.snipe(at);
             for (const [id, [score, kills, deaths]] of Object.entries(scores)) {
                 const entry = roster.get(id);
@@ -1817,7 +1874,13 @@ export const createMatch = ({
             local: true,
             sniper,
             gold: holdingGold(),
-            frc: usingFrc
+            frc: usingFrc,
+            ...(() => {
+                const mine = localSkin();
+                return mine
+                    ? { skin: mine.skin, instances: mine.counter ? skinLibrary.localInstances(mine.skin, true, mine.kills) : null }
+                    : {};
+            })()
         });
         if (sniper) {
             sound.sniperThrow();
@@ -2940,6 +3003,9 @@ export const createMatch = ({
                 abilityProgress.push(1 - remaining / ITEM_RULES.creationRefillMs);
             }
         }
+        refreshLocalSkin();
+        // Everyone's equipped skin in their hand (cheap: only a changed skin rebuilds anything).
+        for (const [id, entry] of roster) if (id !== selfId()) avatars.setSkin(id, entry.skin ?? null, entry.skinCounter === true);
         ui.abilityStatus(abilityLabels.length ? abilityLabels.join('　·　') : null, abilityProgress.length ? Math.min(...abilityProgress) : 1);
 
         // Detention: frozen in place (looking around is allowed) until the time is up.
@@ -3168,6 +3234,17 @@ export const createMatch = ({
                 normal: [0, 1, 0],
                 local: false
             });
+            // A skinned disc too: the textured skin shader compiles here, not on the first skinned throw.
+            discs.launch({
+                owner: 'warm-up',
+                throwId: 1,
+                hue: colourFor('local'),
+                origin: [at[0] + 0.4, at[1], at[2]],
+                velocity: [0, 0, 0],
+                normal: [0, 1, 0],
+                local: false,
+                skin: 'classic'
+            });
             for (let frame = 0; frame < 3; frame++) await nextFrame();
             viewmodel.enabled = false;
             for (const ghost of ghosts) ghost.entity.enabled = false;
@@ -3350,7 +3427,9 @@ export const createMatch = ({
                     );
                 },
                 (at, speed) => sound.bounce(at, speed),
-                (at, hue, speed) => effects.tracer(at, hue, speed),
+                (at, hue, speed, skin) => {
+                    if (!skin || !skinFx.trail(skin, at, speed)) effects.tracer(at, hue, speed);
+                },
                 (rest) => {
                     // The golden disc flies home but leaves an ordinary disc on the floor where it came down;
                     // an ordinary disc of ours now lies where it stopped.

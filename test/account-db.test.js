@@ -34,13 +34,19 @@ test('SQLite migration preserves accounts; recorded wins, rounds and legacy loss
                 rounds: 0,
                 losses: 0,
                 avatarId: null,
-                avatarVersion: null
+                avatarVersion: null,
+                skins: null,
+                equipped: null,
+                points: 0
             }
         );
-        new Accounts(db).record('Old', { wins: 1, rounds: 2 });
+        new Accounts(db).record('Old', { wins: 1, rounds: 2, points: 3 });
         db = sqlAccountDb(sql);
         assert.equal(db.findUser('old').rounds, 2);
         assert.equal(db.findUser('old').wins, 1);
+        assert.equal(db.findUser('old').points, 3);
+        db.setWallet('old', 1, '{"steel":{"counter":true,"kills":4}}', 'steel');
+        assert.deepEqual(new Accounts(sqlAccountDb(sql)).equipSkin('Old', 'steel').account.skins, { steel: { counter: true, kills: 4 } });
         new Accounts(db).record('Old', { losses: 1 });
         db.insertUser({
             key: 'new',

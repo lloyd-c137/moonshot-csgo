@@ -10,6 +10,7 @@ import { MAX_HP } from '../net/protocol';
 import type { PlayerPose } from '../net/protocol';
 import type { Shape } from '../render/shapes';
 import { box, merge, place } from '../render/shapes';
+import type { SkinLibrary } from '../render/skinDisc';
 
 import { hueColour } from './discs';
 
@@ -18,6 +19,9 @@ type Avatar = {
     disc: EntityType;
     /** The golden disc model in the hand (child of `disc`, made on first hold). */
     goldDisc: EntityType | null;
+    /** The equipped skin's disc in the hand (child of `disc`), and which skin it shows. */
+    skinDisc: EntityType | null;
+    skin: string | null;
     root: EntityType;
     tag: HTMLElement;
     name: string;
@@ -109,8 +113,30 @@ export const createAvatars = (
                 avatar.goldDisc = model;
             }
             if (avatar.goldDisc) avatar.goldDisc.enabled = golden;
-            avatar.disc.render!.enabled = !golden;
+            if (avatar.skinDisc) avatar.skinDisc.enabled = !golden;
+            avatar.disc.render!.enabled = !golden && !avatar.skinDisc;
         }
+    };
+    let skins: SkinLibrary | null = null;
+    /** Puts a player's equipped skin in their hand (everyone sees it); null restores the plain disc. */
+    const setSkin = (id: string, skin: string | null, counter = false) => {
+        const avatar = avatars.get(id);
+        const key = skin ? `${skin}:${counter}` : null;
+        if (!avatar || avatar.skin === key) return;
+        avatar.skin = key;
+        avatar.skinDisc?.destroy();
+        avatar.skinDisc = null;
+        const instances = skin ? (skins?.instances(skin, counter) ?? null) : null;
+        if (instances) {
+            const model = new Entity(`avatar-skin-disc-${id}`);
+            model.addComponent('render', { meshInstances: instances, castShadows: false });
+            // True size under the scaled primitive cylinder (as the golden disc).
+            model.setLocalScale(1 / 0.25, 1 / 0.035, 1 / 0.25);
+            model.setLocalPosition(0, -0.5, 0);
+            avatar.disc.addChild(model);
+            avatar.skinDisc = model;
+        }
+        setGold(goldHolder);
     };
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const screen = new Vec3();
@@ -231,6 +257,8 @@ export const createAvatars = (
             character,
             disc,
             goldDisc: null,
+            skinDisc: null,
+            skin: null,
             tag,
             name,
             hue,
@@ -436,6 +464,11 @@ export const createAvatars = (
         set goldMaterial(material: StandardMaterial) {
             goldMaterial = material;
             setGold(goldHolder);
+        },
+        setSkin,
+        /** Disc skins (render/skinDisc.ts) for discs in players' hands. */
+        set skins(library: SkinLibrary) {
+            skins = library;
         },
         /** Mesh of the golden disc attached to the holder's hand. */
         set goldMesh(mesh: Mesh) {

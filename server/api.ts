@@ -112,6 +112,33 @@ export async function handleApi(
             ? json({ ok: true })
             : json({ error: '当前没有进行中的回合' }, 409);
     }
+    if (url.pathname === '/api/__test/points' && request.method === 'POST') {
+        // Local browser tests only (COMBAT_TEST=1): grant skin points to the signed-in account.
+        if (!combatTestEnabled) return json({ error: 'not found' }, 404);
+        const account = accounts.resolve(bearer, now);
+        if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+        const body = (await request.json().catch(() => ({}))) as { points?: unknown };
+        if (typeof body.points !== 'number' || !Number.isInteger(body.points) || body.points < 0 || body.points > 10_000)
+            return json({ error: '无效的积分' }, 400);
+        return json({ account: accounts.record(account.name, { points: body.points }) });
+    }
+    if ((url.pathname === '/api/shop/buy' || url.pathname === '/api/shop/equip') && request.method === 'POST') {
+        const account = accounts.resolve(bearer, now);
+        if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+        let body: { skin?: unknown; counter?: unknown };
+        try {
+            body = (await request.json()) as typeof body;
+        } catch {
+            return json({ error: '请求格式不正确' }, 400);
+        }
+        const result =
+            url.pathname === '/api/shop/buy'
+                ? accounts.buySkin(account.name, body.skin, body.counter)
+                : accounts.equipSkin(account.name, body.skin ?? null);
+        if (!result.ok) return json({ error: result.error }, result.status);
+        room.updateSkin(result.account);
+        return json({ account: result.account });
+    }
     switch (`${request.method} ${url.pathname}`) {
         case 'GET /api/king':
             return json({ king: accounts.king(), online: room.online });

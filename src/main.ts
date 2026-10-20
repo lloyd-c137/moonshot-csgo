@@ -135,61 +135,6 @@ const fetchJson = async (url: string, label: string) => {
     return response.json() as Promise<unknown>;
 };
 
-const createFpsMeter = (initiallyEnabled: boolean) => {
-    const readout = document.createElement('div');
-    readout.className = 'fps-hud';
-    readout.id = 'fps-hud';
-    readout.setAttribute('aria-label', '帧率');
-    const performanceHud = document.getElementById('performance-hud');
-    if (performanceHud) performanceHud.append(readout);
-    let enabled = initiallyEnabled;
-    let frames = 0;
-    let elapsed = 0;
-    let worst = 0;
-    let last = performance.now();
-    readout.hidden = !enabled;
-    const reset = () => {
-        frames = 0;
-        elapsed = 0;
-        worst = 0;
-        last = performance.now();
-    };
-    document.addEventListener('visibilitychange', reset);
-    return {
-        setEnabled(value: boolean) {
-            enabled = value;
-            readout.hidden = !enabled;
-            reset();
-        },
-        update() {
-            if (!enabled || document.hidden) {
-                last = performance.now();
-                return;
-            }
-            // Use wall-clock intervals rather than PlayCanvas' clamped delta time. Refresh the DOM
-            // twice a second; a long pause is excluded when the tab becomes visible again.
-        const now = performance.now();
-        const frame = (now - last) / 1000;
-        last = now;
-        if (frame > 1) {
-            reset();
-            return;
-        }
-        frames++;
-        elapsed += frame;
-        worst = Math.max(worst, frame);
-        if (elapsed < 0.5) return;
-        readout.replaceChildren();
-        const fps = document.createElement('b');
-        fps.textContent = String(Math.round(frames / elapsed));
-        const detail = document.createElement('span');
-        detail.textContent = `FPS · ${Math.round((elapsed / frames) * 1000)} ms`;
-        readout.append(fps, detail);
-        frames = elapsed = worst = 0;
-        }
-    };
-};
-
 const boot = async () => {
     // Decide the starting phase before creating the player so the first rendered physics frame
     // already places lobby users on the south side of the turnstile.
@@ -389,13 +334,10 @@ const boot = async () => {
         escapeStuck();
         canvas.requestPointerLock()?.catch?.(() => undefined);
     });
-    const fpsMeter = createFpsMeter(settings.showFps || new URLSearchParams(window.location.search).get('fps') === '1');
-    const debugFps = new URLSearchParams(window.location.search).get('fps') === '1';
     app.on('update', (deltaTime: number) => {
         adaptDesktopControllerInput(player);
         input.beginFrame();
         moveKeys.size = Number(input.isDown('moveForward') || input.isDown('moveBackward') || input.isDown('strafeLeft') || input.isDown('strafeRight'));
-        fpsMeter.update();
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
@@ -657,7 +599,6 @@ const boot = async () => {
             settingsChanged: (next) => {
                 settings = next;
                 applySettings(player, camera, next);
-                fpsMeter.setEnabled(next.showFps || debugFps);
                 input.setBindings(next.keyBindings);
                 match.setView(next.fieldOfView, next.lookSensitivity);
                 match.setFeedbackSettings(next);

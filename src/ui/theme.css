@@ -77,23 +77,6 @@ input {
     line-height: 1;
 }
 
-.fps-hud {
-    position: static;
-    display: flex;
-    align-items: baseline;
-    gap: 7px;
-    padding: 4px 8px;
-    border: 1px solid rgb(143 163 181 / 0.35);
-    background: rgb(12 20 28 / 0.72);
-    color: var(--paper);
-    font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
-    pointer-events: none;
-}
-
-.fps-hud[hidden] { display: none; }
-.fps-hud b { color: var(--signal); font-size: 16px; }
-
 /* ---------- screens ---------- */
 
 #app-ui {
@@ -2830,24 +2813,15 @@ legend {
 }
 
 .latency {
-    position: static;
+    position: absolute;
+    bottom: var(--gutter);
+    left: var(--gutter);
     padding: 1px 8px;
     border-radius: 3px;
     background: rgb(15 24 34 / 0.6);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
-}
-
-.performance-hud {
-    position: absolute;
-    bottom: var(--gutter);
-    left: var(--gutter);
-    z-index: 8;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    pointer-events: none;
 }
 
 .latency::before {

@@ -226,9 +226,7 @@ const MARKUP = `
       <span id="round-end-detail"></span>
     </div>
     <div class="spectate" id="spectate" hidden><strong>观战中</strong><span id="spectate-detail"></span><small>点击左键切换观看对象</small></div>
-    <div class="performance-hud" id="performance-hud" aria-label="性能与网络状态">
-      <span class="latency" id="latency" data-quality="none">离线</span>
-    </div>
+    <span class="latency" id="latency" data-quality="none">离线</span>
     <p class="watch-warning" id="watch-warning" hidden><b>纪老师在附近</b>禁止打飞盘</p>
     <div class="gold-kill" id="gold-kill" hidden>
       <small>金飞盘击杀</small>
@@ -364,7 +362,6 @@ const MARKUP = `
       <div class="pause-panel" data-pause-panel="video" hidden>
       <fieldset>
         <legend>操作</legend>
-        <label class="check-row"><input id="show-fps" type="checkbox" />显示帧率</label>
         <label class="slider">蹲下方式<select id="crouch-mode"><option value="hold">按住蹲下</option><option value="toggle">切换蹲下</option></select></label>
         <label class="slider">鼠标灵敏度<output id="sensitivity-value"></output>
           <input id="sensitivity" type="range" /></label>
@@ -885,12 +882,6 @@ export const createUi = () => {
             });
             const current = { ...settings };
             root.dataset.reducedFlashes = String(current.reducedFlashes);
-            const showFps = $<HTMLInputElement>('#show-fps');
-            showFps.checked = settings.showFps;
-            showFps.addEventListener('change', () => {
-                current.showFps = showFps.checked;
-                actions.settingsChanged({ ...current });
-            });
             const crouchMode = $<HTMLSelectElement>('#crouch-mode');
             crouchMode.value = settings.crouchMode;
             crouchMode.addEventListener('change', () => {

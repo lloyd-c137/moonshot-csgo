@@ -68,18 +68,16 @@ test('an elevated golden-drop anchor is physically supported in the loaded arena
     }
 });
 
-test('FPS HUD reports a real frame rate while the tab is visible', async ({ page }) => {
+test('the original latency indicator remains bottom-left and no FPS overlay is shown', async ({ page }) => {
     await page.goto('/');
     await enterCampus(page);
-    await expect(page.locator('.fps-hud')).toBeVisible();
-    await expect(page.locator('.fps-hud b')).toHaveText(/^\d+$/, { timeout: 5_000 });
-    await expect(page.locator('.fps-hud span')).toContainText(/FPS · \d+ ms/);
-    const hudBox = await page.locator('.fps-hud').boundingBox();
     const latencyBox = await page.locator('#latency').boundingBox();
-    expect(hudBox && latencyBox).toBeTruthy();
-    expect(hudBox!.x).toBeGreaterThanOrEqual(latencyBox!.x + latencyBox!.width);
-    expect(hudBox!.y + hudBox!.height / 2).toBeCloseTo(latencyBox!.y + latencyBox!.height / 2, 0);
-    await page.screenshot({ path: 'test-results/gameplay-controls-fps.png' });
+    const viewport = page.viewportSize();
+    expect(latencyBox && viewport).toBeTruthy();
+    expect(latencyBox!.x).toBeLessThan(viewport!.width / 2);
+    expect(latencyBox!.y).toBeGreaterThan(viewport!.height / 2);
+    await expect(page.locator('.fps-hud')).toHaveCount(0);
+    await page.screenshot({ path: 'test-results/gameplay-controls-latency.png' });
 });
 
 test('the remapped controller input source still moves the player', async ({ page }) => {
@@ -127,16 +125,10 @@ test('one jump press releases cleanly and does not make the player auto-bounce',
     expect(Math.min(...lateHeights)).toBeGreaterThan(groundY - 0.15);
 });
 
-test('FPS preference and crouch keybinding update immediately and persist', async ({ page }) => {
+test('crouch keybinding updates immediately and persists', async ({ page }) => {
     await loadSimulated(page);
     await enterAtSpawn(page);
     await page.keyboard.press('Escape');
-    const videoTab = page.getByRole('tab', { name: '画面与操作' });
-    await videoTab.click();
-    await page.locator('#show-fps').uncheck();
-    await expect(page.locator('.fps-hud')).toBeHidden();
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('moonshot-open-world.settings.v1') ?? '{}').showFps)).toBe(false);
-
     await page.getByRole('tab', { name: '按键' }).click();
     await page.getByRole('button', { name: '蹲下，当前 C，点击修改' }).click();
     await page.keyboard.press('x');

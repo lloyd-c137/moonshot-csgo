@@ -6,7 +6,6 @@ export type CameraMotion = 'off' | 'low' | 'normal';
 export type EffectsQuality = 'low' | 'medium' | 'high';
 export type CrouchMode = 'hold' | 'toggle';
 export type Settings = {
-    showFps: boolean;
     crouchMode: CrouchMode;
     keyBindings: KeyBindings;
     lookSensitivity: number;
@@ -20,7 +19,6 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-    showFps: true,
     crouchMode: 'hold',
     keyBindings: { ...DEFAULT_BINDINGS },
     lookSensitivity: 0.08,
@@ -46,7 +44,6 @@ export const loadSettings = (storage: StorageLike | null): Settings => {
     try {
         const saved = JSON.parse(storage?.getItem(KEY) ?? '{}') as Partial<Settings>;
         return {
-            showFps: typeof saved.showFps === 'boolean' ? saved.showFps : DEFAULT_SETTINGS.showFps,
             crouchMode: saved.crouchMode === 'toggle' ? 'toggle' : 'hold',
             keyBindings: loadBindings(saved.keyBindings),
             lookSensitivity: clamp(

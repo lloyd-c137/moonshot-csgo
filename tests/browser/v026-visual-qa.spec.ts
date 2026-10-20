@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { enterHome } from './support';
 
 test('v0.26 visual QA: MVP, event cutscenes, final ceremony shutters and crowd wave', async ({ page }, testInfo) => {
-    await page.goto('http://127.0.0.1:5173/?audioLab=1&offline=1');
+    await page.goto('/?audioLab=1&offline=1');
     await enterHome(page);
     await page.getByRole('button', { name: /进入校园/ }).click();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');

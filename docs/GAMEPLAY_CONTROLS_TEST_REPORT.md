@@ -11,9 +11,9 @@ Date: 2026-10-20. Worktree: `msa-gameplay-main`, branch `feat/gameplay-controls-
 | TypeScript client + Worker | PASS | `npx tsc --noEmit -p .` and `npx tsc --noEmit -p server/tsconfig.json` exited 0 |
 | ESLint | PASS | `npm run lint` exited 0 |
 | Production build | PASS | `npm run build`; Vite + Wrangler compilation succeeded. Existing >500 kB chunk-size advisory remains. |
-| Gameplay-controls browser smoke | PASS | Chromium: 3 passed; actual capsule height/centre/camera, FPS HUD, settings persistence and crouch rebinding checked |
+| Gameplay-controls browser smoke | PASS | Chromium: 4 passed; actual capsule height/centre/camera, FPS HUD, settings persistence, crouch rebinding and actual W→ArrowUp movement rebinding checked |
 | Multiplayer browser slice | PASS | 4 passed, including two-client crouch/stand wire state and Full/Delta resync |
-| Full multiplayer browser suite | NOT PASS / NOT COMPLETED | A contaminated initial run hit another service on port 8787 and stale test clients; after isolated port and context cleanup, the complete suite was not rerun. |
+| Full browser suite | FAIL / NOT RELEASE-READY | Isolated-port run: 19 passed, 15 failed, 2 skipped. Failures include audio-lab dummy hits/execution, login fixture, campus room/movement assertions, and a long round-clock test. That run reused Wrangler persistence; a unique per-run Durable Object store was added afterward, but the full suite has not yet been rerun. Focused gameplay-controls is 4/4 and focused multiplayer cases pass. |
 | Full staged compatibility matrix | NOT MEASURED | No old/new server-client matrix was provisioned |
 | Full spatial golden-drop matrix | FAIL / INCOMPLETE | Only elevated-anchor preservation is covered; no server walkable-surface index exists |
 | Rendered crouch animation visual review | NOT MEASURED | The browser run verifies state synchronization but does not establish convincing crouch silhouette or animation coverage |

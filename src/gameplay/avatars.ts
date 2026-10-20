@@ -518,6 +518,7 @@ export const createAvatars = (
         },
         has: (id: string) => avatars.has(id),
         hasHeadImage: (id: string) => avatars.get(id)?.character.hasHeadImage() ?? false,
+        crouchDebug: (id: string) => avatars.get(id)?.character.crouchDebug() ?? null,
         clear: () => {
             for (const id of [...avatars.keys()]) remove(id);
         }

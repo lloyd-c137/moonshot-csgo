@@ -17,6 +17,7 @@ import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
+import { canUseCrouch } from '../net/compatibility';
 import type { King, PlayerPose, PlayerSummary, RoundOutcome, RoundState, ThrowRecord, WorldItem } from '../net/protocol';
 import {
     colourFor,
@@ -2180,6 +2181,9 @@ export const createMatch = ({
         if (finisherHoldStartedAt === null || !finisherRequestId || !finisherHoldTarget) return;
         if (performance.now() - finisherHoldStartedAt < GLOBAL_FINISHER_CONFIG.holdDurationMs) {
             cancelFinisherHold();
+            // A quick tap is not a completed execution request. Do not make the
+            // next deliberate hold lose its first 250ms to the anti-duplicate guard.
+            lastExecutionRequest = -Infinity;
             return;
         }
         if (executionTarget() !== finisherHoldTarget) {
@@ -3514,7 +3518,7 @@ export const createMatch = ({
             return spectating;
         },
         get crouchAllowed() {
-            return netState === 'offline' || netState === 'rejected' || (netState === 'online' && serverCrouchV1);
+            return canUseCrouch(netState, serverCrouchV1);
         },
         get crouchRestricted() {
             return executionFrozen || inputPaused || performance.now() < detainedUntil || spectating;
@@ -3682,6 +3686,7 @@ export const createMatch = ({
             },
             avatarJointRotation: (id: string, name: string) => avatars.jointRotation(id, name),
             avatarHeadTextured: (id: string) => avatars.hasHeadImage(id),
+            avatarCrouchDebug: (id: string) => avatars.crouchDebug(id),
             /** 纪老师 right now (position and facing). */
             teacher: () => teacher.pose,
             /** Browser tests isolate traversal from patrol timing while teacher behavior is tested separately. */

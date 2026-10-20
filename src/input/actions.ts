@@ -8,6 +8,34 @@ export type InputAction = (typeof ACTIONS)[number];
 export type Binding = string;
 export type KeyBindings = Record<InputAction, Binding>;
 
+/** Auditable controls matrix used by tests and the settings UI. Contexts describe where dispatch is allowed. */
+export const INPUT_ACTION_MATRIX: readonly {
+    action: InputAction;
+    context: 'gameplay' | 'chat' | 'spectator' | 'cutscene';
+    activation: 'hold' | 'press' | 'press-release';
+    consumers: readonly string[];
+}[] = [
+    ...(['moveForward', 'moveBackward', 'strafeLeft', 'strafeRight'] as const).map((action) => ({ action, context: 'gameplay' as const, activation: 'hold' as const, consumers: ['src/input/controllerAdapter.ts', 'src/player/stepAssist.ts'] })),
+    ...(['sprint', 'jump'] as const).map((action) => ({ action, context: 'gameplay' as const, activation: 'hold' as const, consumers: ['src/input/controllerAdapter.ts'] })),
+    { action: 'crouch', context: 'gameplay', activation: 'hold', consumers: ['src/player/crouch.ts'] },
+    { action: 'throw', context: 'gameplay', activation: 'press-release', consumers: ['src/gameplay/match.ts'] },
+    { action: 'cancelThrow', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'spectateNext', context: 'spectator', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'inspect', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'interact', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'execute', context: 'gameplay', activation: 'press-release', consumers: ['src/gameplay/match.ts'] },
+    { action: 'activeSkill', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
+    { action: 'chat', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
+    { action: 'map', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
+    { action: 'scoreboard', context: 'gameplay', activation: 'press-release', consumers: ['src/gameplay/match.ts'] },
+    { action: 'recover', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
+    { action: 'unstuck', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
+    { action: 'emote1', context: 'spectator', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'emote2', context: 'spectator', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'emote3', context: 'spectator', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'skipCutscene', context: 'cutscene', activation: 'press', consumers: ['src/gameplay/match.ts'] }
+];
+
 export const DEFAULT_BINDINGS: KeyBindings = {
     moveForward: 'KeyW', moveBackward: 'KeyS', strafeLeft: 'KeyA', strafeRight: 'KeyD',
     sprint: 'ShiftLeft', jump: 'Space', crouch: 'KeyC', throw: 'MouseLeft', cancelThrow: 'MouseRight', spectateNext: 'MouseLeft',

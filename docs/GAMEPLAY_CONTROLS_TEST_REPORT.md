@@ -40,3 +40,38 @@ Commit `b890b12` fixes authoritative respawn publication and stabilizes browser 
 - GitHub Actions for `b890b12` was in progress when this report was updated: [run 39360354532](https://github.com/lloyd-c137/moonshot-csgo/actions/runs/39360354532). This is not a CI PASS.
 
 The safe multi-level gold-drop resolver and the broader release checklist remain incomplete. No production service or data was changed; production deployment remains blocked by those documented gates.
+
+## Follow-up remediation — 2026-10-20
+
+This follow-up corrected concrete omissions that the earlier report had only called out as release blockers:
+
+- `tools/goldDropSurfacesCli.ts` derives 18,980 server drop anchors from the FF-01 source floor audit and the same authored arena stand/stair/bowl collision meshes used by the runtime. 7,835 anchors are elevated. Base samples must pass reachability and inflated capsule-clearance checks; raised samples require upward collision support across the capsule footprint. `Room.dropGold()` now selects by both X/Z and Y and relocates unsupported positions to a nearby indexed anchor, then to the audited spawn if none is close. It does not change pickup distance or delay.
+- `PoseBuffer.sample()` had been dropping `crouched` while reconstructing interpolated poses. A raw network snapshot showed crouch, while the remote avatar stayed standing. Stance now switches discretely at the authoritative pose sample; this is covered by a unit test and a two-client browser assertion against the remote skeletal joint rotations.
+- `CharacterAssetLoader.setCrouch()` multiplied the full posture rotation onto the prior frame every call. It now removes the prior overlay before applying the new blend. A 300-frame quaternion regression test checks no accumulated bend and return to neutral.
+- `INPUT_ACTION_MATRIX` and `test/input-coverage.test.js` cover every registered action, default binding, dispatch consumer, context and press/hold semantics. Intro skip and chat no longer have hard-coded Enter fallbacks that bypass remapping. Browser coverage now checks all rows, live hint update, explicit conflict swap and reset persistence.
+- `canUseCrouch()` and `test/crouch-compatibility.test.js` cover offline, new/new, new-client/old-server capability absence, and an old standing-pose payload accepted by the new server. This is a contract/harness matrix, not a deployed old-server wire test.
+
+Verification in this follow-up:
+
+- `npx tsc --noEmit -p .`, `npx tsc --noEmit -p server/tsconfig.json`, and `npx eslint src test server tools tests/browser`: PASS.
+- Focused Node suite: 47 passed, 0 failed before the final whole-suite run.
+- Focused Chromium: 6 passed. This includes a real Ammo ceiling fixture, physically supported raised arena drop anchor, all-action settings/conflict UI, and real two-client remote crouch skeletal pose/standing restoration. The browser console still reports the known Ammo build limitation for scaled mesh colliders.
+- Full Node suite: 253 tests, 252 passed, 1 obsolete exact-position assertion failed because safe resolution correctly relocates the test drop by 0.42 m. The assertion now checks the actual safe resolver result; a fresh full run is pending.
+- Full Chromium suite: running now; no result is claimed until it exits.
+
+Still not proven: every elevated anchor's headroom/reachability by exhaustive physics traversal; every crouch state/animation transition (walk, sprint, throw, hit, death, finisher, spectator); physical old-client/new-server and new-client/old-server against actual older binaries; the entire input context/system-shortcut/IME matrix; full browser E2E on campus Node hosting; human feel acceptance. Production and campus services remain unchanged.
+
+## Follow-up diagnostics and fixes — 2026-10-20
+
+The prior handoff left the above gates open because it relied on unit contracts and a single raised-anchor check. It did not run the complete browser suite; it also missed that `PoseBuffer.sample()` discarded the crouch flag and that the input coverage table did not test every action's real press/hold/release lifecycle. Those are verification gaps, not completed features.
+
+- Generated gold-drop support data now has 18,980 candidate capsule-centre anchors, including 7,835 elevated samples. The real Chromium/Ammo test settled a player at four separate arena heights and raycast support at every height. This verifies those four scene samples; it does not prove every generated point is clear/reachable or cover all campus elevations and pickup occlusion.
+- Actual Ammo low-ceiling browser test confirms crouching fits and stand-up stays blocked until clearance returns. Unit tests cover support and capsule-perimeter clearance. Full traversal across all campus furniture, stairs, death/respawn and cutscene states remains open.
+- A two-client browser test verifies the remote stance transitions, checks six rig joints change and restore, and captures `test-results/multiplayer-remote-crouch.png`. The source GLB has no authored crouch clips; the current joint overlay is visible in the capture but still needs a close human animation/prop/nameplate review across locomotion and finisher states.
+- Every registered Action now has a runtime `InputManager` press/hold/release test, plus UI remap/conflict/reset browser coverage. A real bug found during this audit swallowed an immediate long-press after a short execute tap; the retry guard now resets on the cancelled short tap. The focused browser regression for that flow passes. Browser-wide chat/menu/IME/system-shortcut combinations are still not exhaustive.
+- Compatibility contracts cover new client with a capability-less server, new server with a legacy standing pose, and new/new capability. No old binary was available, so actual old/new build pairing remains NOT MEASURED.
+- Full main Chromium run: **27 passed, 11 failed, 2 skipped**. Failures included offline practice dummy height/respawn assertions, campus location/navigation tolerances, one multiplayer hit prediction and the long V0.26 visual flow. After that run, the execute retry bug was fixed and its specific browser test now passes; the respawn expectation was corrected to the configured 3/3 target health. The full suite was not rerun after those last fixes, so there is no final full-suite PASS.
+- Current final focused Chromium set after the fixes: **7 passed** (practice execute/respawn, physical crouch, ceiling clearance, four-height gold support, FPS/rebinding, full action settings matrix, and remote two-client crouch/stand). The full run's remaining unrelated failures still block a complete browser acceptance claim.
+- Current main checks: `node --test test/*.test.js` **254 passed, 0 failed**; both TypeScript projects **PASS**; ESLint **PASS**; `npm run build` **PASS**. The known Ammo scaled-mesh capability warning and large client bundle warning remain.
+
+No production deployment was performed. The branch is not merge/deploy ready until the remaining full-browser failures and the explicitly incomplete matrices are resolved and rerun.

@@ -1,6 +1,7 @@
 import {
     AppBase,
     AppOptions,
+    Entity,
     AnimComponentSystem,
     CameraComponentSystem,
     CollisionComponentSystem,
@@ -18,7 +19,7 @@ import {
     WasmModule,
     createGraphicsDevice
 } from 'playcanvas';
-import type { Entity, StandardMaterial, Texture } from 'playcanvas';
+import type { StandardMaterial, Texture } from 'playcanvas';
 
 import { installDebugHooks } from './app/debugHooks';
 import { browserStorage } from './app/storage';
@@ -600,7 +601,7 @@ const boot = async () => {
                 return;
             }
             if (
-                (input.matchesKey(event, 'chat') || (event.code === 'Enter' && !input.matchesKey(event, 'activeSkill'))) &&
+                input.matchesKey(event, 'chat') &&
                 document.pointerLockElement === canvas &&
                 match.online
             ) {
@@ -699,6 +700,22 @@ const boot = async () => {
             position: () => player.getPosition().toArray(),
             fov: () => camera.camera!.fov,
             crouch: () => ({ active: crouch.active, capsuleHeight: player.collision!.height, cameraY: camera.getLocalPosition().y }),
+            crouchCeilingFixture: (enabled: boolean) => {
+                const name = 'DEV_CrouchCeilingFixture';
+                const existing = app.root.findByName(name) as Entity | null;
+                if (!enabled) {
+                    existing?.destroy();
+                    return;
+                }
+                if (existing) return;
+                const at = player.getPosition();
+                const feet = at.y - player.collision!.height / 2;
+                const ceiling = new Entity(name);
+                ceiling.setPosition(at.x, feet + 1.34, at.z);
+                ceiling.addComponent('collision', { type: 'box', halfExtents: new Vec3(1.2, 0.06, 1.2) });
+                ceiling.addComponent('rigidbody', { type: 'static', friction: 0.8 });
+                app.root.addChild(ceiling);
+            },
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover: () => {
                 recoverPlayer(player, safeSpot());

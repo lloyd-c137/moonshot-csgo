@@ -2,7 +2,7 @@ import { DEFAULT_BINDINGS } from './actions.ts';
 import type { InputAction, KeyBindings } from './actions.ts';
 
 const editable = (target: EventTarget | null) =>
-    target instanceof HTMLElement && (target.isContentEditable || !!target.closest('input, textarea, select'));
+    typeof HTMLElement !== 'undefined' && target instanceof HTMLElement && (target.isContentEditable || !!target.closest('input, textarea, select'));
 
 /** One physical-input state source for gameplay actions; bindings use KeyboardEvent.code or Mouse* names. */
 export class InputManager {

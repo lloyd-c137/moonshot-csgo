@@ -10,6 +10,7 @@
         "build": "vite build && wrangler pages functions build functions --project-directory . --build-output-directory dist --outdir dist --output-routes-path dist/_routes.json && mv dist/index.js dist/_worker.js",
         "derive:rooms": "node tools/roomNamingCli.ts",
         "derive:world": "node tools/deriveWorldCli.ts",
+        "derive:gold-drops": "node tools/goldDropSurfacesCli.ts",
         "dev": "vite",
         "fmt": "prettier --check .",
         "fmt:fix": "prettier --write .",

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Room } from '../server/room.ts';
 import { SOUTH_GATE } from '../src/config/gameplay.ts';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
+import { GOLD_DROP_SURFACES } from '../src/config/goldDropSurfaces.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
 import {
@@ -776,14 +777,16 @@ test('golden disc disconnect drop preserves the holder floor on an elevated stan
     const { room, join, pose, inbox } = harness();
     join('a', 'A');
     join('b', 'B');
-    pose('a', [-20, 5.52, 0], 100);
-    room.gold = { holder: 'a', at: [-20, 5.52, 0] };
+    const elevated = GOLD_DROP_SURFACES.find(([, y]) => y > 6 && y < 15);
+    assert.ok(elevated);
+    pose('a', elevated, 100);
+    room.gold = { holder: 'a', at: [...elevated] };
 
     room.disconnect('a', 200);
 
     const dropped = inbox.get('b').findLast((message) => message.type === 'gold');
     assert.equal(dropped.event, 'dropped');
-    assert.deepEqual(dropped.gold.at, [-20, 5.52, 0]);
+    assert.deepEqual(dropped.gold.at, elevated);
 });
 
 test('discs are ammunition: throws spend them, landed discs are picked up, the PE office hands out more', () => {

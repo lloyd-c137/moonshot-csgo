@@ -24,6 +24,7 @@ declare global {
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
             crouch: () => { active: boolean; capsuleHeight: number; cameraY: number };
+            crouchCeilingFixture: (enabled: boolean) => void;
             perf: () => { shadersLinked: number; compileMs: number; shaders: string[]; drawCallsPerFrame: number };
             sceneTransition: (relocate: () => void) => void;
             showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
@@ -56,6 +57,7 @@ declare global {
                     };
                 };
                 avatarHeadTextured: (id: string) => boolean;
+                avatarCrouchDebug: (id: string) => { amount: number; joints: { name: string; euler: number[] }[] } | null;
                 ceremony: () => { t: number; entrants: number } | null;
                 shuttersClosed: () => boolean;
                 shutterProbes: () => { id: string; from: number[]; to: number[] }[];

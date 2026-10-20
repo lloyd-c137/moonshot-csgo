@@ -4,13 +4,13 @@
 
 ## Required before release
 
-- [ ] Implement and test a deterministic, server-side walkable-surface query for gold and ordinary disc drops. Cover actual multi-level support, stairs, bounds, obstruction, reachable pickup space and relocation limits. Confirm floors cannot be picked up through.
-- [ ] Browser-verify drops and pickup on every supported elevation and special elimination path; include screenshots or captured test evidence.
-- [ ] Complete a context-owned action router so chat, menu, cinematic, execution and spectator state cannot race gameplay input. Test all remappable movement and hold/release actions, system shortcuts and IME.
-- [ ] Verify crouch physics in the actual campus scene under low ceilings, furniture, slopes, stairs, stands, teleport, death, respawn, spectator, pause and cutscenes. Verify no capsule/camera desynchronization.
-- [ ] Review crouch skeleton pose in idle, walk, sprint transitions, throw, hit, death and THE BOOMERANG; verify remote player nameplates and held props.
-- [ ] Add/finish real two-client E2E for remote crouch/stand, Full/Delta update, historical head/body hit, reconnect, and old/new client-server capability combinations.
-- [ ] Run and record the full browser suite on both runtime branches; identify unrelated or baseline failures rather than treating an unrun suite as pass.
+- [~] Deterministic server gold-drop anchors are generated from audited FF-01 walkable floor and authored arena collision surfaces. Unit tests pass, and Chromium/Ammo now verifies support at four raised arena heights. Exhaustive anchor headroom/reachability, ordinary-disc drops, obstruction and through-floor pickup remain open.
+- [~] Four-height support evidence is captured; drops and pickup still need browser coverage across every supported elevation and special elimination path.
+- [~] Every registered action has a runtime press/hold/release test; browser tests verify all settings rows, remap, live hints, explicit conflict swap and reset. One context-owned router and the full chat/menu/cinematic/system-shortcut/IME matrix remain open.
+- [~] Actual capsule behavior and a real Ammo low-ceiling fixture pass in browser; full campus furniture/slope/stairs/teleport/death/respawn/spectator/pause/cutscene matrix remains open.
+- [~] Remote skeletal joints now change and return to neutral in two-client browser QA; repeated posture rotation no longer accumulates. Full animation/state and held-prop/nameplate visual review remains open.
+- [~] Real two-client crouch/stand skeletal visualization passes; old/new capability contracts and legacy standing pose are unit-tested. Historical hit, reconnect integration and actual old/new binaries remain open.
+- [ ] Full main-browser suite last completed with 27 passed, 11 failed and 2 skipped. Seven focused tests pass after the final fixes, but the full suite has not been rerun; remaining failures and campus Node browser coverage are open.
 - [ ] Apply the shared implementation to `feat/gameplay-controls-campus`, run campus Node typecheck, lint, tests, build and real `ws` integration checks. Do not merge host runtimes.
 - [ ] Review optional-field protocol rollout order with isolated staging. Keep production `PROTOCOL_VERSION`, Pages, Worker, account data and DO untouched until compatibility is proven.
 - [ ] Get human gameplay acceptance for physical feel and visibility; unit tests cannot establish the intended game feel.

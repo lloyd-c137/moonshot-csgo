@@ -110,7 +110,7 @@ const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
   <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd" data-action="execute">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
   <div class="finisher-bars" aria-hidden="true"><i></i><i></i></div>
-  <div id="intro" class="intro" hidden><div class="intro-bars" aria-hidden="true"><i></i><i></i></div><div class="intro-card" id="intro-card"></div><span class="intro-skip">点击或按空格跳过</span></div>
+  <div id="intro" class="intro" hidden><div class="intro-bars" aria-hidden="true"><i></i><i></i></div><div class="intro-card" id="intro-card"></div><span class="intro-skip">点击或按 <span class="kbd" data-action="skipCutscene">空格</span> 跳过</span></div>
   <div id="finisher-flash" class="finisher-flash" aria-hidden="true"></div>
   <div id="execution-banner" class="execution-banner" hidden><strong id="execution-label"></strong><span>GLOBAL FINISHER · THE BOOMERANG</span><i><i id="execution-progress"></i></i></div>
   <section class="screen screen-title" aria-labelledby="title-heading">
@@ -246,7 +246,7 @@ const MARKUP = `
         <path class="scope-ticks" d="M-50 -4V4M-34 -3V3M50 -4V4M34 -3V3M-4 34H4M-3 50H3" />
         <circle class="scope-dot" r="2.2" />
       </svg>
-      <p class="scope-label"><span class="scope-state" id="scope-state">瞄准中</span><small>右键取消</small></p>
+      <p class="scope-label"><span class="scope-state" id="scope-state">瞄准中</span><small><span class="kbd" data-action="cancelThrow">右键</span>取消</small></p>
     </div>
     <span class="crosshair" aria-hidden="true"></span>
     <span class="charge" id="charge" aria-hidden="true" hidden></span>
@@ -259,7 +259,7 @@ const MARKUP = `
     <div class="chat" id="chat" data-open="false">
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <form class="chat-form" id="chat-form" hidden><span>全服</span><input id="chat-input" type="text" maxlength="120" autocomplete="off" placeholder="输入消息，Enter 发送，Esc 取消" /></form>
-      <p class="chat-hint" id="chat-hint"><span class="kbd">Enter</span> 聊天</p>
+      <p class="chat-hint" id="chat-hint"><span class="kbd" data-action="chat">Enter</span> 聊天</p>
     </div>
     <div class="damage" id="damage" aria-hidden="true"></div>
     <span class="damage-dir" id="damage-dir" aria-hidden="true"></span>
@@ -272,7 +272,7 @@ const MARKUP = `
       <div class="status-block ammo-block"><small>飞盘</small><div class="ammo" id="ammo" data-empty="false" aria-label="飞盘"><span class="ammo-icons" id="ammo-icons"></span><span id="ammo-text">练习 · 不限</span></div></div>
       <div class="status-block skill-block" id="skill-block" data-empty="true"><small>技能</small><div class="ability-status" id="ability-status" hidden><i class="ability-ring"><b></b></i><span id="ability-label"></span></div></div>
     </div>
-    <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd">G</span>好像卡住了？脱离卡死</button>
+    <button class="unstuck" id="unstuck" type="button" hidden><span class="kbd" data-action="unstuck">G</span>好像卡住了？脱离卡死</button>
     <div class="feed-stack" id="feed-stack">
       <ol class="killfeed" id="killfeed" aria-live="polite"></ol>
       <ol class="feed" id="feed" aria-live="polite"></ol>
@@ -284,7 +284,7 @@ const MARKUP = `
       <div class="ceremony-bar" aria-hidden="true"></div><div class="ceremony-bar bottom" aria-hidden="true"></div>
       <div class="ceremony-card" id="ceremony-card"><small id="ceremony-order"></small><b id="ceremony-name"></b><span id="ceremony-facts"></span></div>
       <div class="ceremony-title" id="ceremony-title"><small>FINAL</small><b>最终对决</b><span>入口已封闭 · 60 秒</span></div>
-      <div class="cutscene-caption" id="cutscene-caption"><b id="cutscene-title"></b><span id="cutscene-sub"></span><small>空格 跳过</small></div>
+      <div class="cutscene-caption" id="cutscene-caption"><b id="cutscene-title"></b><span id="cutscene-sub"></span><small><span class="kbd" data-action="skipCutscene">空格</span> 跳过</small></div>
       <div class="mvp-card" id="mvp-card">
         <div class="mvp-kicker"><b>MVP</b><span id="mvp-result"></span></div>
         <div class="mvp-portrait" id="mvp-portrait"><img id="mvp-avatar" alt="" hidden /><i id="mvp-initial"></i></div>
@@ -312,7 +312,7 @@ const MARKUP = `
     </div>
     <p class="toast" id="toast" role="status" hidden></p>
     <div class="full-map" aria-label="全屏地图">
-      <div><canvas id="full-map"></canvas><p>配 配电室 · 监 监控室 · 体 体育办公室 · 按 M 关闭地图</p></div>
+      <div><canvas id="full-map"></canvas><p>配 配电室 · 监 监控室 · 体 体育办公室 · 按 <span class="kbd" data-action="map">M</span> 关闭地图</p></div>
     </div>
   </section>
 

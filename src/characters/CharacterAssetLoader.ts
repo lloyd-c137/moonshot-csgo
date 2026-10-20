@@ -36,6 +36,10 @@ export const PLAY_AT_TOLERANCE = 0.12;
 
 const clipName = (name: string) => name.split('|').at(-1) ?? name;
 
+/** Replace a previous local posture overlay without accumulating it every frame. */
+export const replacePostureOverlay = (current: Quat, previous: Quat, target: Quat, inverse: Quat, out: Quat) =>
+    out.mul2(current, inverse.invert(previous)).mul(target);
+
 /** Shared immutable source container; instances own their entity and cloned materials. */
 export class CharacterAssetLoader {
     private readonly resource: ContainerResource;
@@ -215,15 +219,20 @@ export class CharacterAssetLoader {
         let visualScale = CHARACTER_VISUAL_SCALE;
         const crouchBones = ['thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'spine_01', 'spine_02']
             .map((name) => ({
+                name,
                 bone: modelRoot.findByName(name) as Entity | null,
                 euler: name.startsWith('thigh') ? [-22, 0, 0] : name.startsWith('calf') ? [48, 0, 0] : [7, 0, 0]
             }))
-            .filter((entry): entry is { bone: Entity; euler: number[] } => !!entry.bone);
+            .filter((entry): entry is { name: string; bone: Entity; euler: number[] } => !!entry.bone);
         const pelvis = modelRoot.findByName('pelvis') as Entity | null;
         const basePelvisPosition = pelvis?.getLocalPosition().clone() ?? null;
         const baseModelPosition = modelRoot.getLocalPosition().clone();
+        let crouchBlend = 0;
         const crouchRotation = new Quat();
+        const inverseCrouchRotation = new Quat();
         const posedRotation = new Quat();
+        const previousCrouchRotations = new Map<Entity, Quat>();
+        for (const { bone } of crouchBones) previousCrouchRotations.set(bone, new Quat());
         let throwTimer = 0;
         let headTexture: Texture | null = null;
         let disposed = false;
@@ -247,6 +256,7 @@ export class CharacterAssetLoader {
             /** Additive, joint-based posture overlay. The source GLB has no crouch clips. */
             setCrouch(amount: number) {
                 const blend = Math.max(0, Math.min(1, amount));
+                crouchBlend = blend;
                 modelRoot.setLocalPosition(
                     baseModelPosition.x,
                     baseModelPosition.y + (0.3 / visualScale) * blend,
@@ -256,10 +266,26 @@ export class CharacterAssetLoader {
                     pelvis.setLocalPosition(basePelvisPosition.x, basePelvisPosition.y - (0.1 / visualScale) * blend, basePelvisPosition.z);
                 for (const entry of crouchBones) {
                     crouchRotation.setFromEulerAngles(entry.euler[0] * blend, entry.euler[1] * blend, entry.euler[2] * blend);
-                    // Apply on top of the current locomotion pose, so crouching does not replace walk/idle animation.
-                    posedRotation.mul2(entry.bone.getLocalRotation(), crouchRotation);
+                    // Replace only this posture layer. Multiplying the current bone by the full crouch rotation
+                    // every frame compounds the bend until joints spin; first remove the previous overlay.
+                    const previous = previousCrouchRotations.get(entry.bone)!;
+                    replacePostureOverlay(
+                        entry.bone.getLocalRotation(),
+                        previous,
+                        crouchRotation,
+                        inverseCrouchRotation,
+                        posedRotation
+                    );
                     entry.bone.setLocalRotation(posedRotation);
+                    previous.copy(crouchRotation);
                 }
+            },
+            /** Read-only development evidence for pose QA; contains joint angles, never player identity data. */
+            crouchDebug() {
+                return {
+                    amount: crouchBlend,
+                    joints: crouchBones.map(({ name, bone }) => ({ name, euler: bone.getLocalEulerAngles().toArray() }))
+                };
             },
             play(name: string, blend = 0.12) {
                 const layer = modelRoot.anim!.baseLayer!;

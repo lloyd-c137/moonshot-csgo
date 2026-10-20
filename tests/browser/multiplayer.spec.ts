@@ -168,11 +168,20 @@ test('online crouch is present in remote snapshot state and standing clears it',
         }
         return null;
     }, remoteId);
+    const remotePose = async () => a.page.evaluate((id) => window.__MOONSHOT__!.match.avatarCrouchDebug(id), remoteId);
+    const standingJoints = await remotePose();
     await b.page.keyboard.down('c');
     await expect.poll(remoteStance, { timeout: 5_000 }).toBe(true);
+    await expect.poll(async () => (await remotePose())?.amount ?? 0, { timeout: 5_000 }).toBeGreaterThan(0.8);
+    const crouchedJoints = await remotePose();
+    expect(crouchedJoints?.joints).toHaveLength(6);
+    expect(crouchedJoints?.joints.some((joint, index) =>
+        joint.euler.some((angle, axis) => Math.abs(angle - (standingJoints?.joints[index]?.euler[axis] ?? angle)) > 2)
+    )).toBe(true);
     await a.page.screenshot({ path: 'test-results/multiplayer-remote-crouch.png' });
     await b.page.keyboard.up('c');
     await expect.poll(remoteStance, { timeout: 5_000 }).toBe(false);
+    await expect.poll(async () => (await remotePose())?.amount ?? 1, { timeout: 5_000 }).toBeLessThan(0.2);
     expect(a.errors).toEqual([]);
     expect(b.errors).toEqual([]);
     await Promise.all([a.page.context().close(), b.page.context().close()]);

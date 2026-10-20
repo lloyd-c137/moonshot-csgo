@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Accounts, MemoryAccountDb } from '../server/accounts.ts';
+import { resolveGoldDrop } from '../server/goldDrop.ts';
 import { Room } from '../server/room.ts';
 import { AMMO, PROTOCOL_VERSION, RESPAWN_SECONDS, ROUND } from '../src/net/protocol.ts';
 
@@ -249,12 +250,14 @@ test('a golden-disc holder drops it on refresh and does not regain it', async ()
     join('a', 'solo', 0);
     pose('a', [4, 0.92, 6], 100);
     room.gold = { holder: 'a', at: [4, 0.92, 6] };
+    const safeDrop = resolveGoldDrop({ p: [4, 0.92, 6], yaw: 0, pitch: 0 }).at;
     room.disconnect('a', 1000);
     assert.equal(room.gold.holder, null);
-    assert.deepEqual(room.gold.at, [4, 0.92, 6]);
+    assert.deepEqual(room.gold.at, safeDrop);
+    assert.ok(Math.hypot(room.gold.at[0] - 4, room.gold.at[2] - 6) <= 2.4);
     const welcome = join('b', 'solo', 2000);
     assert.equal(welcome.gold.holder, null);
-    assert.deepEqual(welcome.gold.at, [4, 0.92, 6]);
+    assert.deepEqual(welcome.gold.at, safeDrop);
     assert.equal(welcome.players.find((player) => player.id === 'b').alive, true);
     assert.equal(AMMO.start, 3);
 });

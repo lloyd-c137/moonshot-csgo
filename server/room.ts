@@ -57,6 +57,7 @@ import {
 
 import type { Accounts } from './accounts.ts';
 import { implausibleMove, judgeHit, PoseHistory } from './combatValidation.ts';
+import { resolveGoldDrop } from './goldDrop.ts';
 
 /** Campus bounds (m) a reported pose must lie inside; anything else is ignored. */
 const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
@@ -1571,9 +1572,9 @@ export class Room {
     }
 
     private dropGold(holder: Player, now: number) {
-        // GoldState.at uses the capsule-centre anchor consumed by pickup and rendering. Preserve
-        // all three coordinates so elevated stands and stairs don't drop the disc through floors.
-        const at: Vec3Tuple = holder.pose ? [...holder.pose.p] : [...this.gold.at];
+        // Resolve against collision-derived support anchors: raw player Y is not necessarily a floor, and a
+        // fixed ground-floor Y makes drops on stands/stairs unclaimable. GoldState.at remains a capsule-centre anchor.
+        const at = resolveGoldDrop(holder.pose).at;
         this.gold = { holder: null, at };
         this.goldDroppedAt = now;
         this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });

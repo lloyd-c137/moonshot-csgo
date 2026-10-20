@@ -16,7 +16,15 @@ import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
-import type { King, PlayerPose, PlayerSummary, RoundOutcome, RoundState, ThrowRecord, WorldItem } from '../net/protocol';
+import type {
+    King,
+    PlayerPose,
+    PlayerSummary,
+    RoundOutcome,
+    RoundState,
+    ThrowRecord,
+    WorldItem
+} from '../net/protocol';
 import {
     colourFor,
     AMMO,
@@ -45,12 +53,7 @@ import { createBreakerView } from './breakerView';
 import { CEREMONY, featuredEntrantAt, planCeremony } from './ceremony/ceremonyPlan';
 import type { CeremonyPlan, Entrant } from './ceremony/ceremonyPlan';
 import { createCeremonyView } from './ceremony/ceremonyView';
-import {
-    aimTarget,
-    endsRound,
-    FINAL_SLOW_MOTION,
-    HIT_STOP_MS
-} from './combatFeel';
+import { aimTarget, endsRound, FINAL_SLOW_MOTION, HIT_STOP_MS } from './combatFeel';
 import { activeCutscene, CUTSCENE_CAPTIONS, cutsceneShot } from './cutscenes/cutscenes';
 import type { CutsceneKind, MomentCutscene } from './cutscenes/cutscenes';
 import { createCutsceneView } from './cutscenes/cutsceneView';
@@ -127,18 +130,76 @@ const globalExecution = (finisher: GlobalFinisher): Execution => ({
     variant: finisher.variant
 });
 
-
 type SkillKind = 'revive' | 'frc' | 'eye' | 'stealth' | 'creation' | 'flashlight' | 'coach';
 const SKILL_KINDS = ['revive', 'frc', 'eye', 'stealth', 'creation', 'flashlight', 'coach'] as const;
 /** How each skill looks and reads when someone gets it. */
-const SKILL_META: Record<SkillKind, { name: string; detail: string; colour: string; rgb: [number, number, number]; icon: EventIcon; has: (p: PlayerSummary) => boolean }> = {
-    revive: { name: '复活甲', detail: '被淘汰时满血复活一次', colour: '#3ee69c', rgb: [0.24, 0.9, 0.61], icon: 'revive', has: (p) => p.hasReviveArmor === true },
-    frc: { name: 'FRC 飞盘', detail: 'Enter 切换红色科技盘', colour: '#ff4d5e', rgb: [1, 0.3, 0.37], icon: 'frc', has: (p) => p.hasFrc === true },
-    eye: { name: '监控室之眼', detail: '全场玩家位置已标记', colour: '#2ee6d6', rgb: [0.18, 0.9, 0.84], icon: 'eye', has: (p) => p.hasEye === true },
-    stealth: { name: '请假条', detail: 'Enter 发动 · 隐身 3 秒', colour: '#55c9ff', rgb: [0.25, 0.72, 1], icon: 'stealth', has: (p) => p.hasStealth === true },
-    creation: { name: '创造之力', detail: '每 30 秒自动补充一张飞盘', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'creation', has: (p) => p.hasCreation === true },
-    flashlight: { name: '手电筒', detail: '照亮视线前方区域', colour: '#ffe19a', rgb: [1, 0.86, 0.55], icon: 'flashlight', has: (p) => p.hasFlashlight === true },
-    coach: { name: '飞盘天赋', detail: '携带上限提升至 5', colour: '#ffc21a', rgb: [1, 0.76, 0.1], icon: 'coach', has: (p) => p.coachGift === true }
+const SKILL_META: Record<
+    SkillKind,
+    {
+        name: string;
+        detail: string;
+        colour: string;
+        rgb: [number, number, number];
+        icon: EventIcon;
+        has: (p: PlayerSummary) => boolean;
+    }
+> = {
+    revive: {
+        name: '复活甲',
+        detail: '被淘汰时满血复活一次',
+        colour: '#3ee69c',
+        rgb: [0.24, 0.9, 0.61],
+        icon: 'revive',
+        has: (p) => p.hasReviveArmor === true
+    },
+    frc: {
+        name: 'FRC 飞盘',
+        detail: 'Enter 切换红色科技盘',
+        colour: '#ff4d5e',
+        rgb: [1, 0.3, 0.37],
+        icon: 'frc',
+        has: (p) => p.hasFrc === true
+    },
+    eye: {
+        name: '监控室之眼',
+        detail: '全场玩家位置已标记',
+        colour: '#2ee6d6',
+        rgb: [0.18, 0.9, 0.84],
+        icon: 'eye',
+        has: (p) => p.hasEye === true
+    },
+    stealth: {
+        name: '请假条',
+        detail: 'Enter 发动 · 隐身 3 秒',
+        colour: '#55c9ff',
+        rgb: [0.25, 0.72, 1],
+        icon: 'stealth',
+        has: (p) => p.hasStealth === true
+    },
+    creation: {
+        name: '创造之力',
+        detail: '每 30 秒自动补充一张飞盘',
+        colour: '#ffc21a',
+        rgb: [1, 0.76, 0.1],
+        icon: 'creation',
+        has: (p) => p.hasCreation === true
+    },
+    flashlight: {
+        name: '手电筒',
+        detail: '照亮视线前方区域',
+        colour: '#ffe19a',
+        rgb: [1, 0.86, 0.55],
+        icon: 'flashlight',
+        has: (p) => p.hasFlashlight === true
+    },
+    coach: {
+        name: '飞盘天赋',
+        detail: '携带上限提升至 5',
+        colour: '#ffc21a',
+        rgb: [1, 0.76, 0.1],
+        icon: 'coach',
+        has: (p) => p.coachGift === true
+    }
 };
 export const createMatch = ({
     app,
@@ -212,7 +273,17 @@ export const createMatch = ({
         returnAt: null,
         cooldownUntil: 0
     }));
-    const localAbilities = { revive: false, reviveUsed: false, reviveTaken: false, frc: false, eye: false, stealth: false, creation: false, flashlight: false, coach: false };
+    const localAbilities = {
+        revive: false,
+        reviveUsed: false,
+        reviveTaken: false,
+        frc: false,
+        eye: false,
+        stealth: false,
+        creation: false,
+        flashlight: false,
+        coach: false
+    };
     let localMarkGiven = false;
     let localFrcSelected = false;
     let localFrcCooldownUntil = 0;
@@ -251,13 +322,21 @@ export const createMatch = ({
         if (!import.meta.env.DEV) return null;
         const params = new URLSearchParams(window.location.search);
         const id = params.get('skin');
-        return skinById(id) ? { skin: id!, skinCounter: params.get('skinCounter') !== '0', skinKills: Number(params.get('skinKills') ?? 0) || 0 } : null;
+        return skinById(id)
+            ? {
+                  skin: id!,
+                  skinCounter: params.get('skinCounter') !== '0',
+                  skinKills: Number(params.get('skinKills') ?? 0) || 0
+              }
+            : null;
     })();
     /** The local player's equipped skin (from the room's summary of us; the dev preview offline). */
     const localSkin = (): { skin: string; counter: boolean; kills: number } | null => {
         const me = roster.get(selfId());
         const source = me?.skin ? me : net.state === 'online' ? null : previewSkin;
-        return source?.skin ? { skin: source.skin, counter: source.skinCounter === true, kills: source.skinKills ?? 0 } : null;
+        return source?.skin
+            ? { skin: source.skin, counter: source.skinCounter === true, kills: source.skinKills ?? 0 }
+            : null;
     };
     let shownSkinKey = '';
     /** Refreshes the viewmodel and the 计数器 HUD when our skin (or its count) changed. */
@@ -587,7 +666,10 @@ export const createMatch = ({
             const image = new Image();
             image.crossOrigin = 'anonymous';
             image.src = url;
-            void image.decode().then(() => mvpView.setHead(image), () => undefined);
+            void image.decode().then(
+                () => mvpView.setHead(image),
+                () => undefined
+            );
         }
         const skill = SKILL_KINDS.map((kind) => SKILL_META[kind]).find((meta) => meta.has(entry))?.name ?? '—';
         ui.mvp({
@@ -647,14 +729,36 @@ export const createMatch = ({
     /** Test hook: watching the lab ceremony as a spectator in the stands (local only). */
     let labFan = false;
     const playLabCeremony = (others = 4, asFan = false) => {
-        const names = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO'];
+        const names = [
+            'ALPHA',
+            'BRAVO',
+            'CHARLIE',
+            'DELTA',
+            'ECHO',
+            'FOXTROT',
+            'GOLF',
+            'HOTEL',
+            'INDIA',
+            'JULIET',
+            'KILO'
+        ];
         labCeremony = {
             at: realRoomNow(),
             entrants: [
-                ...(asFan ? [] : [{
-                    id: selfId(), name: '你', kills: 2, deaths: 1, score: 240,
-                    colour: hueColour(colourFor('local')), skill: '复活甲', equipment: '普通飞盘'
-                }]),
+                ...(asFan
+                    ? []
+                    : [
+                          {
+                              id: selfId(),
+                              name: '你',
+                              kills: 2,
+                              deaths: 1,
+                              score: 240,
+                              colour: hueColour(colourFor('local')),
+                              skill: '复活甲',
+                              equipment: '普通飞盘'
+                          }
+                      ]),
                 ...names.slice(0, others).map((name, i) => ({
                     id: `ceremony-${name}`,
                     name,
@@ -752,8 +856,13 @@ export const createMatch = ({
     flashlightView.addChild(flashlightLens);
     const flashlightBeam = new Entity('player-flashlight-beam');
     flashlightBeam.addComponent('light', {
-        type: 'spot', color: new Color(1, 0.94, 0.76), intensity: 3.2, range: 17,
-        innerConeAngle: 20, outerConeAngle: 38, castShadows: false
+        type: 'spot',
+        color: new Color(1, 0.94, 0.76),
+        intensity: 3.2,
+        range: 17,
+        innerConeAngle: 20,
+        outerConeAngle: 38,
+        castShadows: false
     });
     flashlightBeam.setLocalPosition(0.16, -0.1, -0.48);
     flashlightBeam.setLocalEulerAngles(90, 0, 0);
@@ -784,7 +893,7 @@ export const createMatch = ({
     const frcAuraShape = merge([
         place(torus(DISC.radius * 1.3, 0.006, 28, 6), { y: 0.024 }),
         ...Array.from({ length: 4 }, (_, index) => {
-            const angle = index * Math.PI / 2;
+            const angle = (index * Math.PI) / 2;
             return place(box(0.075, 0.008, 0.014), {
                 x: Math.cos(angle) * DISC.radius * 1.08,
                 y: 0.025,
@@ -805,7 +914,10 @@ export const createMatch = ({
     frcAuraMaterial.emissiveIntensity = 1.5;
     frcAuraMaterial.update();
     const frcAura = new Entity('viewmodel-frc-aura');
-    frcAura.addComponent('render', { meshInstances: [new MeshInstance(frcAuraMesh, frcAuraMaterial)], castShadows: false });
+    frcAura.addComponent('render', {
+        meshInstances: [new MeshInstance(frcAuraMesh, frcAuraMaterial)],
+        castShadows: false
+    });
     frcAura.enabled = false;
     viewmodel.addChild(frcAura);
     // Afterimages trailing the disc while it is airborne during an inspect.
@@ -876,7 +988,11 @@ export const createMatch = ({
         stripeMaterial.update();
         tintGhosts(hue);
     };
-    const skillActivationFeedback = (label: string, colour: [number, number, number], kind: 'pulse' | 'stealth' | 'still' | 'power' = 'power') => {
+    const skillActivationFeedback = (
+        label: string,
+        colour: [number, number, number],
+        kind: 'pulse' | 'stealth' | 'still' | 'power' = 'power'
+    ) => {
         ui.popup(label, 'gold');
         sound.skillUse(kind);
         ui.skillCast(`rgb(${colour.map((c) => Math.round(c * 255)).join(' ')})`);
@@ -884,7 +1000,7 @@ export const createMatch = ({
         const at: V3 = [p.x, p.y - PLAYER.height * 0.45, p.z];
         effects.ring(at, colour, 0.24, 0.5, 2.2);
         for (let i = 0; i < 12; i++) {
-            const angle = i * Math.PI / 6;
+            const angle = (i * Math.PI) / 6;
             effects.mote(at, colour, [Math.cos(angle) * 1.2, 0.7 + (i % 3) * 0.25, Math.sin(angle) * 1.2], 0.025, 0.42);
         }
     };
@@ -944,14 +1060,14 @@ export const createMatch = ({
             frc
                 ? '人偶 · FRC 飞盘淘汰'
                 : out && golden
-                ? '人偶 · 金飞盘击杀'
-                : head
-                  ? '人偶 · 爆头淘汰'
-                  : out
-                    ? execution
-                        ? '人偶 · 处决淘汰'
-                        : '人偶 · 击杀'
-                    : `人偶 · 身体命中（${MAX_HP - labHp}/${MAX_HP}）`,
+                  ? '人偶 · 金飞盘击杀'
+                  : head
+                    ? '人偶 · 爆头淘汰'
+                    : out
+                      ? execution
+                          ? '人偶 · 处决淘汰'
+                          : '人偶 · 击杀'
+                      : `人偶 · 身体命中（${MAX_HP - labHp}/${MAX_HP}）`,
             out ? 'kill' : head ? 'head' : 'hit'
         );
         labUi?.hit(head, out, golden);
@@ -1104,7 +1220,8 @@ export const createMatch = ({
             executionFrozen ||
             globalFinisher ||
             performance.now() < detainedUntil
-        ) return false;
+        )
+            return false;
 
         if (localAbilities.frc) {
             if (roomNow() < localFrcCooldownUntil) ui.notify('FRC 飞盘仍在冷却');
@@ -1215,10 +1332,15 @@ export const createMatch = ({
             currentMomentCutscene = extra.momentCutscene;
             applyWorldItems(extra.items);
             Object.assign(localAbilities, {
-                revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
-                reviveTaken: me.reviveTaken === true, reviveUsed: me.reviveTaken === true,
-                stealth: me.hasStealth === true, creation: me.hasCreation === true,
-                flashlight: me.hasFlashlight === true, coach: me.coachGift === true
+                revive: me.hasReviveArmor === true,
+                frc: me.hasFrc === true,
+                eye: me.hasEye === true,
+                reviveTaken: me.reviveTaken === true,
+                reviveUsed: me.reviveTaken === true,
+                stealth: me.hasStealth === true,
+                creation: me.hasCreation === true,
+                flashlight: me.hasFlashlight === true,
+                coach: me.coachGift === true
             });
             localAmmoCapacity = me.ammoCapacity ?? AMMO.max;
             localFrcSelected = me.frcSelected === true;
@@ -1363,24 +1485,37 @@ export const createMatch = ({
             refreshBoard();
         },
         revived: (id, at) => {
+            const entry = roster.get(id);
+            if (entry) Object.assign(entry, { alive: true, hp: MAX_HP, spectating: false });
             if (id === selfId()) {
+                const current = pose();
+                const angles = player.getEulerAngles();
+                player.rigidbody!.teleport(at[0], at[1], at[2], angles.x, angles.y, angles.z);
+                player.rigidbody!.linearVelocity = Vec3.ZERO;
+                player.rigidbody!.angularVelocity = Vec3.ZERO;
+                setLook(player, current.pitch, current.yaw);
                 hp = MAX_HP;
                 alive = true;
                 setAlive(true);
                 ui.eliminated(null);
                 ui.popup('复活甲生效', 'gold');
-                ui.feed('复活甲生效 · 满血复活，短暂无敌', 'mine');
+                ui.feed('复活甲生效 · 原地满血复活', 'mine');
                 sound.respawn();
                 sound.skillUse('heal');
                 ui.skillCast(SKILL_META.revive.colour);
                 effects.ring(at, [0.3, 0.95, 0.85], 0.3, 1.5, 1.3);
+                net.respawned(pose());
                 localAbilities.revive = false;
                 localAbilities.reviveUsed = true;
                 localAbilities.reviveTaken = true;
             }
-            const entry = roster.get(id);
             if (id !== selfId() && entry) {
-                ui.event({ icon: 'revive', who: entry.name, text: ' 的复活甲生效了', colour: SKILL_META.revive.colour });
+                ui.event({
+                    icon: 'revive',
+                    who: entry.name,
+                    text: ' 的复活甲生效了',
+                    colour: SKILL_META.revive.colour
+                });
                 sound.feedTick();
             }
             if (entry) Object.assign(entry, { hp: MAX_HP, alive: true, spectating: false, hasReviveArmor: false });
@@ -1527,7 +1662,11 @@ export const createMatch = ({
                 } else if (out) {
                     setAlive(false);
                     killer = nameOf(by);
-                    deadUntil = performance.now() + RESPAWN_SECONDS * 1000;
+                    if (shot?.revivePending) {
+                        const remaining = Math.max(0, (shot.respawnAt ?? roomNow() + 3000) - roomNow());
+                        deadUntil = performance.now() + remaining;
+                        if (presentation.showHud) ui.popup('复活甲触发 · 3 秒后原地复活', 'gold');
+                    } else deadUntil = performance.now() + RESPAWN_SECONDS * 1000;
                 } else if (presentation.showHud) {
                     ui.feed(`被 ${nameOf(by)} 命中 · 剩余生命 ${targetHp}`, 'me');
                 }
@@ -1583,7 +1722,8 @@ export const createMatch = ({
                 if (presentation.showHud) ui.killFeed(nameOf(by), nameOf(target), icons, shot?.range ?? null, tone);
                 let leader: string | null = null;
                 let best = 0;
-                for (const [key, entry] of roster) if ((entry.kills ?? 0) > best) [leader, best] = [key, entry.kills ?? 0];
+                for (const [key, entry] of roster)
+                    if ((entry.kills ?? 0) > best) [leader, best] = [key, entry.kills ?? 0];
                 medalTracker.setLeader(leader);
                 const awards = medalTracker.kill({
                     time: now / 1000,
@@ -1595,7 +1735,10 @@ export const createMatch = ({
                     execution,
                     frc,
                     distance: shot?.range ?? undefined,
-                    aliveAfter: final ? [...roster].filter(([key, player]) => key !== target && player.alive && !player.spectating).length : undefined
+                    aliveAfter: final
+                        ? [...roster].filter(([key, player]) => key !== target && player.alive && !player.spectating)
+                              .length
+                        : undefined
                 });
                 if (by === me) {
                     if (presentation.showHud) ui.killBanner(streak, nameOf(target), icons);
@@ -1890,7 +2033,10 @@ export const createMatch = ({
             ...(() => {
                 const mine = localSkin();
                 return mine
-                    ? { skin: mine.skin, instances: mine.counter ? skinLibrary.localInstances(mine.skin, true, mine.kills) : null }
+                    ? {
+                          skin: mine.skin,
+                          instances: mine.counter ? skinLibrary.localInstances(mine.skin, true, mine.kills) : null
+                      }
                     : {};
             })()
         });
@@ -1954,7 +2100,9 @@ export const createMatch = ({
     const nearestInteraction = () => {
         const p = player.getPosition();
         const candidates = [
-            ...worldItems.filter((item) => item.available).map((item) => ({ id: item.id, name: item.name, at: item.at })),
+            ...worldItems
+                .filter((item) => item.available)
+                .map((item) => ({ id: item.id, name: item.name, at: item.at })),
             ...NPC_SPAWNS.map((npc) => ({ id: npc.id, name: npc.name, at: npc.at }))
         ];
         let closest: { id: string; name: string; distance: number } | null = null;
@@ -1966,7 +2114,16 @@ export const createMatch = ({
         return closest;
     };
     const interactNearby = () => {
-        if (globalFinisher || !started || playerPhase === 'lobby' || !alive || spectating || inputPaused || performance.now() < detainedUntil) return;
+        if (
+            globalFinisher ||
+            !started ||
+            playerPhase === 'lobby' ||
+            !alive ||
+            spectating ||
+            inputPaused ||
+            performance.now() < detainedUntil
+        )
+            return;
         const target = nearestInteraction();
         if (!target) return;
         if (net.state === 'online') {
@@ -2304,7 +2461,8 @@ export const createMatch = ({
         markScreen = new Vec3();
     const animateFeel = (deltaTime: number, now: number) => {
         flashlightView.enabled = localAbilities.flashlight && alive && !spectating;
-        flashlightBeam.enabled = localAbilities.flashlight && alive && !spectating && !executionFrozen && !globalFinisher;
+        flashlightBeam.enabled =
+            localAbilities.flashlight && alive && !spectating && !executionFrozen && !globalFinisher;
         if (executionView.hasActor(selfId())) {
             viewmodel.enabled = false;
             for (const ghost of ghosts) ghost.entity.enabled = false;
@@ -2329,17 +2487,14 @@ export const createMatch = ({
         const stealthActive = started && alive && !spectating && localStealthUntil > roomNow();
         const stealthTarget = stealthActive && feelMotion !== 'off' ? 1 : 0;
         stealthViewBlend += (stealthTarget - stealthViewBlend) * (1 - Math.exp(-deltaTime * 6));
-        cam.fov =
-            viewFov * fovFactor(aim) + punch * 2.5 * cameraImpulses.scale + stealthViewBlend * 5.5 * (1 - aim);
+        cam.fov = viewFov * fovFactor(aim) + punch * 2.5 * cameraImpulses.scale + stealthViewBlend * 5.5 * (1 - aim);
         const script = controller() as unknown as { lookSens?: number; speedGround?: number } | null;
         if (script) {
             script.lookSens = viewSens * sensitivityFactor(viewFov, aim);
             if (walkSpeed === null) walkSpeed = script.speedGround ?? 40;
             // Aiming slows you down; so does carrying the golden disc.
             script.speedGround =
-                walkSpeed *
-                (1 - (1 - SCOPE.moveScale) * aim) *
-                (holdingGold() ? ROUND.goldSpeedFactor : 1);
+                walkSpeed * (1 - (1 - SCOPE.moveScale) * aim) * (holdingGold() ? ROUND.goldSpeedFactor : 1);
         }
         ui.scope(aim, ready);
         const [impulseX, impulseY] = cameraImpulses.update(deltaTime);
@@ -2532,7 +2687,12 @@ export const createMatch = ({
         // 纪老师's circle: stepping into it means standing still for a few seconds, frisbee or not. Once released you
         // get a few seconds to walk out before he can stop you again.
         const watched =
-            started && playerPhase === 'playing' && alive && !spectating && !executionView.hasActor(selfId()) && teacher.sees(player.getPosition());
+            started &&
+            playerPhase === 'playing' &&
+            alive &&
+            !spectating &&
+            !executionView.hasActor(selfId()) &&
+            teacher.sees(player.getPosition());
         if (watched !== inWatch) {
             inWatch = watched;
             ui.watchWarning(watched);
@@ -2556,22 +2716,37 @@ export const createMatch = ({
             (audioLab && labNightOverride);
         guard.update(time, lightsOut, activePower);
         // Event cutscenes: everyone sees the moment the lights go out / the breaker is pulled, frozen meanwhile.
-        const cut = started && !ceremonyRun ? activeCutscene(time, lightsOut, activePower, currentMomentCutscene ?? labMomentCutscene) : null;
+        const cut =
+            started && !ceremonyRun
+                ? activeCutscene(time, lightsOut, activePower, currentMomentCutscene ?? labMomentCutscene)
+                : null;
         if (cut && !cutsceneRun) {
             const elapsed = (time - cut.at) / 1000;
             const beats = new Set<string>();
             // Seeking a welcome snapshot must not replay one-shot cues that happened before this client joined.
             if (welcomeSyncPending) {
-                const cueTimes = cut.kind === 'breaker'
-                    ? [['spark1', 0.05], ['spark2', 0.45], ['spark3', 0.9]] as const
-                    : cut.kind === 'blackout'
-                      ? [['torch', 1.75]] as const
-                      : cut.kind === 'last-two'
-                        ? [['duel', 0.25]] as const
-                        : [];
+                const cueTimes =
+                    cut.kind === 'breaker'
+                        ? ([
+                              ['spark1', 0.05],
+                              ['spark2', 0.45],
+                              ['spark3', 0.9]
+                          ] as const)
+                        : cut.kind === 'blackout'
+                          ? ([['torch', 1.75]] as const)
+                          : cut.kind === 'last-two'
+                            ? ([['duel', 0.25]] as const)
+                            : [];
                 for (const [name, at] of cueTimes) if (elapsed >= at) beats.add(name);
             }
-            cutsceneRun = { kind: cut.kind, at: cut.at, moment: cut.moment ?? null, skipped: false, lastPerf: performance.now(), beats };
+            cutsceneRun = {
+                kind: cut.kind,
+                at: cut.at,
+                moment: cut.moment ?? null,
+                skipped: false,
+                lastPerf: performance.now(),
+                beats
+            };
             cutsceneView.start();
             ui.cutscene(CUTSCENE_CAPTIONS[cut.kind]);
             inputPaused = true;
@@ -2593,7 +2768,11 @@ export const createMatch = ({
             };
             if (cutsceneRun.kind === 'breaker') {
                 const [bx, by, bz] = BREAKER_CABINET;
-                for (const [name, at] of [['spark1', 0.05], ['spark2', 0.45], ['spark3', 0.9]] as const)
+                for (const [name, at] of [
+                    ['spark1', 0.05],
+                    ['spark2', 0.45],
+                    ['spark3', 0.9]
+                ] as const)
                     beat(name, at, () => {
                         // A spray of small sparks off the cabinet front.
                         for (let i = 0; i < 14; i++) {
@@ -2646,23 +2825,23 @@ export const createMatch = ({
         const near = started && playerPhase !== 'lobby' && alive && !spectating ? nearestInteraction() : null;
         ui.interaction(
             near
-                  ? (() => {
-                        const talk = near.id.startsWith('coach-') || near.id === 'mark';
-                        const skill = activeLocalSkill();
-                        const item = worldItems.find((candidate) => candidate.id === near.id);
-                        const replacesSkill =
-                            skill !== null && (item ? item.kind !== skill : near.id === 'mark' && skill !== 'creation');
-                        return `E ${talk ? '交谈' : '拾取'} ${near.name}${replacesSkill ? ' · 替换当前技能' : ''}`;
-                    })()
-                  : started && alive && !spectating && nearBreaker(pose().p)
-                    ? activePower.pulledAt === null
-                        ? nightActive
-                            ? '终局夜晚 · 无法拉闸'
-                            : 'E 拉闸 · 全服每局限一次'
-                        : outage
-                          ? '全校断电 · 保安正在恢复供电'
-                          : '本局已拉闸 · 无法再次使用'
-                    : null
+                ? (() => {
+                      const talk = near.id.startsWith('coach-') || near.id === 'mark';
+                      const skill = activeLocalSkill();
+                      const item = worldItems.find((candidate) => candidate.id === near.id);
+                      const replacesSkill =
+                          skill !== null && (item ? item.kind !== skill : near.id === 'mark' && skill !== 'creation');
+                      return `E ${talk ? '交谈' : '拾取'} ${near.name}${replacesSkill ? ' · 替换当前技能' : ''}`;
+                  })()
+                : started && alive && !spectating && nearBreaker(pose().p)
+                  ? activePower.pulledAt === null
+                      ? nightActive
+                          ? '终局夜晚 · 无法拉闸'
+                          : 'E 拉闸 · 全服每局限一次'
+                      : outage
+                        ? '全校断电 · 保安正在恢复供电'
+                        : '本局已拉闸 · 无法再次使用'
+                  : null
         );
         dark = nightActive || outage;
         if (nightActive && !wasNight) {
@@ -2671,7 +2850,15 @@ export const createMatch = ({
             ui.feed('从现在起被淘汰就不能复活，只剩最后一人时直接获胜', 'me');
         }
         wasNight = nightActive;
-        if (nightActive && !ceremonyRun && playerPhase === 'playing' && alive && !spectating && !spottedSent && guard.catches(player.getPosition(), player)) {
+        if (
+            nightActive &&
+            !ceremonyRun &&
+            playerPhase === 'playing' &&
+            alive &&
+            !spectating &&
+            !spottedSent &&
+            guard.catches(player.getPosition(), player)
+        ) {
             spottedSent = true;
             ui.popup('被保安的手电筒照到了！', 'me');
             net.spotted();
@@ -2701,7 +2888,17 @@ export const createMatch = ({
             const entrants: Entrant[] =
                 labCeremony?.entrants ??
                 (audioLab && roster.size === 0
-                    ? [{ id: selfId(), name: nickname || '你', kills: 0, deaths: 0, score: 0, colour: hueColour(colourFor('local')), equipment: '普通飞盘' }]
+                    ? [
+                          {
+                              id: selfId(),
+                              name: nickname || '你',
+                              kills: 0,
+                              deaths: 0,
+                              score: 0,
+                              colour: hueColour(colourFor('local')),
+                              equipment: '普通飞盘'
+                          }
+                      ]
                     : [...roster.values()]
                           .filter((entry) => entry.phase === 'playing' && entry.alive && !entry.spectating)
                           .map((entry) => ({
@@ -2786,7 +2983,8 @@ export const createMatch = ({
                 ui.ceremony.card(
                     focusedEntrant
                         ? {
-                              name: focusedEntrant.id === selfId() ? `${focusedEntrant.name}（你）` : focusedEntrant.name,
+                              name:
+                                  focusedEntrant.id === selfId() ? `${focusedEntrant.name}（你）` : focusedEntrant.name,
                               order: focusedEntrant.order + 1,
                               total: plan.entrants.length,
                               kills: focusedEntrant.kills,
@@ -2843,17 +3041,16 @@ export const createMatch = ({
         // The final minute: floodlights over the 莲花球场, and everyone still in the game is brought there.
         const finalAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.finalSecondsLeft * 1000 : null;
         const finalNow =
-            (((net.state === 'online' || audioLab) && finalAt !== null && roomNow() >= finalAt) ||
-                (audioLab && labFinalOverride));
+            ((net.state === 'online' || audioLab) && finalAt !== null && roomNow() >= finalAt) ||
+            (audioLab && labFinalOverride);
         const showdown = finalNow || !!ceremonyRun;
-        const matchStartAt =
-            roundState?.phase === 'playing' ? roundState.endsAt - ROUND.roundSeconds * 1000 : time;
+        const matchStartAt = roundState?.phase === 'playing' ? roundState.endsAt - ROUND.roundSeconds * 1000 : time;
         const blackoutStartAt = outage
-            ? activePower.pulledAt ?? time
+            ? (activePower.pulledAt ?? time)
             : nightActive && lightsOut !== null
               ? lightsOut
               : time;
-        const finalMusicStartAt = ceremonyRun ? ceremonyAt ?? finalAt ?? time : finalAt ?? time;
+        const finalMusicStartAt = ceremonyRun ? (ceremonyAt ?? finalAt ?? time) : (finalAt ?? time);
         const audioSeek = welcomeSyncPending && started;
         sound.matchPlaylistMusic(
             started &&
@@ -2965,17 +3162,27 @@ export const createMatch = ({
                       .filter(([id]) => id !== selfId())
                       .flatMap(([id, each]) => {
                           const summary = roster.get(id);
-                          if (summary?.phase !== 'playing' || summary.alive === false || (summary.stealthUntil ?? 0) > roomNow()) return [];
+                          if (
+                              summary?.phase !== 'playing' ||
+                              summary.alive === false ||
+                              (summary.stealthUntil ?? 0) > roomNow()
+                          )
+                              return [];
                           markerWorld.set(each.p[0], each.p[1] + 1.45, each.p[2]);
                           camera.camera!.worldToScreen(markerWorld, markerScreen);
                           return markerScreen.z > 0
-                              ? [{
-                                    id,
-                                    name: summary.name,
-                                    x: markerScreen.x,
-                                    y: markerScreen.y,
-                                    distance: Math.hypot(each.p[0] - player.getPosition().x, each.p[2] - player.getPosition().z)
-                                }]
+                              ? [
+                                    {
+                                        id,
+                                        name: summary.name,
+                                        x: markerScreen.x,
+                                        y: markerScreen.y,
+                                        distance: Math.hypot(
+                                            each.p[0] - player.getPosition().x,
+                                            each.p[2] - player.getPosition().z
+                                        )
+                                    }
+                                ]
                               : [];
                       })
                 : []
@@ -2985,13 +3192,21 @@ export const createMatch = ({
         const abilityProgress: number[] = [];
         if (localAbilities.frc) {
             const remaining = Math.max(0, localFrcCooldownUntil - clockNow);
-            abilityLabels.push(remaining ? `FRC 冷却 ${Math.ceil(remaining / 1000)} 秒` : `Enter ${localFrcSelected ? '切回普通盘' : '切换 FRC'}`);
+            abilityLabels.push(
+                remaining
+                    ? `FRC 冷却 ${Math.ceil(remaining / 1000)} 秒`
+                    : `Enter ${localFrcSelected ? '切回普通盘' : '切换 FRC'}`
+            );
             abilityProgress.push(1 - remaining / ITEM_RULES.frcCooldownMs);
         }
         if (localAbilities.stealth) {
             const remaining = Math.max(0, localStealthCooldownUntil - clockNow);
             const active = localStealthUntil > clockNow;
-            abilityLabels.push(active ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒` : `Enter 请假条${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`);
+            abilityLabels.push(
+                active
+                    ? `隐身 ${Math.ceil((localStealthUntil - clockNow) / 1000)} 秒`
+                    : `Enter 请假条${remaining ? ` 冷却 ${Math.ceil(remaining / 1000)} 秒` : ' 就绪'}`
+            );
             abilityProgress.push(remaining ? 1 - remaining / ITEM_RULES.stealthCooldownMs : 1);
             const stealthRemaining = Math.max(0, localStealthUntil - clockNow);
             ui.stealthState(
@@ -3017,8 +3232,12 @@ export const createMatch = ({
         }
         refreshLocalSkin();
         // Everyone's equipped skin in their hand (cheap: only a changed skin rebuilds anything).
-        for (const [id, entry] of roster) if (id !== selfId()) avatars.setSkin(id, entry.skin ?? null, entry.skinCounter === true);
-        ui.abilityStatus(abilityLabels.length ? abilityLabels.join('　·　') : null, abilityProgress.length ? Math.min(...abilityProgress) : 1);
+        for (const [id, entry] of roster)
+            if (id !== selfId()) avatars.setSkin(id, entry.skin ?? null, entry.skinCounter === true);
+        ui.abilityStatus(
+            abilityLabels.length ? abilityLabels.join('　·　') : null,
+            abilityProgress.length ? Math.min(...abilityProgress) : 1
+        );
 
         // Detention: frozen in place (looking around is allowed) until the time is up.
         const script = controller() as unknown as { speedGround: number; speedAir: number; jumpForce: number } | null;
@@ -3152,7 +3371,13 @@ export const createMatch = ({
     const radarPlayers = () => {
         if (!localAbilities.eye) return [];
         return [...poses]
-            .filter(([id]) => id !== selfId() && roster.get(id)?.phase === 'playing' && roster.get(id)?.alive !== false && !roster.get(id)?.stealthUntil)
+            .filter(
+                ([id]) =>
+                    id !== selfId() &&
+                    roster.get(id)?.phase === 'playing' &&
+                    roster.get(id)?.alive !== false &&
+                    !roster.get(id)?.stealthUntil
+            )
             .map(([id, each]) => ({ x: each.p[0], z: each.p[2], colour: roster.get(id)?.colour ?? 0 }));
     };
     const mapMarkers = () => {
@@ -3172,11 +3397,33 @@ export const createMatch = ({
                     .filter((item) => item.available)
                     .map((item) => ({
                         id: item.id,
-                        short: item.kind === 'revive' ? '甲' : item.kind === 'frc' ? 'F' : item.kind === 'eye' ? '眼' : item.kind === 'stealth' ? '假' : item.kind === 'creation' ? '创' : '筒',
+                        short:
+                            item.kind === 'revive'
+                                ? '甲'
+                                : item.kind === 'frc'
+                                  ? 'F'
+                                  : item.kind === 'eye'
+                                    ? '眼'
+                                    : item.kind === 'stealth'
+                                      ? '假'
+                                      : item.kind === 'creation'
+                                        ? '创'
+                                        : '筒',
                         name: item.name,
                         x: item.at[0],
                         z: item.at[2],
-                        colour: item.kind === 'revive' ? '#ff9f9a' : item.kind === 'frc' ? '#ff5b4d' : item.kind === 'eye' ? '#65d8e8' : item.kind === 'stealth' ? '#b49aff' : item.kind === 'creation' ? '#b8d879' : '#ffe19a'
+                        colour:
+                            item.kind === 'revive'
+                                ? '#ff9f9a'
+                                : item.kind === 'frc'
+                                  ? '#ff5b4d'
+                                  : item.kind === 'eye'
+                                    ? '#65d8e8'
+                                    : item.kind === 'stealth'
+                                      ? '#b49aff'
+                                      : item.kind === 'creation'
+                                        ? '#b8d879'
+                                        : '#ffe19a'
                     }))
             ]
         };
@@ -3303,7 +3550,12 @@ export const createMatch = ({
             // Offline practice mirrors the room: the refill timer is held while the stack is full.
             if (net.state !== 'online' && localAbilities.creation && ammo >= localAmmoCapacity)
                 creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
-            if (net.state !== 'online' && localAbilities.creation && ammo < localAmmoCapacity && roomNow() >= creationNextAt) {
+            if (
+                net.state !== 'online' &&
+                localAbilities.creation &&
+                ammo < localAmmoCapacity &&
+                roomNow() >= creationNextAt
+            ) {
                 ammo++;
                 creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;
                 ui.ammo(ammo, localAmmoCapacity);
@@ -3492,8 +3744,7 @@ export const createMatch = ({
         /** Lights out (the round's final minutes). */
         get dark() {
             // The ceremony keeps the arena dark until its last ring of lamps strikes.
-            const ceremonyDark =
-                !!ceremonyRun && ceremonyRun.t < ceremonyRun.plan.ring(CEREMONY.rings - 1);
+            const ceremonyDark = !!ceremonyRun && ceremonyRun.t < ceremonyRun.plan.ring(CEREMONY.rings - 1);
             return dark || ceremonyDark;
         },
         /** Room entry remains passive; the monitoring-room eye is required to reveal live player locations. */
@@ -3571,7 +3822,10 @@ export const createMatch = ({
             /** Plays the final entrance ceremony now (offline test): you plus `others` stand-in players. */
             playCeremony: (others = 4) => playLabCeremony(others),
             ceremony: () => (ceremonyRun ? { t: ceremonyRun.t, entrants: ceremonyRun.plan.entrants.length } : null),
-            cutscene: () => (cutsceneRun ? { kind: cutsceneRun.kind, skipped: cutsceneRun.skipped, camera: cutsceneView.active } : null),
+            cutscene: () =>
+                cutsceneRun
+                    ? { kind: cutsceneRun.kind, skipped: cutsceneRun.skipped, camera: cutsceneView.active }
+                    : null,
             shuttersClosed: () => ceremony.shuttersClosed(),
             shutterProbes: () => ceremony.shutterProbes(),
             ceremonyMetrics: () => ({ ...ceremony.metrics(), seatedSpectators: stands.seated }),

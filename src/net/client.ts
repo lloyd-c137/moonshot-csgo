@@ -71,7 +71,14 @@ type Handlers = {
         gold: boolean,
         final: boolean,
         execution: boolean,
-        shot?: { bank: boolean; range: number | null; skin?: string; counter?: number }
+        shot?: {
+            bank: boolean;
+            range: number | null;
+            skin?: string;
+            counter?: number;
+            revivePending?: boolean;
+            respawnAt?: number;
+        }
     ) => void;
     hitRejected: (throwId: number) => void;
     chat: (line: ChatLine) => void;
@@ -239,6 +246,8 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     {
                         bank: message.bank === true,
                         range: typeof message.range === 'number' ? message.range : null,
+                        ...(message.revivePending === true ? { revivePending: true } : {}),
+                        ...(typeof message.respawnAt === 'number' ? { respawnAt: message.respawnAt } : {}),
                         ...(typeof message.skin === 'string' ? { skin: message.skin } : {}),
                         ...(typeof message.counter === 'number' ? { counter: message.counter } : {})
                     }

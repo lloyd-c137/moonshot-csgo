@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.34.5',
+        date: '2026.10.20',
+        title: '复活甲与最后幸存者结算修复',
+        notes: [
+            '普通被击杀仍按原规则等待复活，不会提前消耗复活甲；被永久淘汰时，复活甲会在 3 秒后让玩家原地满血复活。',
+            '当其他参赛者都已永久出局，最后一名存活玩家立即获胜，不再需要等待回合倒计时。普通复活等待和复活甲倒计时仍会正确处理。'
+        ]
+    },
+    {
         version: 'v0.34.4',
         date: '2026.10.19',
         title: '计数器淘汰同步修正',

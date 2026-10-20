@@ -137,6 +137,10 @@ test('a lethal hit during a manual breaker outage sends the target to spectating
 
     room.tick(2000 + RESPAWN_SECONDS * 1000 + 1);
     assert.equal(inbox.get('b').some((message) => message.type === 'respawn'), false);
+    const ended = inbox.get('a').filter((message) => message.type === 'round').at(-1);
+    assert.equal(ended.round.phase, 'ended');
+    assert.equal(ended.round.winner, 'A');
+    assert.equal(ended.round.outcome, 'last-survivor');
 });
 
 test('a damaged player heals to full after a quiet spell', () => {
@@ -176,7 +180,7 @@ test('three-point health takes three ordinary body hits while a head hit remains
     assert.equal(room.players.get('b').spectating, false, 'ordinary elimination respawns after the delay');
 });
 
-test('item pickups are server-authoritative, bounded to the room point, and the revive armor prevents one lethal hit', () => {
+test('revive armor preserves normal respawn and returns a permanently eliminated player after three seconds', () => {
     const { room, join, pose, inbox } = harness();
     join('a', 'A');
     join('b', 'B');
@@ -192,9 +196,39 @@ test('item pickups are server-authoritative, bounded to the room point, and the 
     pose('b', [8, 0.9, 0], 5000);
     room.message('a', { type: 'throw', throw: { id: 1, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, 5000);
     room.message('a', { type: 'hit', throwId: 1, target: 'b', at: [8, 1.2, 0] }, 5500);
+    assert.equal(room.players.get('b').alive, false);
+    assert.equal(room.players.get('b').spectating, false);
+    assert.equal(room.players.get('b').hasReviveArmor, true, 'ordinary death must not consume revive armor');
+    assert.equal(inbox.get('b').some((message) => message.type === 'revived'), false);
+
+    const normalRespawnAt = 5500 + RESPAWN_SECONDS * 1000;
+    room.tick(normalRespawnAt + 1);
+    room.message(
+        'b',
+        { type: 'respawned', pose: { p: [8, 0.9, 0], yaw: 0, pitch: 0 } },
+        normalRespawnAt + 1
+    );
+    assert.equal(room.players.get('b').alive, true, 'ordinary deaths use the normal respawn flow');
+
+    const finalAt = normalRespawnAt + 6000;
+    room.power = { pulledAt: finalAt - ROUND.breakerCutsceneSeconds * 1000 - 200 };
+    room.players.get('b').hp = 1;
+    pose('a', [0, 0.9, 0], finalAt);
+    pose('b', [8, 0.9, 0], finalAt);
+    room.message('a', { type: 'throw', throw: { id: 2, o: [0.3, 1.5, 0], v: [18, 1, 0], tilt: 0 } }, finalAt);
+    room.message('a', { type: 'hit', throwId: 2, target: 'b', at: [8, 1.2, 0] }, finalAt + 500);
+    const reviveAt = finalAt + 500 + 3000;
+
+    assert.equal(room.players.get('b').alive, false);
+    assert.equal(room.players.get('b').revivePending, true);
+    assert.equal(room.players.get('b').respawnAt, reviveAt);
+    room.tick(reviveAt - 1);
+    assert.equal(room.players.get('b').alive, false, 'the armor delay is three seconds');
+    room.tick(reviveAt);
     assert.equal(room.players.get('b').alive, true);
     assert.equal(room.players.get('b').hp, MAX_HP);
-    assert.ok(inbox.get('b').some((message) => message.type === 'revived'));
+    assert.equal(room.players.get('b').revivePending, false);
+    assert.ok(inbox.get('b').some((message) => message.type === 'revived' && message.at[0] === 8));
 });
 
 test('picking a new active skill drops the previous one at the player and Michael talent remains separate', () => {

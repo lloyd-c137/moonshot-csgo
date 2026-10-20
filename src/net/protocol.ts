@@ -137,6 +137,8 @@ export type PlayerSummary = {
     spectating?: boolean;
     /** Match-clock deadline for an ordinary elimination; sent in welcome so refresh cannot skip the wait. */
     respawnAt?: number;
+    /** True while revive armor is returning this player to the same position after its 3 second delay. */
+    revivePending?: boolean;
     hp: number;
     score: number;
     kills: number;
@@ -321,6 +323,9 @@ export type ServerMessage =
           final?: boolean;
           execution?: boolean;
           revived?: boolean;
+          /** Armor-triggered return after a permanent elimination; respawnAt is in match-clock milliseconds. */
+          revivePending?: boolean;
+          respawnAt?: number;
           /** The disc came off a wall (or furniture) before the hit: a bank shot. */
           bank?: boolean;
           /** Metres the disc flew (along its bounces) before the hit. */

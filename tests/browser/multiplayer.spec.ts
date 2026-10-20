@@ -11,8 +11,25 @@ const API = 'http://127.0.0.1:8787';
 // The room only answers pages from allowed origins.
 const ORIGIN = { origin: 'http://127.0.0.1:5174' };
 
-const open = async (browser: Browser, audioLab = false, captureSpatialAudio = false) => {
+const open = async (browser: Browser, audioLab = false, captureSpatialAudio = false, captureSnapshots = false) => {
     const context = await browser.newContext();
+    if (captureSnapshots) {
+        await context.addInitScript(`(() => {
+            const Native = window.WebSocket;
+            window.__snapshotFrames = [];
+            window.WebSocket = new Proxy(Native, { construct(target, args) {
+                const socket = Reflect.construct(target, args);
+                window.__snapshotSocket = socket;
+                socket.addEventListener('message', (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'snapshotFull' || message.type === 'snapshotDelta') window.__snapshotFrames.push(message);
+                    } catch { /* non-JSON frame */ }
+                });
+                return socket;
+            }});
+        })();`);
+    }
     if (captureSpatialAudio) {
         await context.addInitScript(() => {
             const panners: PannerNode[] = [];
@@ -78,6 +95,43 @@ test('online lobby players see each other before either enters the round; crossi
     expect((await state(b.page)).phase).toBe('lobby');
     expect(a.errors).toEqual([]);
     expect(b.errors).toEqual([]);
+});
+
+test('delta wire frames follow the accepted baseline and resync restores a full authoritative pose set', async ({ browser }) => {
+    const a = await open(browser, false, false, true);
+    const b = await open(browser);
+    const stamp = Date.now().toString(36).slice(-6);
+    await enter(a.page, `同步甲${stamp}`, 'secret-123');
+    await enter(b.page, `同步乙${stamp}`, 'secret-456');
+    const frames = () => a.page.evaluate(() =>
+        (window as Window & { __snapshotFrames?: Record<string, unknown>[] }).__snapshotFrames ?? []
+    );
+    await expect.poll(async () => (await frames()).some((frame) => frame.type === 'snapshotFull')).toBe(true);
+    await expect.poll(async () => (await frames()).some((frame) => frame.type === 'snapshotDelta')).toBe(true);
+    const beforeResync = await frames();
+    const full = beforeResync.find((frame) => frame.type === 'snapshotFull')!;
+    const remoteId = await a.page.evaluate((prefix) => window.__MOONSHOT__!.match.state().players.find((player) => player.name.startsWith(prefix))!.id, `同步乙${stamp}`);
+    const deltaIndex = beforeResync.findIndex((frame) => frame.type === 'snapshotDelta' && frame.epoch === full.epoch && (frame.updates as Record<string, unknown>)[remoteId]);
+    const delta = beforeResync[deltaIndex];
+    expect(delta).toBeDefined();
+    const previous = beforeResync.slice(0, deltaIndex).filter((frame) => frame.epoch === full.epoch).at(-1)!;
+    expect(delta.baseSeq).toBe(previous.seq);
+    expect(delta.seq).toBeGreaterThan(previous.seq as number);
+    expect((delta.updates as Record<string, { p: number[] }>)[remoteId]?.p).toHaveLength(3);
+    await expect.poll(() => a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), remoteId)).not.toBeNull();
+    const oldEpoch = full.epoch;
+    await a.page.evaluate(() => {
+        const debug = window as Window & { __snapshotSocket?: WebSocket; __snapshotFrames?: Record<string, unknown>[] };
+        const last = debug.__snapshotFrames!.filter((frame) => frame.type === 'snapshotDelta').at(-1)!;
+        debug.__snapshotSocket!.send(JSON.stringify({ type: 'snapshotResync', epoch: last.epoch, seq: last.seq }));
+    });
+    await expect.poll(async () => (await frames()).some((frame) => frame.type === 'snapshotFull' && frame.epoch !== oldEpoch)).toBe(true);
+    const rebuilt = (await frames()).filter((frame) => frame.type === 'snapshotFull' && frame.epoch !== oldEpoch).at(-1)!;
+    expect(Object.keys(rebuilt.poses as Record<string, unknown>).length).toBeGreaterThanOrEqual(1);
+    expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), remoteId)).not.toBeNull();
+    expect(a.errors).toEqual([]);
+    expect(b.errors).toEqual([]);
+    await Promise.all([a.page.context().close(), b.page.context().close()]);
 });
 
 test('remote near-miss audio is placed at the swept closest point and plays once', async ({ browser }) => {

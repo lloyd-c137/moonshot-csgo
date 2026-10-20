@@ -30,7 +30,7 @@ export type DebugHooks = {
     /** Exercise the same masked relocation UI used by the final-arena round transition. */
     sceneTransition: (relocate: () => void) => void;
     /** Render an authoritative round-result card for development visual checks. */
-    showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
+    showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw' | 'george-reboot', mine: boolean) => void;
     lighting: () => { pooled: number[]; panels: number[] };
     setRendering: (enabled: boolean) => void;
     /** Current camera field of view (degrees). */

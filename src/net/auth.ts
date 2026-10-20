@@ -14,9 +14,21 @@ class ApiError extends Error {
     }
 }
 
-/** HTTP base for a WebSocket room URL: wss://host/ws → https://host. */
-export const apiBase = (wsUrl: string | null) =>
-    wsUrl ? wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/?$/, '') : null;
+/** HTTP base for a WebSocket room URL, preserving test-only room selectors. */
+export const apiBase = (wsUrl: string | null) => {
+    if (!wsUrl) return null;
+    const url = new URL(wsUrl.replace(/^ws(s?):\/\//, 'http$1://'));
+    url.pathname = '';
+    return `${url.origin}${url.search}`;
+};
+
+export const apiUrl = (base: string, path: string, query?: Record<string, string>) => {
+    const baseUrl = new URL(base);
+    const url = new URL(path, baseUrl.origin);
+    baseUrl.searchParams.forEach((value, key) => url.searchParams.set(key, value));
+    for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value);
+    return url.toString();
+};
 
 const storage = {
     get: () => {
@@ -43,7 +55,7 @@ export const createAuth = (base: string | null) => {
     let account: AccountStats | null = null;
     const call = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
         if (!base) throw new Error('当前为离线模式，无法连接账号服务');
-        const response = await fetch(`${base}${path}`, {
+        const response = await fetch(apiUrl(base, path), {
             ...init,
             headers: {
                 'content-type': 'application/json',
@@ -101,18 +113,18 @@ export const createAuth = (base: string | null) => {
             account = null;
             storage.set(null);
             if (old && base) {
-                await fetch(`${base}/api/logout`, {
+                await fetch(apiUrl(base, '/api/logout'), {
                     method: 'POST',
                     headers: { authorization: `Bearer ${old}` }
                 }).catch(() => undefined);
             }
         },
         avatarUrl(id: string, version: string) {
-            return base ? `${base}/api/avatars/${encodeURIComponent(id)}?v=${encodeURIComponent(version)}` : null;
+            return base ? apiUrl(base, `/api/avatars/${encodeURIComponent(id)}`, { v: version }) : null;
         },
         async uploadAvatar(image: Blob) {
             if (!base || !token) throw new Error('请先登录后再上传头像');
-            const response = await fetch(`${base}/api/avatar`, {
+            const response = await fetch(apiUrl(base, '/api/avatar'), {
                 method: 'POST',
                 headers: { authorization: `Bearer ${token}`, 'content-type': 'image/webp' },
                 body: image
@@ -124,7 +136,7 @@ export const createAuth = (base: string | null) => {
         },
         async deleteAvatar() {
             if (!base || !token) throw new Error('请先登录后再修改头像');
-            const response = await fetch(`${base}/api/avatar`, {
+            const response = await fetch(apiUrl(base, '/api/avatar'), {
                 method: 'DELETE',
                 headers: { authorization: `Bearer ${token}` }
             });

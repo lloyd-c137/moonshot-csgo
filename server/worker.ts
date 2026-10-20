@@ -6,17 +6,25 @@
 import { DurableObject } from 'cloudflare:workers';
 
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
-import { parseClientMessage, ROUND, SNAPSHOT_HZ } from '../src/net/protocol.ts';
+import { GAME_TICK_HZ, parseClientMessage, ROUND } from '../src/net/protocol.ts';
 import type { ServerMessage } from '../src/net/protocol.ts';
 
 import { sqlAccountDb } from './accountDb.ts';
 import { Accounts } from './accounts.ts';
 import { AVATAR_IMAGE, webpDimensions } from './avatarImage.ts';
 import { originAllowed, requestOriginAllowed } from './originPolicy.ts';
+import { isCriticalServerMessage, OutboundPolicy, SnapshotAcks, SnapshotDeltaPublisher } from './outboundPolicy.ts';
+import { RealtimeMetrics } from './realtimeMetrics.ts';
 import { Room } from './room.ts';
 
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
 const ROOM_NAME = 'campus-v2';
+
+function roomNameForRequest(url: URL, env: Env) {
+    // Isolate local browser-test rooms and their SQLite state; this selector is inert outside COMBAT_TEST.
+    const testRoom = env.COMBAT_TEST === '1' ? url.searchParams.get('testRoom') : null;
+    return testRoom && /^[a-z0-9-]{1,48}$/i.test(testRoom) ? `${ROOM_NAME}-test-${testRoom}` : ROOM_NAME;
+}
 
 /** START_AMMO: local test rooms only (npm run server:dev) — lets browser tests throw repeatedly. */
 type Env = {
@@ -33,7 +41,7 @@ export default {
         if (url.pathname === '/health') return new Response('ok', { headers: { 'cache-control': 'no-store' } });
         const origin = request.headers.get('Origin');
         const allowed = originAllowed(origin, env.ALLOWED_ORIGINS);
-        const room = env.WORLD.get(env.WORLD.idFromName(ROOM_NAME));
+        const room = env.WORLD.get(env.WORLD.idFromName(roomNameForRequest(url, env)));
         if (url.pathname.startsWith('/api/')) {
             const requestAllowed = requestOriginAllowed(request, env.ALLOWED_ORIGINS);
             const cors: Record<string, string> = allowed
@@ -69,30 +77,101 @@ export class World extends DurableObject<Env> {
     private failures = new Map<string, number[]>();
     private readonly combatTestEnabled: boolean;
     private avatarUploads = new Map<string, number[]>();
+    private metrics = new RealtimeMetrics();
+    private outbound = new OutboundPolicy();
+    private snapshotAcks = new SnapshotAcks();
+    private snapshotPublisher = new SnapshotDeltaPublisher();
+    private encoder = new TextEncoder();
+    private nextMetricsLog = 0;
+    private expectedTickAt = 0;
+    private lastTickStarted = 0;
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
         this.combatTestEnabled = env.COMBAT_TEST === '1';
-        this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(ctx.storage.sql)));
-        const send = (socket: WebSocket | undefined, message: ServerMessage) => {
+        const sql = new Proxy(ctx.storage.sql, {
+            get: (target, property) => {
+                const value = Reflect.get(target, property, target);
+                if (property !== 'exec' || typeof value !== 'function') return value;
+                return (...args: unknown[]) => {
+                    const started = performance.now();
+                    try { return Reflect.apply(value, target, args); }
+                    finally { this.metrics.observe('sqliteOperationMs', performance.now() - started); }
+                };
+            }
+        });
+        this.accounts = new Accounts(ctx.storage.transactionSync(() => sqlAccountDb(sql)));
+        const send = (id: string, socket: WebSocket | undefined, message: ServerMessage, text?: string) => {
+            if (!socket) return;
+            const started = performance.now();
+            let outboundMessage = message;
+            let reservedSnapshot: { seq: number; epoch: number } | null = null;
+            if (message.type === 'snapshot') {
+                const bufferedAmount = (socket as WebSocket & { bufferedAmount?: number }).bufferedAmount;
+                const decision = this.outbound.decide(id, message, bufferedAmount ?? 0, Date.now());
+                if (decision === 'coalesce') {
+                    this.metrics.increment('coalescedSnapshots');
+                    return;
+                }
+                if (decision === 'close') {
+                    this.metrics.increment('slowConnections');
+                    try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
+                    return;
+                }
+                const snapshot = this.snapshotAcks.next(id, Date.now());
+                if (snapshot.type === 'coalesce') {
+                    this.metrics.increment('coalescedSnapshots');
+                    return;
+                }
+                if (snapshot.type === 'close') {
+                    this.metrics.increment('slowConnections');
+                    try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
+                    return;
+                }
+                reservedSnapshot = { seq: snapshot.seq, epoch: snapshot.epoch };
+                outboundMessage = this.snapshotPublisher.encode(id, message, snapshot.seq, Date.now());
+            }
+            const encoded = text ?? JSON.stringify(outboundMessage);
+            const serializedAt = performance.now();
+            this.metrics.observe('snapshotSerializeMs', serializedAt - started);
+            if (message.type === 'snapshot') this.metrics.increment('snapshots');
+            else this.metrics.increment('serverMessages');
+            if (isCriticalServerMessage(message)) this.metrics.increment('criticalEvents');
+            const bytes = this.encoder.encode(encoded).byteLength;
+            this.metrics.observe('messageBytes', bytes);
+            if (message.type === 'snapshot') this.metrics.observe('snapshotBytes', bytes);
+            if (message.type !== 'snapshot') {
+                const bufferedAmount = (socket as WebSocket & { bufferedAmount?: number }).bufferedAmount;
+                const decision = this.outbound.decide(id, message, bufferedAmount ?? 0, Date.now());
+                if (decision === 'close') {
+                    this.metrics.increment('slowConnections');
+                    try { socket.close(1013, 'slow connection'); } catch { /* closed */ }
+                    return;
+                }
+            }
             try {
-                socket?.send(JSON.stringify(message));
+                socket.send(encoded);
+                if (reservedSnapshot) {
+                    this.snapshotAcks.commit(id, reservedSnapshot.seq, Date.now());
+                    this.snapshotPublisher.commit(id, reservedSnapshot.seq);
+                }
+                this.metrics.increment('outboundBytes', bytes);
             } catch {
+                if (reservedSnapshot) {
+                    this.snapshotAcks.abort(id, reservedSnapshot.seq);
+                    this.snapshotPublisher.abort(id, reservedSnapshot.seq);
+                }
                 /* closed */
             }
         };
         this.room = new Room(
             {
-                to: (id, message) => send(this.sockets.get(id), message),
+                to: (id, message) => send(id, this.sockets.get(id), message),
                 all: (message, except) => {
-                    const text = JSON.stringify(message);
+                    const text = message.type === 'snapshot' ? undefined : JSON.stringify(message);
                     for (const [id, socket] of this.sockets) {
                         if (id === except) continue;
-                        try {
-                            socket.send(text);
-                        } catch {
-                            /* closed */
-                        }
+                        send(id, socket, message, text);
                     }
                 },
                 close: (id) => {
@@ -131,19 +210,61 @@ export class World extends DurableObject<Env> {
             }
             if (--budget < 0) return;
             const text = typeof event.data === 'string' ? event.data : '';
-            this.room.message(id, parseClientMessage(text), now);
+            const message = parseClientMessage(text);
+            if (message?.type === 'snapshotAck') {
+                if (this.snapshotAcks.acknowledge(id, message.seq, now, message.epoch)) {
+                    this.snapshotPublisher.acknowledge(id, message.epoch, message.seq, now);
+                }
+                return;
+            }
+            if (message?.type === 'snapshotResync') {
+                const epoch = this.snapshotPublisher.resync(id);
+                if (epoch !== null) this.snapshotAcks.resync(id, epoch);
+                return;
+            }
+            if (message?.type === 'hello') {
+                this.room.message(id, message, now);
+                if (this.room.players.has(id)) {
+                    const ackEnabled = message.capabilities?.snapshotAck === true;
+                    const deltaEnabled = ackEnabled && message.capabilities?.snapshotDelta === true;
+                    const epoch = this.snapshotPublisher.register(id, deltaEnabled);
+                    this.snapshotAcks.register(id, ackEnabled, epoch);
+                }
+                return;
+            }
+            this.room.message(id, message, now);
         });
-        const drop = () => {
+        const drop = (reason: string) => {
             if (!this.sockets.delete(id)) return;
+            this.metrics.increment(`disconnect.${reason}`);
+            this.outbound.forget(id);
+            this.snapshotAcks.forget(id);
+            this.snapshotPublisher.forget(id);
             this.room.disconnect(id);
             if (!this.sockets.size && this.timer) {
                 clearInterval(this.timer);
                 this.timer = null;
             }
         };
-        server.addEventListener('close', drop);
-        server.addEventListener('error', drop);
-        if (!this.timer) this.timer = setInterval(() => this.room.tick(Date.now()), 1000 / SNAPSHOT_HZ);
+        server.addEventListener('close', (event) => drop(`close${event.code}`));
+        server.addEventListener('error', () => drop('error'));
+        if (!this.timer) {
+            const interval = 1000 / GAME_TICK_HZ;
+            this.expectedTickAt = performance.now() + interval;
+            this.timer = setInterval(() => {
+                const started = performance.now();
+                if (this.lastTickStarted) this.metrics.observe('tickFrequencyHz', 1000 / (started - this.lastTickStarted));
+                this.lastTickStarted = started;
+                this.metrics.observe('tickDriftMs', started - this.expectedTickAt);
+                this.expectedTickAt = started + interval;
+                this.room.tick(Date.now());
+                this.metrics.observe('tickMs', performance.now() - started);
+                if (Date.now() >= this.nextMetricsLog) {
+                    this.nextMetricsLog = Date.now() + 60_000;
+                    console.log(JSON.stringify({ event: 'realtime-metrics', runtime: 'cloudflare', activeSockets: this.sockets.size, players: this.room.online, unavailable: ['eventLoop', 'socketWritableBuffer'], ...this.metrics.snapshot() }));
+                }
+            }, interval);
+        }
         return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -237,6 +358,16 @@ export class World extends DurableObject<Env> {
             return this.room.setTestRoundRemaining(now, remainingSeconds * 1000)
                 ? json({ ok: true })
                 : json({ error: '当前没有进行中的回合' }, 409);
+        }
+        if (url.pathname === '/api/__test/george-streak' && request.method === 'POST') {
+            // Local browser-test fixture only. It advances the authenticated player to 9/10; the final
+            // elimination, credential generation, login, reboot and disarm still use real gameplay paths.
+            if (!this.combatTestEnabled) return json({ error: 'not found' }, 404);
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            return this.room.setTestGeorgeStreakAtNine(account.name, now)
+                ? json({ ok: true })
+                : json({ error: '玩家当前不能准备 George 测试' }, 409);
         }
         if (url.pathname === '/api/__test/points' && request.method === 'POST') {
             // Local browser tests only (COMBAT_TEST=1): grant skin points to the signed-in account.

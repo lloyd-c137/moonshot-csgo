@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.35.0',
+        date: '2026.10.20',
+        title: 'GEORGE PROTOCOL：最后一次重启',
+        notes: [
+            '同一条生命连续淘汰 10 名玩家可获得 George 的六位游戏内密码；进度与凭证由服务器确认，密码只对持有人开放。',
+            '前往 M103 创客空间访问服务器终端，可启动 10 秒模拟重启；其他存活玩家能在终端持续互动 2 秒解除。倒计时结束将结算特殊胜负，不会重启真实服务器。'
+        ]
+    },
+    {
         version: 'v0.34.5',
         date: '2026.10.20',
         title: '复活甲与最后幸存者结算修复',

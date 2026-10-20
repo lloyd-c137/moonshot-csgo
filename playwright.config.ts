@@ -1,4 +1,13 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { defineConfig } from '@playwright/test';
+
+// Each browser run gets a fresh local Durable Object store; otherwise rounds/accounts leak across runs.
+const testRoomState = mkdtempSync(join(tmpdir(), 'moonshot-playwright-'));
+const roomPort = process.env.MOONSHOT_TEST_ROOM_PORT ?? '8787';
+process.once('exit', () => rmSync(testRoomState, { recursive: true, force: true }));
 
 export default defineConfig({
     testDir: './tests/browser',
@@ -23,8 +32,8 @@ export default defineConfig({
         },
         {
             // Local shared-world room (Cloudflare workerd via wrangler) for the multiplayer spec.
-            command: 'npm run server:dev',
-            url: 'http://127.0.0.1:8787/health',
+            command: `npm run server:dev -- --port ${roomPort} --persist-to "${testRoomState}"`,
+            url: `http://127.0.0.1:${roomPort}/health`,
             reuseExistingServer: !process.env.CI,
             timeout: 90_000
         }

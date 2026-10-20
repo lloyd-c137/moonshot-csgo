@@ -2,6 +2,7 @@
 // One room holds everyone; the Durable Object in worker.ts owns the sockets and calls into this class.
 import { SOUTH_GATE } from '../src/config/gameplay.ts';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../src/config/gameplayItems.ts';
+import { GEORGE_TERMINAL } from '../src/config/george.ts';
 import { PE_OFFICE } from '../src/config/office.ts';
 import { SKIN_POINTS } from '../src/config/skins.ts';
 import { SPAWN_POINTS } from '../src/config/spawns.ts';
@@ -21,6 +22,8 @@ import type {
     ChatLine,
     ClientMessage,
     GroundDisc,
+    GeorgeProgress,
+    GeorgeReboot,
     GoldState,
     RoundOutcome,
     RoundState,
@@ -65,9 +68,12 @@ const REACH_SLACK = 1.5;
 /** Minimum time (ms) between two crowd emotes from one spectator. */
 const EMOTE_INTERVAL = 1000;
 const REVIVE_ARMOR_DELAY_MS = 3000;
+const samePlayerPose = (a: PlayerPose | null, b: PlayerPose) =>
+    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
+    poseRevision: number;
     poseAt: number;
     lastThrowAt: number;
     respawnAt: number;
@@ -117,6 +123,10 @@ type Player = Omit<PlayerSummary, 'account'> & {
     stealthUntil: number;
     stealthCooldownUntil: number;
     creationNextAt: number;
+    georgeStreak: number;
+    georgeIssued: boolean;
+    georgeCredential: { id: string; code: string; status: 'available' | 'used' } | null;
+    georgeAccessUntil: number;
 };
 type FinisherPreparation = {
     requestId: string;
@@ -146,6 +156,9 @@ type RoundStanding = {
     revivePose?: PlayerPose | null;
     fanPose: PlayerPose | null;
     lastSeen: number;
+    georgeStreak: number;
+    georgeIssued: boolean;
+    georgeCredential: { id: string; code: string; status: 'available' | 'used' } | null;
 };
 
 export type Outbox = {
@@ -172,6 +185,10 @@ export class Room {
     private markGiven = false;
     private interactionTimes = new Map<string, number>();
     private readonly chatLog: ChatLine[] = [];
+    private readonly georgeRequests = new Map<string, Set<string>>();
+    private readonly georgeLoginAt = new Map<string, { at: number; failures: number }>();
+    private readonly georgeCodes = new Set<string>();
+    private georgeCredentialSequence = 0;
     private chatId = 0;
     /** The current round and the golden disc (null while the room is empty). */
     round: RoundState | null = null;
@@ -196,6 +213,7 @@ export class Room {
     private matchClockOffset = 0;
     /** Real-time start of the current empty-room grace period. */
     private emptySince: number | null = null;
+    georgeReboot: GeorgeReboot = { phase: 'idle' };
     gold: GoldState = { holder: null, at: [0, 0.92, 0] };
     private goldDroppedAt = 0;
     /** Discs a newcomer carries (tests raise it to throw repeatedly). */
@@ -242,12 +260,13 @@ export class Room {
         const execution = this.executionFor(id);
         // A target cannot dodge an already-started execution by refreshing. The server resolves it before removing
         // the socket. An attacker disconnect still cancels the scene without eliminating the target.
-        if (global?.target.id === id) this.settleDisconnectedExecutionTarget(player, global.attacker.id, now, realNow);
-        else if (execution?.target.id === id)
-            this.settleDisconnectedExecutionTarget(player, execution.attacker.id, now, realNow);
+        if (global?.target.id === id) this.settleDisconnectedExecutionTarget(player, global.attacker.id, global.id, now, realNow);
+        else if (execution?.target.id === id) this.settleDisconnectedExecutionTarget(player, execution.attacker.id, execution.id, now, realNow);
         if (global && (global.attacker.id === id || global.target.id === id))
             this.cancelGlobalFinisher('处决参与者断开连接', realNow);
         this.preparations.delete(id);
+        this.georgeRequests.delete(id);
+        this.georgeLoginAt.delete(id);
         if (execution) {
             this.executions.delete(execution.id);
             this.out.all({
@@ -298,6 +317,10 @@ export class Room {
             return;
         if (message.type === 'joinRound') return this.joinRound(player, realNow);
         if (message.type === 'interact') return this.interact(player, message.target, this.matchNow(realNow));
+        if (message.type === 'georgeLogin') return this.georgeLogin(player, message.requestId, message.code, this.matchNow(realNow));
+        if (message.type === 'georgeStart') return this.georgeStart(player, message.requestId, this.matchNow(realNow));
+        if (message.type === 'georgeDisarmBegin') return this.georgeBeginDisarm(player, message.requestId, this.matchNow(realNow));
+        if (message.type === 'georgeDisarmCancel') return this.georgeCancelDisarm(player, message.requestId);
         if (message.type === 'toggleFrc') return this.toggleFrc(player, this.matchNow(realNow));
         if (message.type === 'activateStealth') return this.activateStealth(player, this.matchNow(realNow));
         if (player.phase === 'lobby' && message.type !== 'chat' && message.type !== 'pose') return;
@@ -323,6 +346,7 @@ export class Room {
                     player.alive = true;
                     player.spawnedAt = now;
                 }
+                if (!samePlayerPose(player.pose, message.pose)) player.poseRevision++;
                 player.pose = message.pose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 // Lag-compensation history runs on the real room clock (the one snapshots and hit claims use), not the
@@ -398,9 +422,10 @@ export class Room {
             return;
         }
         const now = this.matchNow(realNow);
-        this.advanceRound(now);
+        this.tickGeorge(now);
+        if (this.georgeReboot.phase === 'idle' || this.georgeReboot.phase === 'resolved') this.advanceRound(now);
         this.processFinisherCommits(realNow, now);
-        if (this.globalFinisher) return;
+        if (this.globalFinisher || this.georgeReboot.phase === 'shutdown') return;
         for (const execution of [...this.executions.values()])
             if (now >= execution.endsAt) this.finishExecution(execution, now);
         this.officeTick(now);
@@ -467,7 +492,7 @@ export class Room {
                     // Stealth positions are omitted per recipient, never merely hidden by a presentation flag.
                     if (player.id === recipient.id || player.stealthUntil > now) continue;
                     if (player.pose && player.alive)
-                        poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now) };
+                        poses[player.id] = { ...player.pose, t: player.poseAt + (realNow - now), rev: player.poseRevision };
                 }
                 const fans: Record<string, StampedPose> = {};
                 if (this.standsOpen(now))
@@ -587,6 +612,7 @@ export class Room {
                           ? structuredClone(resumed.revivePose)
                           : null
                       : null,
+            poseRevision: 0,
             poseAt: phase === 'lobby' ? now : 0,
             lastThrowAt: -Infinity,
             respawnAt: resumed ? (resumed.alive || resumed.finalOut ? 0 : Math.max(now, resumed.respawnAt)) : 0,
@@ -629,7 +655,11 @@ export class Room {
             frcCooldownUntil: 0,
             stealthUntil: 0,
             stealthCooldownUntil: 0,
-            creationNextAt: now + ITEM_RULES.creationRefillMs
+            creationNextAt: now + ITEM_RULES.creationRefillMs,
+            georgeStreak: resumed?.georgeStreak ?? 0,
+            georgeIssued: resumed?.georgeIssued ?? false,
+            georgeCredential: resumed?.georgeCredential ? { ...resumed.georgeCredential } : null,
+            georgeAccessUntil: 0
         };
         if (resumed?.finalOut) {
             player.alive = false;
@@ -643,6 +673,18 @@ export class Room {
         }
         this.players.set(id, player);
         this.emptySince = null;
+        const reboot = this.georgeReboot;
+        const ownsReboot = account && reboot.phase !== 'idle' && reboot.initiatorAccountName === account.name &&
+            (reboot.phase !== 'resolved' || reboot.outcome === 'shutdown');
+        if (ownsReboot && reboot.initiatorId !== id) {
+            this.georgeReboot = { ...reboot, initiatorId: id, initiatorName: player.name };
+            this.out.all({ type: 'georgeReboot', state: structuredClone(this.georgeReboot) });
+            const endedRound = this.round;
+            if (endedRound?.phase === 'ended' && endedRound.outcome === 'george-reboot') {
+                this.round = { ...endedRound, winner: player.name, winnerId: id };
+                this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+            }
+        }
         if (!this.round) this.startRound(this.matchNow(realNow), false);
         if (phase === 'playing') this.roundPeakPlayers = Math.max(this.roundPeakPlayers, this.playingPlayerCount());
         // Arriving after the lights went out: watch until the next round.
@@ -676,6 +718,9 @@ export class Room {
             ammo: player.ammo,
             discs: this.discs,
             items: [...this.items.values()],
+            george: this.georgeProgress(player),
+            georgeCredential: player.georgeCredential?.status === 'available' ? { ...player.georgeCredential } : null,
+            georgeReboot: structuredClone(this.georgeReboot),
             t: realNow,
             matchTime: this.matchNow(realNow)
         });
@@ -702,8 +747,211 @@ export class Room {
             reviveTaken: player.reviveTaken,
             revivePose: player.revivePending && player.pose ? structuredClone(player.pose) : null,
             fanPose: player.fanPose ? structuredClone(player.fanPose) : null,
-            lastSeen: realNow
+            lastSeen: realNow,
+            georgeStreak: player.georgeStreak,
+            georgeIssued: player.georgeIssued,
+            georgeCredential: player.georgeCredential ? { ...player.georgeCredential } : null
         });
+    }
+
+    private georgeProgress(player: Player): GeorgeProgress {
+        return {
+            streak: player.georgeStreak,
+            required: 10,
+            unlocked: player.georgeIssued,
+            issuedThisRound: player.georgeIssued,
+            credentialAvailable: player.georgeCredential?.status === 'available'
+        };
+    }
+
+    /** COMBAT_TEST-only harness setup; the caller must gate the endpoint and authenticate the player's account. */
+    setTestGeorgeStreakAtNine(accountName: string, now: number) {
+        const player = [...this.players.values()].find((candidate) => candidate.accountName === accountName);
+        if (!player || player.phase !== 'playing' || !player.alive || player.spectating || this.round?.phase !== 'playing' || player.georgeIssued)
+            return false;
+        player.georgeStreak = 9;
+        player.georgeCredential = null;
+        this.out.to(player.id, { type: 'georgeProgress', playerId: player.id, progress: this.georgeProgress(player) });
+        this.saveStanding(player, now);
+        return true;
+    }
+
+    private rememberGeorgeRequest(player: Player, requestId: string) {
+        let seen = this.georgeRequests.get(player.id);
+        if (!seen) this.georgeRequests.set(player.id, (seen = new Set()));
+        if (seen.has(requestId)) return false;
+        seen.add(requestId);
+        if (seen.size > 100) seen.delete(seen.values().next().value!);
+        return true;
+    }
+
+    private atGeorgeTerminal(player: Player, now: number) {
+        if (!player.pose || now - player.poseAt > 1000) return false;
+        const [x, y, z] = player.pose.p;
+        return Math.hypot(x - GEORGE_TERMINAL.x, z - GEORGE_TERMINAL.z) <= GEORGE_TERMINAL.radius &&
+            Math.abs(y - GEORGE_TERMINAL.y) <= 1.6;
+    }
+
+    private georgeLogin(player: Player, requestId: string, code: string, now: number) {
+        if (!this.rememberGeorgeRequest(player, requestId)) return;
+        const previous = this.georgeLoginAt.get(player.id) ?? { at: -Infinity, failures: 0 };
+        if (now - previous.at < 500) return;
+        previous.at = now;
+        this.georgeLoginAt.set(player.id, previous);
+        const credential = player.georgeCredential;
+        const valid = player.phase === 'playing' && player.alive && !player.spectating &&
+            this.round?.phase === 'playing' && this.georgeReboot.phase === 'idle' &&
+            this.atGeorgeTerminal(player, now) && credential?.status === 'available' && credential.code === code;
+        if (!valid) {
+            previous.failures++;
+            this.out.to(player.id, { type: 'georgeResult', requestId, result: 'denied', reason: 'ACCESS DENIED' });
+            return;
+        }
+        previous.failures = 0;
+        player.georgeAccessUntil = now + 30_000;
+        this.out.to(player.id, { type: 'georgeResult', requestId, result: 'granted' });
+    }
+
+    private canStartGeorge(player: Player, now: number) {
+        const round = this.round;
+        const terminalWindow = (ROUND.finalSecondsLeft + ROUND.ceremonySeconds) * 1000;
+        return this.georgeReboot.phase === 'idle' && this.round?.phase === 'playing' && player.phase === 'playing' &&
+            player.alive && !player.spectating && !!player.georgeCredential && player.georgeCredential.status === 'available' &&
+            player.georgeAccessUntil >= now && this.atGeorgeTerminal(player, now) && !this.globalFinisher && !this.inMomentCutscene(now) &&
+            !this.inCeremony(now) && this.executions.size === 0 && !inCutscene(now, this.blackoutAt(), this.power) &&
+            round?.phase === 'playing' && round.endsAt - now > terminalWindow;
+    }
+
+    private georgeStart(player: Player, requestId: string, now: number) {
+        if (!this.rememberGeorgeRequest(player, requestId)) return;
+        if (!this.canStartGeorge(player, now)) {
+            this.out.to(player.id, { type: 'georgeResult', requestId, result: 'not-available', reason: 'SERVER UNAVAILABLE' });
+            return;
+        }
+        const credential = player.georgeCredential!;
+        credential.status = 'used';
+        player.georgeAccessUntil = 0;
+        player.georgeStreak = 10;
+        const state: GeorgeReboot = {
+            phase: 'pending',
+            id: `george-${this.roundId}-${++this.georgeCredentialSequence}`,
+            roundId: this.roundId,
+            initiatorId: player.id,
+            initiatorName: player.name,
+            initiatorAccountName: player.accountName,
+            startsAt: now,
+            endsAt: now + GEORGE_TERMINAL.rebootMs,
+            disarmerId: null,
+            disarmStartedAt: null,
+            disarmLastSeenAt: null
+        };
+        this.preparations.clear();
+        this.georgeReboot = state;
+        this.saveStanding(player, now);
+        this.out.to(player.id, { type: 'georgeCredential', credential: { ...credential } });
+        this.out.to(player.id, { type: 'georgeResult', requestId, result: 'started' });
+        this.out.all({ type: 'georgeReboot', state: structuredClone(state) });
+        this.system('GEORGE PROTOCOL · SERVER REBOOT INITIATED', now);
+    }
+
+    private georgeBeginDisarm(player: Player, requestId: string, now: number) {
+        if (!this.rememberGeorgeRequest(player, requestId)) return;
+        const state = this.georgeReboot;
+        if (state.phase !== 'pending' || state.initiatorId === player.id || player.phase !== 'playing' ||
+            !player.alive || player.spectating || !this.atGeorgeTerminal(player, now) || (state.disarmerId && state.disarmerId !== player.id)) return;
+        if (!state.disarmerId) {
+            state.disarmerId = player.id;
+            state.disarmStartedAt = now;
+        }
+        state.disarmLastSeenAt = now;
+        this.out.all({ type: 'georgeReboot', state: structuredClone(state) });
+    }
+
+    private georgeCancelDisarm(player: Player, requestId: string) {
+        if (!this.rememberGeorgeRequest(player, requestId)) return;
+        const state = this.georgeReboot;
+        if (state.phase !== 'pending' || state.disarmerId !== player.id) return;
+        state.disarmerId = null;
+        state.disarmStartedAt = null;
+        state.disarmLastSeenAt = null;
+        this.out.all({ type: 'georgeReboot', state: structuredClone(state) });
+    }
+
+    private tickGeorge(now: number) {
+        const state = this.georgeReboot;
+        if (state.phase === 'pending') {
+            const disarmer = state.disarmerId ? this.players.get(state.disarmerId) : undefined;
+            if (state.disarmerId && (!disarmer?.alive || disarmer.spectating || !this.atGeorgeTerminal(disarmer, now) ||
+                state.disarmLastSeenAt === null || now - state.disarmLastSeenAt > 350)) {
+                state.disarmerId = null;
+                state.disarmStartedAt = null;
+                state.disarmLastSeenAt = null;
+                this.out.all({ type: 'georgeReboot', state: structuredClone(state) });
+            }
+            if (state.disarmStartedAt !== null && state.disarmStartedAt + GEORGE_TERMINAL.disarmMs <= state.endsAt &&
+                now >= state.disarmStartedAt + GEORGE_TERMINAL.disarmMs) {
+                const disarmedBy = state.disarmerId ? this.players.get(state.disarmerId)?.name : undefined;
+                const duration = Math.max(0, now - state.startsAt);
+                if (this.round?.phase === 'playing') this.round = { ...this.round, endsAt: this.round.endsAt + duration };
+                this.georgeReboot = { ...state, phase: 'resolved', outcome: 'aborted', resolvedAt: now, ...(disarmedBy ? { disarmedBy } : {}) };
+                this.out.all({ type: 'georgeReboot', state: structuredClone(this.georgeReboot) });
+                this.system('SERVER REBOOT ABORTED', now);
+                this.checkLastStanding(now);
+                return;
+            }
+            if (now >= state.endsAt) {
+                this.georgeReboot = { phase: 'shutdown', id: state.id, roundId: state.roundId,
+                    initiatorId: state.initiatorId, initiatorName: state.initiatorName,
+                    initiatorAccountName: state.initiatorAccountName, resolvedAt: now };
+                this.out.all({ type: 'georgeReboot', state: structuredClone(this.georgeReboot) });
+                this.out.all({ type: 'georgeShutdown', id: state.id, initiatorId: state.initiatorId,
+                    initiatorName: state.initiatorName, resolvedAt: now });
+                return;
+            }
+        } else if (state.phase === 'shutdown' && now >= state.resolvedAt + 1800) {
+            this.georgeReboot = { ...state, phase: 'resolved', outcome: 'shutdown' };
+            this.out.all({ type: 'georgeReboot', state: structuredClone(this.georgeReboot) });
+            const winner = [...this.players.values()].find((entry) => entry.id === state.initiatorId) ?? null;
+            this.endRound(now, winner, null, 'george-reboot', {
+                id: state.initiatorId, name: state.initiatorName, accountName: state.initiatorAccountName
+            });
+        }
+    }
+
+    private recordGeorgeElimination(attacker: Player, target: Player, eventId: string, now: number) {
+        if (!target.alive) this.revokeGeorgeOnDeath(target, now);
+        if (!attacker.alive || attacker.phase !== 'playing' || target === attacker || this.georgeReboot.phase !== 'idle') return;
+        // Existing throw/execution completion guards provide event idempotency; this bounded set covers retransmission.
+        if (!this.rememberGeorgeRequest(attacker, `kill:${eventId}`)) return;
+        attacker.georgeStreak = Math.min(10, attacker.georgeStreak + 1);
+        if (attacker.georgeStreak === 10 && !attacker.georgeIssued) {
+            const value = new Uint32Array(1);
+            const limit = Math.floor(0x1_0000_0000 / 1_000_000) * 1_000_000;
+            let code: string;
+            do {
+                do crypto.getRandomValues(value); while (value[0] >= limit);
+                code = String(value[0] % 1_000_000).padStart(6, '0');
+            } while (this.georgeCodes.has(code));
+            this.georgeCodes.add(code);
+            attacker.georgeIssued = true;
+            attacker.georgeCredential = {
+                id: `credential-${this.roundId}-${++this.georgeCredentialSequence}`,
+                code, status: 'available'
+            };
+            this.out.to(attacker.id, { type: 'georgeCredential', credential: { ...attacker.georgeCredential } });
+            this.out.all({ type: 'georgeSecurityAlert' });
+            this.system('GEORGE PROTOCOL · CREDENTIAL BREACH DETECTED', now);
+        }
+        this.out.to(attacker.id, { type: 'georgeProgress', playerId: attacker.id, progress: this.georgeProgress(attacker) });
+        this.saveStanding(attacker, now);
+    }
+
+    private revokeGeorgeOnDeath(player: Player, now: number) {
+        player.georgeStreak = 0;
+        player.georgeCredential = null;
+        this.out.to(player.id, { type: 'georgeProgress', playerId: player.id, progress: this.georgeProgress(player) });
+        this.out.to(player.id, { type: 'georgeCredential', credential: null });
+        this.saveStanding(player, now);
     }
 
     private clearEmptyRoom() {
@@ -719,9 +967,13 @@ export class Room {
         this.items.clear();
         this.officeAt = null;
         this.emptySince = null;
+        this.georgeReboot = { phase: 'idle' };
+        this.georgeRequests.clear();
+        this.georgeLoginAt.clear();
+        this.georgeCodes.clear();
     }
 
-    private settleDisconnectedExecutionTarget(target: Player, attackerId: string, now: number, realNow: number) {
+    private settleDisconnectedExecutionTarget(target: Player, attackerId: string, eventId: string, now: number, realNow: number) {
         if (!target.alive || target.spectating || !target.pose) return;
         const attacker = this.players.get(attackerId);
         target.hp = 0;
@@ -732,6 +984,9 @@ export class Room {
         if (attacker?.alive) {
             attacker.kills++;
             attacker.score += POINTS.elimination;
+            this.recordGeorgeElimination(attacker, target, `execution:${eventId}`, now);
+        } else {
+            this.revokeGeorgeOnDeath(target, now);
         }
         const revivePending = this.beginReviveAfterElimination(target, now);
         if (!revivePending && target.accountName) this.executedAccounts.add(target.accountName);
@@ -830,6 +1085,10 @@ export class Room {
     }
 
     private prepareFinisher(attacker: Player, requestId: string, targetId: string, realNow: number, matchNow: number) {
+        if (this.georgeReboot.phase === 'pending' || this.georgeReboot.phase === 'shutdown') {
+            this.out.to(attacker.id, { type: 'executionPrepareDenied', requestId, reason: 'GEORGE PROTOCOL 正在进行' });
+            return;
+        }
         const pending = this.preparations.get(attacker.id);
         if (pending) {
             if (pending.requestId === requestId)
@@ -894,6 +1153,8 @@ export class Room {
     private finisherDenial(attacker: Player, targetId: string, now: number): string | null {
         const target = this.players.get(targetId);
         if (this.globalFinisher) return '全场处决正在进行';
+        if (this.georgeReboot.phase === 'pending' || this.georgeReboot.phase === 'shutdown')
+            return 'GEORGE PROTOCOL 正在进行，暂时不能启动全场处决';
         if (this.round?.phase !== 'playing') return '当前回合不能处决';
         if (!target || target === attacker) return '没有有效的处决目标';
         if (
@@ -992,6 +1253,7 @@ export class Room {
             const revivePending = this.beginReviveAfterElimination(target, matchNow);
             if (!revivePending && target.accountName) this.executedAccounts.add(target.accountName);
             const counter = this.countSkinElimination(attacker);
+            this.recordGeorgeElimination(attacker, target, `global:${finisher.id}`, matchNow);
             this.out.all({
                 type: 'struck',
                 target: target.id,
@@ -1120,6 +1382,7 @@ export class Room {
         const revivePending = this.beginReviveAfterElimination(target, now);
         if (!revivePending && target.accountName) this.executedAccounts.add(target.accountName);
         const counter = this.countSkinElimination(attacker);
+        this.recordGeorgeElimination(attacker, target, `execution:${execution.id}`, now);
         this.out.all({ type: 'executionEnded', id: execution.id, completed: true, reason: '处决完成' });
         this.out.all({
             type: 'struck',
@@ -1247,6 +1510,7 @@ export class Room {
                 target.spectating = false;
                 target.respawnAt = now + RESPAWN_SECONDS * 1000;
             }
+            this.recordGeorgeElimination(player, target, `throw:${player.id}:${entry.record.id}`, now);
         }
         const scores: Scores = {};
         for (const each of this.players.values()) scores[each.id] = [each.score, each.kills, each.deaths];
@@ -1343,6 +1607,7 @@ export class Room {
         player.respawnAt = 0;
         const revivePending = this.beginReviveAfterElimination(player, now);
         if (!revivePending && player.accountName) this.executedAccounts.add(player.accountName);
+        this.revokeGeorgeOnDeath(player, now);
         this.out.all({
             type: 'struck',
             target: player.id,
@@ -1383,6 +1648,7 @@ export class Room {
 
     /** A sole living player wins as soon as every opponent is permanently out. */
     private checkLastStanding(now: number) {
+        if (this.georgeReboot.phase === 'pending' || this.georgeReboot.phase === 'shutdown') return;
         if (this.round?.phase !== 'playing') return;
         const participants = [...this.players.values()].filter((each) => each.phase === 'playing');
         const standing = participants.filter((each) => !each.spectating);
@@ -1422,6 +1688,10 @@ export class Room {
         this.executedAccounts.clear();
         this.power = { pulledAt: null };
         this.roundParticipants.clear();
+        this.georgeReboot = { phase: 'idle' };
+        this.georgeRequests.clear();
+        this.georgeLoginAt.clear();
+        this.georgeCodes.clear();
         this.roundId++;
         this.finisherRoundUses = 0;
         this.finisherUses.clear();
@@ -1452,6 +1722,9 @@ export class Room {
             player.stealthUntil = 0;
             player.stealthCooldownUntil = 0;
             player.creationNextAt = now + ITEM_RULES.creationRefillMs;
+            player.georgeStreak = 0;
+            player.georgeIssued = false;
+            player.georgeCredential = null;
             // Everyone watching from the last round's blackout plays again.
             if (player.spectating || !player.alive) {
                 player.spectating = false;
@@ -1483,6 +1756,9 @@ export class Room {
         this.goldDroppedAt = now;
         if (!announce) return; // the first arrival learns both from its welcome
         this.out.all({ type: 'round', round: this.round, scores: this.scores() });
+        for (const player of this.players.values())
+            if (player.phase === 'playing')
+                this.out.to(player.id, { type: 'georgeProgress', playerId: player.id, progress: this.georgeProgress(player) });
         this.out.all({ type: 'power', power: this.power });
         this.out.all({ type: 'gold', gold: this.gold, event: 'spawned' });
         this.broadcastItems();
@@ -1519,15 +1795,40 @@ export class Room {
         return true;
     }
 
-    private endRound(now: number, winner: Player | null, line: string | null, outcome: RoundOutcome) {
+    private endRound(
+        now: number,
+        winner: Player | null,
+        line: string | null,
+        outcome: RoundOutcome,
+        winnerOverride?: { id: string; name: string; accountName: string | null }
+    ) {
         if (this.round?.phase !== 'playing') return;
         this.cancelAllExecutions('本局结束');
+        for (const player of this.players.values()) {
+            if (player.georgeCredential) this.out.to(player.id, { type: 'georgeCredential', credential: null });
+            player.georgeCredential = null;
+            player.georgeAccessUntil = 0;
+            player.georgeStreak = 0;
+            player.georgeIssued = false;
+            this.out.to(player.id, { type: 'georgeProgress', playerId: player.id, progress: this.georgeProgress(player) });
+            if (player.accountName) {
+                const standing = this.roundStanding.get(player.accountName);
+                if (standing?.roundId === this.roundId) {
+                    standing.georgeStreak = 0;
+                    standing.georgeIssued = false;
+                    standing.georgeCredential = null;
+                }
+            }
+        }
+        const winnerId = winnerOverride?.id ?? winner?.id ?? null;
+        const winnerName = winnerOverride?.name ?? winner?.name ?? null;
+        const winnerAccountName = winnerOverride?.accountName ?? winner?.accountName ?? null;
         for (const name of this.roundParticipants) {
             const account = this.accounts?.record(name, {
                 rounds: 1,
-                wins: name === winner?.accountName ? 1 : 0,
-                points: name === winner?.accountName ? SKIN_POINTS.win : 0,
-                losses: winner && name !== winner.accountName ? 1 : 0
+                wins: name === winnerAccountName ? 1 : 0,
+                points: name === winnerAccountName ? SKIN_POINTS.win : 0,
+                losses: winnerName && name !== winnerAccountName ? 1 : 0
             });
             if (account) {
                 const connected = [...this.players.values()].find((player) => player.accountName === name);
@@ -1537,8 +1838,8 @@ export class Room {
         this.roundParticipants.clear();
         this.round = {
             phase: 'ended',
-            winner: winner?.name ?? null,
-            winnerId: winner?.id ?? null,
+            winner: winnerName,
+            winnerId,
             outcome,
             nextAt: now + ROUND.intermissionSeconds * 1000
         };

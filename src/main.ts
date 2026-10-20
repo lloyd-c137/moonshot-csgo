@@ -521,10 +521,15 @@ const boot = async () => {
                         match.setInputPaused(false);
                     });
                 }
-            }
+            } else match.setInputPaused(false);
             hasEntered = true;
             rigidbodySystem.timeScale = 1;
             shell.playing();
+        } else if (match.georgeTerminalOpen) {
+            // The terminal owns local input but remains vulnerable while the authoritative room continues.
+            clearVelocity();
+            rigidbodySystem.timeScale = 1;
+            return;
         } else if (hasEntered) {
             clearVelocity();
             rigidbodySystem.timeScale = 0;

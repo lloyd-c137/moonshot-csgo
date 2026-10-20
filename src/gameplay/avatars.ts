@@ -16,6 +16,7 @@ import { hueColour } from './discs';
 
 type Avatar = {
     character: ReturnType<CharacterAssetLoader['create']>;
+    headBone: EntityType | null;
     disc: EntityType;
     /** The golden disc model in the hand (child of `disc`, made on first hold). */
     goldDisc: EntityType | null;
@@ -36,6 +37,8 @@ type Avatar = {
     lastPosition: Vec3;
     lastMovedAt: number;
     locomotion: 'Idle_Loop' | 'Jog_Fwd_Loop' | 'Sprint_Loop';
+    crouchAmount: number;
+    crouchAt: number;
     action: string | null;
     actionUntil: number;
     throwUntil: number;
@@ -141,6 +144,7 @@ export const createAvatars = (
     const rigidbody = app.systems.rigidbody as RigidBodyComponentSystem;
     const screen = new Vec3();
     const head = new Vec3();
+    const headOffset = new Vec3(0, 0.12, 0);
     const eye = new Vec3();
 
     const setAvatar = (id: string, avatarId: string | null, avatarVersion: string | null) => {
@@ -255,6 +259,7 @@ export const createAvatars = (
         avatars.set(id, {
             root,
             character,
+            headBone: character.root.findByName('Head') as EntityType | null,
             disc,
             goldDisc: null,
             skinDisc: null,
@@ -270,6 +275,8 @@ export const createAvatars = (
             lastPosition: new Vec3(),
             lastMovedAt: 0,
             locomotion: 'Idle_Loop',
+            crouchAmount: 0,
+            crouchAt: performance.now(),
             action: null,
             actionUntil: 0,
             throwUntil: 0,
@@ -345,6 +352,11 @@ export const createAvatars = (
                 avatar.glint.rotateLocal(0, 0, now / 20);
             }
             avatar.root.enabled = true;
+            const postureTarget = pose.crouched ? 1 : 0;
+            const postureDt = Math.max(0, Math.min(0.05, (now - avatar.crouchAt) / 1000));
+            avatar.crouchAt = now;
+            avatar.crouchAmount += (postureTarget - avatar.crouchAmount) * (1 - Math.exp(-postureDt / 0.15));
+            avatar.character.setCrouch(avatar.crouchAmount);
             avatar.disc.enabled = now >= avatar.throwUntil;
             avatar.root.setPosition(pose.p[0], pose.p[1], pose.p[2]);
             avatar.root.setEulerAngles(0, pose.yaw, 0);
@@ -369,7 +381,8 @@ export const createAvatars = (
                 if (avatar.action && now >= avatar.actionUntil) avatar.action = null;
                 if (!avatar.action) avatar.character.play(avatar.locomotion);
             }
-            head.set(pose.p[0], pose.p[1] - 0.9 + avatar.character.height + 0.06, pose.p[2]);
+            if (avatar.headBone) head.copy(avatar.headBone.getPosition()).add(headOffset);
+            else head.set(pose.p[0], pose.p[1] - 0.9 + avatar.character.height + 0.06, pose.p[2]);
             const distance = head.distance(eye);
             // Line of sight for the name tag, re-checked a few times a second.
             if (now - avatar.checkedAt > 200) {
@@ -505,6 +518,7 @@ export const createAvatars = (
         },
         has: (id: string) => avatars.has(id),
         hasHeadImage: (id: string) => avatars.get(id)?.character.hasHeadImage() ?? false,
+        crouchDebug: (id: string) => avatars.get(id)?.character.crouchDebug() ?? null,
         clear: () => {
             for (const id of [...avatars.keys()]) remove(id);
         }

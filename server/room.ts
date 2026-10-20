@@ -60,6 +60,7 @@ import {
 
 import type { Accounts } from './accounts.ts';
 import { implausibleMove, judgeHit, PoseHistory } from './combatValidation.ts';
+import { resolveGoldDrop } from './goldDrop.ts';
 
 /** Campus bounds (m) a reported pose must lie inside; anything else is ignored. */
 const BOUNDS = { x0: -75, x1: 77, y0: -10, y1: 14, z0: -68, z1: 66 };
@@ -69,13 +70,14 @@ const REACH_SLACK = 1.5;
 const EMOTE_INTERVAL = 1000;
 const REVIVE_ARMOR_DELAY_MS = 3000;
 const samePlayerPose = (a: PlayerPose | null, b: PlayerPose) =>
-    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim;
+    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim && a.crouched === b.crouched;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
     poseRevision: number;
     poseAt: number;
     lastThrowAt: number;
+    lastCrouchAt: number;
     respawnAt: number;
     revivePending: boolean;
     hurtAt: number;
@@ -155,6 +157,7 @@ type RoundStanding = {
     reviveTaken: boolean;
     revivePose?: PlayerPose | null;
     fanPose: PlayerPose | null;
+    pose: PlayerPose | null;
     lastSeen: number;
     georgeStreak: number;
     georgeIssued: boolean;
@@ -346,20 +349,26 @@ export class Room {
                     player.alive = true;
                     player.spawnedAt = now;
                 }
-                if (!samePlayerPose(player.pose, message.pose)) player.poseRevision++;
-                player.pose = message.pose;
+                let acceptedPose = message.pose;
+                const stanceChanged = !!player.pose?.crouched !== !!message.pose.crouched && (player.pose !== null || message.pose.crouched === true);
+                // Stance is discrete. Throttle rapid toggles without discarding the position update.
+                if (stanceChanged && now - player.lastCrouchAt < 250)
+                    acceptedPose = { ...message.pose, crouched: !!player.pose?.crouched };
+                else if (stanceChanged) player.lastCrouchAt = now;
+                if (!samePlayerPose(player.pose, acceptedPose)) player.poseRevision++;
+                player.pose = acceptedPose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 // Lag-compensation history runs on the real room clock (the one snapshots and hit claims use), not the
                 // match clock that stops during a global finisher.
                 const historyAt = player.poseAt + (realNow - now);
-                if (message.type === 'respawned' || message.tp) player.history.reset(historyAt, message.pose);
+                if (message.type === 'respawned' || message.tp) player.history.reset(historyAt, acceptedPose);
                 else {
                     if (implausibleMove(player.history.latest(), historyAt, message.pose.p)) {
                         // Log-only until real sprint speeds and every in-game teleport are measured in playtests.
                         if (++player.suspiciousMoves % 20 === 1)
                             console.warn(`implausible move #${player.suspiciousMoves} by ${player.name}`);
                     }
-                    player.history.push(historyAt, message.pose);
+                    player.history.push(historyAt, acceptedPose);
                 }
                 this.tryPickup(player, now);
                 this.pickupDiscs(player);
@@ -469,12 +478,21 @@ export class Room {
                     }
                     this.saveStanding(player, realNow);
                 } else {
+                    player.alive = true;
+                    player.spawnedAt = now;
+                    const spawn = this.nextSpawn();
+                    const [x, z] = SPAWN_POINTS[spawn];
+                    const pose: PlayerPose = { p: [x, 0.92, z], yaw: player.pose?.yaw ?? 0, pitch: 0 };
+                    player.pose = pose;
+                    player.poseAt = now;
+                    player.poseRevision++;
+                    player.history.reset(realNow, pose);
                     const respawnAmmo = Math.min(this.startAmmo, player.ammoCapacity);
                     if (player.ammo < respawnAmmo) {
                         player.ammo = respawnAmmo;
                         this.sendAmmo(player);
                     }
-                    this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
+                    this.out.all({ type: 'respawn', id: player.id, spawn });
                 }
             }
             if (player.alive && player.hp < MAX_HP && now - player.hurtAt > HEAL_SECONDS * 1000) {
@@ -607,14 +625,15 @@ export class Room {
             pose:
                 phase === 'lobby'
                     ? { p: [SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.y, SOUTH_GATE.spawn.z], yaw: 0, pitch: 0 }
-                    : resumed?.revivePending
-                      ? resumed.revivePose
-                          ? structuredClone(resumed.revivePose)
-                          : null
-                      : null,
+                    : resumed?.revivePending && resumed.revivePose
+                      ? structuredClone(resumed.revivePose)
+                      : resumed?.pose
+                        ? structuredClone(resumed.pose)
+                        : null,
             poseRevision: 0,
-            poseAt: phase === 'lobby' ? now : 0,
+            poseAt: phase === 'lobby' || resumed?.pose ? now : 0,
             lastThrowAt: -Infinity,
+            lastCrouchAt: -Infinity,
             respawnAt: resumed ? (resumed.alive || resumed.finalOut ? 0 : Math.max(now, resumed.respawnAt)) : 0,
             revivePending: resumed?.revivePending ?? false,
             hurtAt: 0,
@@ -722,7 +741,9 @@ export class Room {
             georgeCredential: player.georgeCredential?.status === 'available' ? { ...player.georgeCredential } : null,
             georgeReboot: structuredClone(this.georgeReboot),
             t: realNow,
-            matchTime: this.matchNow(realNow)
+            matchTime: this.matchNow(realNow),
+            crouchV1: true,
+            ownPose: player.pose ? structuredClone(player.pose) : undefined
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
@@ -747,6 +768,7 @@ export class Room {
             reviveTaken: player.reviveTaken,
             revivePose: player.revivePending && player.pose ? structuredClone(player.pose) : null,
             fanPose: player.fanPose ? structuredClone(player.fanPose) : null,
+            pose: player.pose ? structuredClone(player.pose) : null,
             lastSeen: realNow,
             georgeStreak: player.georgeStreak,
             georgeIssued: player.georgeIssued,
@@ -1547,7 +1569,10 @@ export class Room {
         this.dropHeldItems(target, now, preserveReviveArmor);
         if (this.gold.holder === target.id) this.dropGold(target, now);
         if (target.pose) {
-            this.discs.push({ id: ++this.discId, at: [target.pose.p[0], 0.02, target.pose.p[2]] });
+            // Poses are capsule centres (standing centre ~= floor + 0.9 m). Keep death drops on
+            // the same vertical level instead of teleporting every spare disc to the ground floor.
+            const centreToFoot = target.pose.crouched ? 0.6 : 0.9;
+            this.discs.push({ id: ++this.discId, at: [target.pose.p[0], Math.max(0.02, target.pose.p[1] - centreToFoot), target.pose.p[2]] });
             this.out.all({ type: 'discs', discs: this.discs });
         }
         this.checkLastStanding(now);
@@ -1784,7 +1809,7 @@ export class Room {
         if (
             this.globalFinisher ||
             this.round?.phase !== 'playing' ||
-            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
+            ![ROUND.roundSeconds, ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
                 (seconds) => seconds * 1000 === remainingMs
             )
         )
@@ -1901,7 +1926,9 @@ export class Room {
     }
 
     private dropGold(holder: Player, now: number) {
-        const at: Vec3Tuple = holder.pose ? [holder.pose.p[0], 0.92, holder.pose.p[2]] : this.gold.at;
+        // Resolve against collision-derived support anchors: raw player Y is not necessarily a floor, and a
+        // fixed ground-floor Y makes drops on stands/stairs unclaimable. GoldState.at remains a capsule-centre anchor.
+        const at = resolveGoldDrop(holder.pose).at;
         this.gold = { holder: null, at };
         this.goldDroppedAt = now;
         this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });

@@ -77,6 +77,26 @@ input {
     line-height: 1;
 }
 
+.fps-hud {
+    position: fixed;
+    z-index: 8;
+    top: 14px;
+    right: calc(var(--gutter) + 190px);
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 4px 8px;
+    border: 1px solid rgb(143 163 181 / 0.35);
+    background: rgb(12 20 28 / 0.72);
+    color: var(--paper);
+    font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
+.fps-hud[hidden] { display: none; }
+.fps-hud b { color: var(--signal); font-size: 16px; }
+
 /* ---------- screens ---------- */
 
 #app-ui {

@@ -32,6 +32,18 @@ test('late data extrapolates briefly then holds; yaw wraps the short way', () =>
     assert.equal(buffer.sample(-50).p[0], 0);
 });
 
+test('interpolation preserves discrete stance and switches only at its authoritative sample time', () => {
+    const buffer = new PoseBuffer();
+    buffer.push(100, pose(0));
+    buffer.push(200, { ...pose(1), crouched: true });
+    assert.equal(buffer.sample(150).crouched, undefined, 'do not predict a future crouch transition');
+    assert.equal(buffer.sample(200).crouched, true, 'the transition reaches remote pose output');
+    assert.equal(buffer.sample(250).crouched, true, 'late extrapolation retains the newest stance');
+    buffer.push(300, pose(2));
+    assert.equal(buffer.sample(250).crouched, true);
+    assert.equal(buffer.sample(300).crouched, undefined, 'standing is restored at the next sample');
+});
+
 test('server clock estimate converges on the true offset despite jitter', () => {
     const clock = new ServerClock();
     const offset = 5_000;

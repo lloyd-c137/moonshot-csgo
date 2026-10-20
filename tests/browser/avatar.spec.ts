@@ -1,9 +1,9 @@
 import type { Browser, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-import { enterHome } from './support';
+import { enterHome, testServerUrl } from './support';
 
-const SERVER = 'ws://127.0.0.1:8787/ws';
+const SERVER = testServerUrl;
 
 const open = async (browser: Browser) => {
     const page = await (await browser.newContext()).newPage();

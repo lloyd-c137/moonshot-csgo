@@ -36,3 +36,12 @@ test('feedback settings clamp audio values and reject unknown motion or effects 
     assert.equal(settings.reducedFlashes, true);
     assert.equal(settings.masterVolume, 1);
 });
+
+test('FPS preference defaults on and remains independently persistable', () => {
+    const storage = memoryStorage();
+    storage.setItem('moonshot-open-world.settings.v1', JSON.stringify({ masterVolume: 0.4 }));
+    assert.equal(loadSettings(storage).showFps, true);
+    saveSettings(storage, { ...DEFAULT_SETTINGS, showFps: false });
+    assert.equal(loadSettings(storage).showFps, false);
+    assert.equal(loadSettings(storage).masterVolume, DEFAULT_SETTINGS.masterVolume);
+});

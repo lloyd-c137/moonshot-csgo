@@ -1,6 +1,12 @@
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
+const testServerPort = process.env.MOONSHOT_TEST_SERVER_PORT ?? '8787';
+const testVitePort = process.env.MOONSHOT_TEST_VITE_PORT ?? '5174';
+export const testServerUrl = `ws://127.0.0.1:${testServerPort}/ws`;
+export const testServerOrigin = { origin: `http://127.0.0.1:${testVitePort}` };
+export const testAppUrl = `http://127.0.0.1:${testVitePort}`;
+
 // Development-only debug hook installed by src/main.ts.
 declare global {
     // Global augmentation requires interface merging.
@@ -17,6 +23,8 @@ declare global {
             teleport: (x: number, y: number, z: number) => void;
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
+            crouch: () => { active: boolean; capsuleHeight: number; cameraY: number };
+            crouchCeilingFixture: (enabled: boolean) => void;
             perf: () => { shadersLinked: number; compileMs: number; shaders: string[]; drawCallsPerFrame: number };
             sceneTransition: (relocate: () => void) => void;
             showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;
@@ -49,12 +57,14 @@ declare global {
                     };
                 };
                 avatarHeadTextured: (id: string) => boolean;
+                avatarCrouchDebug: (id: string) => { amount: number; joints: { name: string; euler: number[] }[] } | null;
                 ceremony: () => { t: number; entrants: number } | null;
                 shuttersClosed: () => boolean;
                 shutterProbes: () => { id: string; from: number[]; to: number[] }[];
                 ceremonyMetrics: () => { entrantActors: number; spotlights: number; seatedSpectators: number };
                 cutscene: () => { kind: string; skipped: boolean; camera: boolean } | null;
                 setRoundRemaining: (seconds: number) => void;
+                remotePosition: (id: string) => number[] | null;
             };
         };
     }
@@ -97,9 +107,16 @@ export const loadSimulated = async (page: Page, url = '/') => {
 export const enterHome = async (page: Page) => {
     const startButton = page.locator('#boot-continue');
     if (await startButton.count()) {
-        await expect(startButton).toBeVisible({ timeout: 90_000 });
-        await startButton.click();
-        await expect(page.locator('#boot-loader')).toBeHidden();
+        const app = page.locator('#app-ui');
+        await expect
+            .poll(async () => (await startButton.isVisible()) || (await app.getAttribute('data-screen')) === 'ready', {
+                timeout: 90_000
+            })
+            .toBe(true);
+        if (await startButton.isVisible()) {
+            await startButton.click();
+            await expect(page.locator('#boot-loader')).toBeHidden();
+        }
     }
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'ready', { timeout: 90_000 });
 };

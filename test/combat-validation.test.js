@@ -30,6 +30,33 @@ test('pose history interpolates, clamps to its ends and forgets across teleports
     assert.deepEqual(history.at(1050), [40, 0.92, -3], 'no rewind across a teleport');
 });
 
+test('pose history keeps stance discrete at the accepted pose timestamp', () => {
+    const history = new PoseHistory();
+    history.push(1000, { ...at(0), crouched: false });
+    history.push(1100, { ...at(0, 0.62), crouched: true });
+    assert.equal(history.atPose(1099)?.crouched, false);
+    assert.equal(history.atPose(1100)?.crouched, true);
+    assert.deepEqual(history.atPose(1050)?.p, [0, 0.77, -3]);
+});
+
+test('hit judgement uses the target stance at the rewound hit time', () => {
+    const history = new PoseHistory();
+    history.push(1000, { ...at(0, 0.92, 0), crouched: false });
+    history.push(1100, { ...at(0, 0.62, 0), crouched: true });
+    const options = {
+        history,
+        now: 1200,
+        claimedTime: 1100,
+        origin: [-1, 1.5, 0],
+        contact: [0, 1.3, 0],
+        bounces: [],
+        reach: 3
+    };
+    assert.equal(judgeHit(options).ok, true);
+    assert.equal(judgeHit({ ...options, claimedTime: 1050 }).head, false, 'the crouched-height contact is body height at the earlier standing stance');
+    assert.equal(judgeHit(options).head, true, 'the crouched head band is evaluated at the historical stance');
+});
+
 test('rewind uses the claimed view time, defaults to the render delay and is capped at 200 ms of lag', () => {
     assert.equal(MAX_REWIND, RENDER_DELAY + LAG_ALLOWANCE);
     assert.equal(LAG_ALLOWANCE, 200);

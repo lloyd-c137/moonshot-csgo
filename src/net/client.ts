@@ -52,6 +52,8 @@ type Handlers = {
             george: GeorgeProgress;
             georgeCredential: { id: string; code: string; status: 'available' | 'used' } | null;
             georgeReboot: GeorgeReboot;
+            crouchV1?: boolean;
+            ownPose?: PlayerPose;
         }
     ) => void;
     georgeProgress: (playerId: string, progress: GeorgeProgress) => void;
@@ -194,7 +196,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     matchTime: message.matchTime,
                     george: message.george,
                     georgeCredential: message.georgeCredential,
-                    georgeReboot: message.georgeReboot
+                    georgeReboot: message.georgeReboot,
+                    crouchV1: message.crouchV1,
+                    ownPose: message.ownPose
                 });
                 break;
             }

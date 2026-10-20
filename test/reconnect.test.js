@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { Accounts, MemoryAccountDb } from '../server/accounts.ts';
+import { resolveGoldDrop } from '../server/goldDrop.ts';
 import { Room } from '../server/room.ts';
 import { AMMO, PROTOCOL_VERSION, RESPAWN_SECONDS, ROUND } from '../src/net/protocol.ts';
 
@@ -30,8 +31,8 @@ const harness = async (names = ['attacker', 'victim']) => {
         room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name, token: tokens.get(name) }, now);
         return inbox.get(id).find((message) => message.type === 'welcome');
     };
-    const pose = (id, p, now) =>
-        room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0 } }, now);
+    const pose = (id, p, now, crouched = false) =>
+        room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0, crouched } }, now);
     return { room, inbox, closed, join, pose, tokens };
 };
 
@@ -66,6 +67,18 @@ test('ordinary elimination reconnect keeps score and the remaining respawn deadl
     assert.equal(restored.respawnAt, originalRespawnAt);
     assert.equal(restored.respawnAt - welcome.matchTime, RESPAWN_SECONDS * 1000 - 1100);
     assert.equal(welcome.players.find((player) => player.id === 'a').score, 1);
+});
+
+test('live crouched reconnect restores only the owner pose and authoritative stance', async () => {
+    const { room, join, pose } = await harness();
+    join('a', 'attacker', 0);
+    join('b', 'victim', 0);
+    pose('b', [12, 0.62, -4], 100, true);
+    room.disconnect('b', 120);
+    const welcome = join('b2', 'victim', 200);
+    assert.deepEqual(welcome.ownPose, { p: [12, 0.62, -4], yaw: 0, pitch: 0, crouched: true });
+    assert.equal(welcome.players.find((player) => player.id === 'b2').pose, undefined, 'other roster entries never carry positions');
+    assert.equal(welcome.crouchV1, true);
 });
 
 test('blackout elimination remains a spectator after refresh', async () => {
@@ -237,12 +250,14 @@ test('a golden-disc holder drops it on refresh and does not regain it', async ()
     join('a', 'solo', 0);
     pose('a', [4, 0.92, 6], 100);
     room.gold = { holder: 'a', at: [4, 0.92, 6] };
+    const safeDrop = resolveGoldDrop({ p: [4, 0.92, 6], yaw: 0, pitch: 0 }).at;
     room.disconnect('a', 1000);
     assert.equal(room.gold.holder, null);
-    assert.deepEqual(room.gold.at, [4, 0.92, 6]);
+    assert.deepEqual(room.gold.at, safeDrop);
+    assert.ok(Math.hypot(room.gold.at[0] - 4, room.gold.at[2] - 6) <= 2.4);
     const welcome = join('b', 'solo', 2000);
     assert.equal(welcome.gold.holder, null);
-    assert.deepEqual(welcome.gold.at, [4, 0.92, 6]);
+    assert.deepEqual(welcome.gold.at, safeDrop);
     assert.equal(welcome.players.find((player) => player.id === 'b').alive, true);
     assert.equal(AMMO.start, 3);
 });

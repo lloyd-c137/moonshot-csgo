@@ -65,6 +65,9 @@ export class PoseBuffer {
         } else {
             u = (t - a.t) / Math.max(1, b.t - a.t);
         }
+        // Stance is categorical, not a blendable value. Keep the earlier state until the authoritative
+        // transition sample is reached, then switch once; otherwise remote avatars silently stand forever.
+        const crouched = (u >= 1 ? b.pose : a.pose).crouched;
         const lerp = (x: number, y: number) => x + (y - x) * u;
         let dyaw = b.pose.yaw - a.pose.yaw;
         dyaw -= Math.round(dyaw / 360) * 360;
@@ -72,7 +75,8 @@ export class PoseBuffer {
             p: [lerp(a.pose.p[0], b.pose.p[0]), lerp(a.pose.p[1], b.pose.p[1]), lerp(a.pose.p[2], b.pose.p[2])],
             yaw: a.pose.yaw + dyaw * u,
             pitch: lerp(a.pose.pitch, b.pose.pitch),
-            aim: b.pose.aim
+            aim: b.pose.aim,
+            ...(crouched ? { crouched: true } : {})
         };
     }
 }

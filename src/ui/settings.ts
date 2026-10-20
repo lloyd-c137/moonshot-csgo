@@ -1,8 +1,14 @@
 import type { StorageLike } from '../app/storage';
+import { ACTIONS, conflictsFor, DEFAULT_BINDINGS, isSafeBinding } from '../input/actions.ts';
+import type { InputAction, KeyBindings } from '../input/actions.ts';
 
 export type CameraMotion = 'off' | 'low' | 'normal';
 export type EffectsQuality = 'low' | 'medium' | 'high';
+export type CrouchMode = 'hold' | 'toggle';
 export type Settings = {
+    showFps: boolean;
+    crouchMode: CrouchMode;
+    keyBindings: KeyBindings;
     lookSensitivity: number;
     fieldOfView: number;
     cameraMotion: CameraMotion;
@@ -14,6 +20,9 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
+    showFps: true,
+    crouchMode: 'hold',
+    keyBindings: { ...DEFAULT_BINDINGS },
     lookSensitivity: 0.08,
     fieldOfView: 78,
     cameraMotion: 'low',
@@ -37,6 +46,9 @@ export const loadSettings = (storage: StorageLike | null): Settings => {
     try {
         const saved = JSON.parse(storage?.getItem(KEY) ?? '{}') as Partial<Settings>;
         return {
+            showFps: typeof saved.showFps === 'boolean' ? saved.showFps : DEFAULT_SETTINGS.showFps,
+            crouchMode: saved.crouchMode === 'toggle' ? 'toggle' : 'hold',
+            keyBindings: loadBindings(saved.keyBindings),
             lookSensitivity: clamp(
                 saved.lookSensitivity,
                 SETTING_RANGES.lookSensitivity,
@@ -57,6 +69,21 @@ export const loadSettings = (storage: StorageLike | null): Settings => {
     } catch {
         return { ...DEFAULT_SETTINGS };
     }
+};
+
+const loadBindings = (value: unknown): KeyBindings => {
+    const result = { ...DEFAULT_BINDINGS };
+    if (!value || typeof value !== 'object') return result;
+    const saved = value as Partial<Record<InputAction, unknown>>;
+    for (const action of ACTIONS) {
+        const code = saved[action];
+        if (
+            typeof code === 'string' &&
+            isSafeBinding(code) &&
+            conflictsFor(result, action, code).length === 0
+        ) result[action] = code;
+    }
+    return result;
 };
 
 export const saveSettings = (storage: StorageLike | null, settings: Settings) => {

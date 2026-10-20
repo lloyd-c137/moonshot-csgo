@@ -35,6 +35,10 @@ export type DebugHooks = {
     setRendering: (enabled: boolean) => void;
     /** Current camera field of view (degrees). */
     fov: () => number;
+    /** Development-only posture readings used to verify physical crouching in browser tests. */
+    crouch: () => { active: boolean; capsuleHeight: number; cameraY: number };
+    /** Real Ammo overhead test fixture, available only in development builds. */
+    crouchCeilingFixture: (enabled: boolean) => void;
 };
 
 export const installDebugHooks = (hooks: DebugHooks) => {

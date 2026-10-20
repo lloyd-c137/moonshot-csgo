@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.36.0',
+        date: '2026.10.20',
+        title: '蹲姿、快捷键与金飞盘安全落点',
+        notes: [
+            '新增真实碰撞蹲下、FPS 显示和可自定义按键；联机蹲姿由服务器能力确认，并同步给其他玩家。',
+            '金飞盘与死亡掉落飞盘会优先留在相同楼层的可达支撑面；通过闸机加入比赛时播放通行提示音。'
+        ]
+    },
+    {
         version: 'v0.35.0',
         date: '2026.10.20',
         title: 'GEORGE PROTOCOL：最后一次重启',

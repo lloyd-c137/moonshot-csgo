@@ -350,7 +350,8 @@ test('practice dummy can be executed from behind and respawns at its fixed posit
     await expect(page.locator('#popup')).toContainText('处决淘汰');
     await expect
         .poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy?.hp))
-        .toBe(2, {
+        // The fixed target respawns at the configured full 3/3 health.
+        .toBe(3, {
             timeout: 6000
         });
     expect((await page.evaluate(() => window.__MOONSHOT__!.match.state().practiceDummy))?.position).toEqual(

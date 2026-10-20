@@ -25,7 +25,7 @@ export const CONTACT_TOLERANCE = 0.45;
 /** Most bounce points a claim may list. */
 export const MAX_PATH_POINTS = 8;
 
-export type Stamped = { t: number; p: Vec3Tuple };
+export type Stamped = { t: number; p: Vec3Tuple; crouched: boolean };
 
 /** Recent room-stamped capsule centres of one player, for rewinding. */
 export class PoseHistory {
@@ -34,7 +34,7 @@ export class PoseHistory {
     push(t: number, pose: PlayerPose) {
         const last = this.samples[this.samples.length - 1];
         if (last && t <= last.t) return;
-        this.samples.push({ t, p: [pose.p[0], pose.p[1], pose.p[2]] });
+        this.samples.push({ t, p: [pose.p[0], pose.p[1], pose.p[2]], crouched: pose.crouched === true });
         while (this.samples.length > 2 && this.samples[0].t < t - HISTORY_MS) this.samples.shift();
     }
 
@@ -63,6 +63,18 @@ export class PoseHistory {
             k = (t - a.t) / (b.t - a.t);
         return [a.p[0] + (b.p[0] - a.p[0]) * k, a.p[1] + (b.p[1] - a.p[1]) * k, a.p[2] + (b.p[2] - a.p[2]) * k];
     }
+
+    /** Position interpolates; stance is discrete and changes at the timestamp of the accepted pose. */
+    atPose(t: number): { p: Vec3Tuple; crouched: boolean } | null {
+        const p = this.at(t);
+        if (!p) return null;
+        let crouched = this.samples[0].crouched;
+        for (const sample of this.samples) {
+            if (sample.t > t) break;
+            crouched = sample.crouched;
+        }
+        return { p, crouched };
+    }
 }
 
 /** The room time to judge a claim at: the claimed view time, or the default view time, clamped to the cap. */
@@ -71,14 +83,12 @@ export const rewindTime = (now: number, claimed: number | undefined) => {
     return Math.min(now, Math.max(now - MAX_REWIND, t));
 };
 
-/** Distance from a point to the capsule core (vertical segment centre ± halfCore). */
-const coreDistance = (point: readonly number[], centre: readonly number[]) => {
-    const y = Math.max(centre[1] - PLAYER_HIT.halfCore, Math.min(centre[1] + PLAYER_HIT.halfCore, point[1]));
-    return Math.hypot(point[0] - centre[0], point[1] - y, point[2] - centre[2]);
+export const contactNearCapsule = (contact: readonly number[], centre: readonly number[], crouched = false) => {
+    const halfCore = crouched ? PLAYER_HIT.crouchedHalfCore : PLAYER_HIT.halfCore;
+    const y = Math.max(centre[1] - halfCore, Math.min(centre[1] + halfCore, contact[1]));
+    const distance = Math.hypot(contact[0] - centre[0], contact[1] - y, contact[2] - centre[2]);
+    return distance <= PLAYER_HIT.radius + DISC.radius + CONTACT_TOLERANCE;
 };
-
-export const contactNearCapsule = (contact: readonly number[], centre: readonly number[]) =>
-    coreDistance(contact, centre) <= PLAYER_HIT.radius + DISC.radius + CONTACT_TOLERANCE;
 
 const blocked = maskLookup(COMBAT_OCCLUSION);
 /** Above the arena parapet (STADIUM.fasciaTop 4.6 m) a disc clears every wall the 2D mask records. */
@@ -123,15 +133,16 @@ export const judgeHit = (options: {
     bounces: V3[];
     reach: number;
 }): HitVerdict => {
-    const centre = options.history.at(rewindTime(options.now, options.claimedTime));
-    if (!centre) return { ok: false, reason: 'no-history' };
-    if (!contactNearCapsule(options.contact, centre)) return { ok: false, reason: 'contact' };
+    const historicalPose = options.history.atPose(rewindTime(options.now, options.claimedTime));
+    if (!historicalPose) return { ok: false, reason: 'no-history' };
+    const { p: centre, crouched } = historicalPose;
+    if (!contactNearCapsule(options.contact, centre, crouched)) return { ok: false, reason: 'contact' };
     const path = [options.origin, ...options.bounces.slice(0, MAX_PATH_POINTS), options.contact];
     if (pathLength(path) > options.reach) return { ok: false, reason: 'reach' };
     if (!flightClear(path)) return { ok: false, reason: 'wall' };
     return {
         ok: true,
-        head: isHeadHit(options.contact[1], centre[1]),
+        head: isHeadHit(options.contact[1], centre[1], crouched),
         centre,
         bank: wallBounces(options.bounces.slice(0, MAX_PATH_POINTS)) > 0,
         range: Math.round(pathLength(path) * 10) / 10

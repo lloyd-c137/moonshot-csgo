@@ -2969,10 +2969,8 @@ legend {
     animation: pulse 1.2s ease-in-out infinite;
 }
 
-#app-ui[data-gold='mine'] .ammo #ammo-text::after {
-    margin-left: 6px;
-    color: #ffd75e;
-    content: '· 金飞盘无限';
+#app-ui[data-gold='mine'] .ammo-block {
+    display: none;
 }
 
 .watch-warning {

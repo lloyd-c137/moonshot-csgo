@@ -890,7 +890,7 @@ export const createUi = () => {
             });
             const actionNames: Record<InputAction, string> = {
                 moveForward: '前进', moveBackward: '后退', strafeLeft: '左移', strafeRight: '右移', sprint: '冲刺', jump: '跳跃', crouch: '蹲下',
-                throw: '蓄力 / 投掷', cancelThrow: '取消投掷', spectateNext: '观战切换', inspect: '检视飞盘', interact: '互动 / 拉闸',
+                throw: '蓄力 / 投掷', cancelThrow: '取消投掷', spectateNext: '观战切换', inspect: '检视飞盘', interact: '互动 / 拉闸', dropGold: '丢弃金飞盘',
                 execute: '处决（按住）', activeSkill: '主动技能', chat: '聊天', map: '地图', scoreboard: '本局排行', recover: '返回入口',
                 unstuck: '脱离卡死', emote1: '表情 1', emote2: '表情 2', emote3: '表情 3', skipCutscene: '跳过镜头'
             };

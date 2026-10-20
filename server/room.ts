@@ -319,6 +319,7 @@ export class Room {
         )
             return;
         if (message.type === 'joinRound') return this.joinRound(player, realNow);
+        if (message.type === 'dropGold') return this.dropCarriedGold(player, matchNow);
         if (message.type === 'interact') return this.interact(player, message.target, this.matchNow(realNow));
         if (message.type === 'georgeLogin') return this.georgeLogin(player, message.requestId, message.code, this.matchNow(realNow));
         if (message.type === 'georgeStart') return this.georgeStart(player, message.requestId, this.matchNow(realNow));
@@ -1932,6 +1933,21 @@ export class Room {
         this.gold = { holder: null, at };
         this.goldDroppedAt = now;
         this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });
+    }
+
+    private dropCarriedGold(player: Player, now: number) {
+        if (
+            this.round?.phase !== 'playing' ||
+            player.phase !== 'playing' ||
+            !player.alive ||
+            player.spectating ||
+            this.gold.holder !== player.id ||
+            !player.pose ||
+            now - player.poseAt > 1000 ||
+            this.executionFor(player.id)
+        )
+            return;
+        this.dropGold(player, now);
     }
 
     /** The thrower reports where its (ordinary) disc came to rest: it lies there for anyone to pick up. */

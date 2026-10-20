@@ -512,6 +512,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         interact(target: string) {
             send({ type: 'interact', target });
         },
+        dropGold() {
+            send({ type: 'dropGold' });
+        },
         georgeLogin(requestId: string, code: string) {
             send({ type: 'georgeLogin', requestId, code });
         },

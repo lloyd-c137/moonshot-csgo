@@ -80,6 +80,17 @@ test('the original latency indicator remains bottom-left and no FPS overlay is s
     await page.screenshot({ path: 'test-results/gameplay-controls-latency.png' });
 });
 
+test('carrying the golden disc hides ordinary ammo status and restores it after dropping', async ({ page }) => {
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    const ammoBlock = page.locator('.ammo-block');
+    await expect(ammoBlock).toBeVisible();
+    await page.locator('#app-ui').evaluate((element) => { (element as HTMLElement).dataset.gold = 'mine'; });
+    await expect(ammoBlock).toBeHidden();
+    await page.locator('#app-ui').evaluate((element) => { (element as HTMLElement).dataset.gold = 'lying'; });
+    await expect(ammoBlock).toBeVisible();
+});
+
 test('the remapped controller input source still moves the player', async ({ page }) => {
     await loadSimulated(page);
     await enterAtSpawn(page);

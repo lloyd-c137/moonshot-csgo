@@ -1,6 +1,6 @@
 export const ACTIONS = [
     'moveForward', 'moveBackward', 'strafeLeft', 'strafeRight', 'sprint', 'jump', 'crouch',
-    'throw', 'cancelThrow', 'spectateNext', 'inspect', 'interact', 'execute', 'activeSkill', 'chat',
+    'throw', 'cancelThrow', 'spectateNext', 'inspect', 'interact', 'dropGold', 'execute', 'activeSkill', 'chat',
     'map', 'scoreboard', 'recover', 'unstuck', 'emote1', 'emote2', 'emote3', 'skipCutscene'
 ] as const;
 
@@ -23,6 +23,7 @@ export const INPUT_ACTION_MATRIX: readonly {
     { action: 'spectateNext', context: 'spectator', activation: 'press', consumers: ['src/gameplay/match.ts'] },
     { action: 'inspect', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
     { action: 'interact', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
+    { action: 'dropGold', context: 'gameplay', activation: 'press', consumers: ['src/gameplay/match.ts'] },
     { action: 'execute', context: 'gameplay', activation: 'press-release', consumers: ['src/gameplay/match.ts'] },
     { action: 'activeSkill', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
     { action: 'chat', context: 'gameplay', activation: 'press', consumers: ['src/main.ts'] },
@@ -39,7 +40,7 @@ export const INPUT_ACTION_MATRIX: readonly {
 export const DEFAULT_BINDINGS: KeyBindings = {
     moveForward: 'KeyW', moveBackward: 'KeyS', strafeLeft: 'KeyA', strafeRight: 'KeyD',
     sprint: 'ShiftLeft', jump: 'Space', crouch: 'KeyC', throw: 'MouseLeft', cancelThrow: 'MouseRight', spectateNext: 'MouseLeft',
-    inspect: 'KeyF', interact: 'KeyE', execute: 'KeyV', activeSkill: 'Enter', chat: 'KeyT',
+    inspect: 'KeyF', interact: 'KeyE', dropGold: 'KeyQ', execute: 'KeyV', activeSkill: 'Enter', chat: 'KeyT',
     map: 'KeyM', scoreboard: 'Tab', recover: 'KeyR', unstuck: 'KeyG', emote1: 'Digit1',
     emote2: 'Digit2', emote3: 'Digit3', skipCutscene: 'Space'
 };

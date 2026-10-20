@@ -5,6 +5,15 @@ export type Release = { version: string; date: string; title: string; notes: rea
 
 export const RELEASES: readonly Release[] = [
     {
+        version: 'v0.36.1',
+        date: '2026.10.20',
+        title: '金飞盘与技能地图标记优化',
+        notes: [
+            '持有金飞盘时隐藏普通飞盘库存，并可按自定义快捷键主动丢弃金飞盘。',
+            '地图会全图显示可拾取技能，并跟随技能实际掉落位置更新标记。'
+        ]
+    },
+    {
         version: 'v0.36.0',
         date: '2026.10.20',
         title: '蹲姿、快捷键与金飞盘安全落点',

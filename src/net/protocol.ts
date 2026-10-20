@@ -15,7 +15,7 @@ import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
 // George Protocol changes both private welcome state and the authoritative round outcome.
-export const PROTOCOL_VERSION = 16;
+export const PROTOCOL_VERSION = 17;
 export const MAX_PLAYERS = 32;
 /** Initial authoritative logic scheduler; stays aligned with snapshots until publication is separately scheduled. */
 export const GAME_TICK_HZ = 20;
@@ -261,6 +261,7 @@ export type ClientMessage =
           capabilities?: { snapshotAck?: boolean; snapshotDelta?: boolean };
       }
     | { type: 'joinRound' }
+    | { type: 'dropGold' }
     | { type: 'interact'; target: string }
     | { type: 'toggleFrc' }
     | { type: 'activateStealth' }
@@ -497,6 +498,7 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
                 ? (value as ClientMessage)
                 : null;
         case 'joinRound':
+        case 'dropGold':
             return value as ClientMessage;
         case 'toggleFrc':
         case 'activateStealth':

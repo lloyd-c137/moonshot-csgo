@@ -48,6 +48,7 @@ import { createSkinLibrary } from '../render/skinDisc';
 import type { AudioLabUi } from '../ui/audioLab';
 import { createGeorgeView } from '../ui/george';
 import { killIcons } from '../ui/killFeed';
+import { worldItemMapMarkers } from '../ui/mapItems';
 import type { EventIcon, Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
 import { fanSectionFocus, ringRadii } from '../world/stadiumLayout';
@@ -3422,7 +3423,7 @@ export const createMatch = ({
             !state
                 ? '金飞盘未出现'
                 : mine
-                  ? '你持有金飞盘 · 守住它！'
+                  ? `你持有金飞盘 · ${input.bindings.dropGold.replace(/^Key/, '')} 丢弃`
                   : holder
                     ? `${nameOf(holder)} 持有金飞盘`
                     : '金飞盘无人持有 · 去抢！',
@@ -3493,45 +3494,12 @@ export const createMatch = ({
             gold: at ? { x: at[0], z: at[2], held: goldHolder() !== null } : null,
             teacher: { x: teacherPose.x, z: teacherPose.z, yaw: teacherPose.yaw, range: TEACHER.range },
             players: radarPlayers(),
-            specialLocations: [
-                ...SPECIAL_LOCATIONS.map((location) =>
+            specialLocations: SPECIAL_LOCATIONS.map((location) =>
                     location.id === 'medical' && worldItems.find((item) => item.id === 'item-revive')?.available
                         ? { ...location, colour: '#f7e86a' }
                         : location
                 ),
-                ...worldItems
-                    .filter((item) => item.available)
-                    .map((item) => ({
-                        id: item.id,
-                        short:
-                            item.kind === 'revive'
-                                ? '甲'
-                                : item.kind === 'frc'
-                                  ? 'F'
-                                  : item.kind === 'eye'
-                                    ? '眼'
-                                    : item.kind === 'stealth'
-                                      ? '假'
-                                      : item.kind === 'creation'
-                                        ? '创'
-                                        : '筒',
-                        name: item.name,
-                        x: item.at[0],
-                        z: item.at[2],
-                        colour:
-                            item.kind === 'revive'
-                                ? '#ff9f9a'
-                                : item.kind === 'frc'
-                                  ? '#ff5b4d'
-                                  : item.kind === 'eye'
-                                    ? '#65d8e8'
-                                    : item.kind === 'stealth'
-                                      ? '#b49aff'
-                                      : item.kind === 'creation'
-                                        ? '#b8d879'
-                                        : '#ffe19a'
-                    }))
-            ]
+            items: worldItemMapMarkers(worldItems)
         };
     };
     const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -3653,6 +3621,26 @@ export const createMatch = ({
         },
         update(deltaTime: number) {
             const now = performance.now();
+            if (
+                input.wasPressed('dropGold') &&
+                started &&
+                playerPhase === 'playing' &&
+                alive &&
+                !spectating &&
+                !executionFrozen &&
+                !inputPaused &&
+                locked() &&
+                holdingGold()
+            ) {
+                if (net.state === 'online') net.dropGold();
+                else {
+                    const p = player.getPosition();
+                    const at: [number, number, number] = [p.x, Math.max(0.02, p.y - (localCrouched ? 0.6 : 0.9)), p.z];
+                    goldView.set({ holder: null, at });
+                    goldThrowFlourish(at);
+                    ui.feed('你丢下了金飞盘', 'me');
+                }
+            }
             // Offline practice mirrors the room: the refill timer is held while the stack is full.
             if (net.state !== 'online' && localAbilities.creation && ammo >= localAmmoCapacity)
                 creationNextAt = roomNow() + ITEM_RULES.creationRefillMs;

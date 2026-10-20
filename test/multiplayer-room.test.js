@@ -820,6 +820,25 @@ test('golden disc disconnect drop preserves the holder floor on an elevated stan
     assert.deepEqual(dropped.gold.at, elevated);
 });
 
+test('only a live golden-disc holder can explicitly drop it', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    const [x, z] = SPAWN_POINTS[0];
+    pose('a', [x, 0.92, z], 100);
+    pose('b', [x + 2, 0.92, z], 100);
+    room.gold = { holder: 'a', at: [x, 0.92, z] };
+
+    room.message('b', { type: 'dropGold' }, 200);
+    assert.equal(room.gold.holder, 'a', 'a non-holder cannot drop the disc');
+    assert.equal(inbox.get('b').filter((message) => message.type === 'gold' && message.event === 'dropped').length, 0);
+
+    room.message('a', { type: 'dropGold' }, 200);
+    assert.equal(room.gold.holder, null);
+    assert.ok(Math.hypot(room.gold.at[0] - x, room.gold.at[2] - z) < 1, 'drop resolves to the nearby support surface');
+    assert.ok(inbox.get('b').some((message) => message.type === 'gold' && message.event === 'dropped' && message.gold.at.every((value, index) => value === room.gold.at[index])));
+});
+
 test('discs are ammunition: throws spend them, landed discs are picked up, the PE office hands out more', () => {
     const inbox = new Map();
     const room = new Room(

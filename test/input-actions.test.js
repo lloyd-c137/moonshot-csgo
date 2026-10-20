@@ -8,6 +8,7 @@ test('default actions retain gameplay keys and allow only context-safe shared bi
     assert.equal(DEFAULT_BINDINGS.moveForward, 'KeyW');
     assert.equal(DEFAULT_BINDINGS.throw, 'MouseLeft');
     assert.equal(DEFAULT_BINDINGS.execute, 'KeyV');
+    assert.equal(DEFAULT_BINDINGS.dropGold, 'KeyQ');
     assert.deepEqual(conflictsFor(DEFAULT_BINDINGS, 'moveForward', 'KeyC'), ['crouch']);
     assert.deepEqual(conflictsFor(DEFAULT_BINDINGS, 'throw', 'MouseLeft'), []);
 });

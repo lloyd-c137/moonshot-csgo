@@ -1,5 +1,7 @@
 import { DERIVED_GRID, MINIMAP_RESOLUTION, MINIMAP_URL } from '../config/presentation';
 
+import type { MapItemMarker } from './mapItems';
+
 const VIEW_METRES = 36;
 
 /**
@@ -14,6 +16,8 @@ export type MapMarkers = {
     players: { x: number; z: number; colour: number }[];
     /** Authored campus interactions, always visible on the full map. */
     specialLocations: readonly { id: string; short: string; name: string; x: number; z: number; colour: string }[];
+    /** Available skill pickups, positioned from the latest authoritative WorldItem state. */
+    items: readonly MapItemMarker[];
 };
 
 export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasElement) => {
@@ -58,7 +62,7 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
         g.restore();
     };
 
-    let markers: MapMarkers = { gold: null, teacher: null, players: [], specialLocations: [] };
+    let markers: MapMarkers = { gold: null, teacher: null, players: [], specialLocations: [], items: [] };
     /** A player dot in their colour (monitoring-room radar). */
     const playerDot = (g: CanvasRenderingContext2D, x: number, y: number, size: number, hue: number) => {
         g.beginPath();
@@ -188,6 +192,19 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 if (Math.hypot(lx - w / 2, ly - w / 2) <= w / 2 - 5 * ratio)
                     specialPin(g, lx, ly, location.short, location.name, location.colour, 5 * ratio);
             }
+            for (const item of markers.items) {
+                let ix = w / 2 + ((item.x - x) / MINIMAP_RESOLUTION) * scale;
+                let iy = w / 2 + ((item.z - z) / MINIMAP_RESOLUTION) * scale;
+                const dx = ix - w / 2;
+                const dy = iy - w / 2;
+                const distance = Math.hypot(dx, dy);
+                const limit = w / 2 - 8 * ratio;
+                if (distance > limit) {
+                    ix = w / 2 + (dx / distance) * limit;
+                    iy = w / 2 + (dy / distance) * limit;
+                }
+                specialPin(g, ix, iy, item.short, item.name, item.colour, 5 * ratio);
+            }
         }
         g.restore();
         // Radar (monitoring room): every player, pinned to the rim when off the dock.
@@ -256,6 +273,10 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 8 * ratio
             );
         }
+        for (const item of markers.items) {
+            const [ix, iz] = toPixel(item.x, item.z);
+            specialPin(g, ix * scale * ratio, iz * scale * ratio, item.short, item.name, item.colour, 8 * ratio);
+        }
         if (markers.teacher) {
             const [tx, tz] = toPixel(markers.teacher.x, markers.teacher.z);
             teacherIcon(
@@ -287,7 +308,9 @@ export const createMapRenderer = (dock: HTMLCanvasElement, full: HTMLCanvasEleme
                 next.teacher
                     ? `${next.teacher.x.toFixed(1)},${next.teacher.z.toFixed(1)},${Math.round(next.teacher.yaw)}`
                     : ''
-            }|${next.players.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}|${next.specialLocations
+            }|${next.players.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}|${next.items
+                .map((item) => `${item.id}:${item.x.toFixed(2)},${item.z.toFixed(2)}`)
+                .join(';')}|${next.specialLocations
                 .map((p) => `${p.id}:${p.x.toFixed(1)},${p.z.toFixed(1)}`)
                 .join(';')}`;
             const markersChanged = key !== last.markers;

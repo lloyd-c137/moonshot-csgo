@@ -229,6 +229,29 @@ test('snapshot delta clients retain unchanged baseline fields in a delta', async
     assert.deepEqual(applyPoseDelta(current, {}, ['b']), { a: current.a });
 });
 
+test('crouch-only changes survive Full/Delta encoding and apply to the remote stance', async () => {
+    const { applyPoseDelta, diffPoses } = await import('../src/net/snapshotDelta.ts');
+    const standing = { p: [0, 0.92, 0], yaw: 0, pitch: 0, t: 1, crouched: false };
+    const crouched = { ...standing, t: 2, crouched: true };
+    const diff = diffPoses({ player: standing }, { player: crouched });
+    assert.deepEqual(diff.removed, []);
+    assert.equal(diff.updates.player.crouched, true);
+    const restored = applyPoseDelta({ player: standing }, diff.updates, diff.removed);
+    assert.equal(restored.player.crouched, true);
+
+    const publisher = new SnapshotDeltaPublisher();
+    const epoch = publisher.register('observer', true);
+    const first = publisher.encode('observer', { type: 'snapshot', t: 1, poses: { player: standing } }, 1, 1);
+    assert.equal(first.type, 'snapshotFull');
+    publisher.commit('observer', 1);
+    const next = publisher.encode('observer', { type: 'snapshot', t: 2, poses: { player: crouched } }, 2, 2);
+    assert.equal(next.type, 'snapshotDelta');
+    if (next.type === 'snapshotDelta') {
+        assert.equal(next.epoch, epoch);
+        assert.equal(next.updates.player.crouched, true);
+    }
+});
+
 test('snapshot capability and resync messages are shape-checked', () => {
     assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', version: 15, name: 'a', capabilities: { snapshotAck: true, snapshotDelta: true } }))?.type, 'hello');
     assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', version: 15, name: 'a', capabilities: { admin: true } })), null);

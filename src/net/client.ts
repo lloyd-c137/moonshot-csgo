@@ -47,6 +47,8 @@ type Handlers = {
             discs: GroundDisc[];
             items: WorldItem[];
             matchTime: number;
+            crouchV1?: boolean;
+            ownPose?: PlayerPose;
         }
     ) => void;
     joined: (player: PlayerSummary) => void;
@@ -173,7 +175,9 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     ammo: message.ammo,
                     discs: message.discs,
                     items: message.items,
-                    matchTime: message.matchTime
+                    matchTime: message.matchTime,
+                    crouchV1: message.crouchV1,
+                    ownPose: message.ownPose
                 });
                 break;
             }

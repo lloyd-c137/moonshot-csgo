@@ -5,6 +5,7 @@ import {
     Asset,
     AnimStateGraph,
     Entity,
+    Quat,
     Texture
 } from 'playcanvas';
 import type { AppBase, ContainerResource, AnimTrack, GraphicsDevice, StandardMaterial } from 'playcanvas';
@@ -212,6 +213,17 @@ export class CharacterAssetLoader {
         const tracks = this.tracks;
         const device = this.device;
         let visualScale = CHARACTER_VISUAL_SCALE;
+        const crouchBones = ['thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'spine_01', 'spine_02']
+            .map((name) => ({
+                bone: modelRoot.findByName(name) as Entity | null,
+                euler: name.startsWith('thigh') ? [-22, 0, 0] : name.startsWith('calf') ? [48, 0, 0] : [7, 0, 0]
+            }))
+            .filter((entry): entry is { bone: Entity; euler: number[] } => !!entry.bone);
+        const pelvis = modelRoot.findByName('pelvis') as Entity | null;
+        const basePelvisPosition = pelvis?.getLocalPosition().clone() ?? null;
+        const baseModelPosition = modelRoot.getLocalPosition().clone();
+        const crouchRotation = new Quat();
+        const posedRotation = new Quat();
         let throwTimer = 0;
         let headTexture: Texture | null = null;
         let disposed = false;
@@ -231,6 +243,23 @@ export class CharacterAssetLoader {
             setScale(scale: number) {
                 visualScale = Math.max(0.2, Math.min(1.2, scale));
                 root.setLocalScale(visualScale, visualScale, visualScale);
+            },
+            /** Additive, joint-based posture overlay. The source GLB has no crouch clips. */
+            setCrouch(amount: number) {
+                const blend = Math.max(0, Math.min(1, amount));
+                modelRoot.setLocalPosition(
+                    baseModelPosition.x,
+                    baseModelPosition.y + (0.3 / visualScale) * blend,
+                    baseModelPosition.z
+                );
+                if (pelvis && basePelvisPosition)
+                    pelvis.setLocalPosition(basePelvisPosition.x, basePelvisPosition.y - (0.1 / visualScale) * blend, basePelvisPosition.z);
+                for (const entry of crouchBones) {
+                    crouchRotation.setFromEulerAngles(entry.euler[0] * blend, entry.euler[1] * blend, entry.euler[2] * blend);
+                    // Apply on top of the current locomotion pose, so crouching does not replace walk/idle animation.
+                    posedRotation.mul2(entry.bone.getLocalRotation(), crouchRotation);
+                    entry.bone.setLocalRotation(posedRotation);
+                }
             },
             play(name: string, blend = 0.12) {
                 const layer = modelRoot.anim!.baseLayer!;

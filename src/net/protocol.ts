@@ -47,7 +47,9 @@ export const CHAT = { max: 120, burst: 4, windowSeconds: 6, history: 40 } as con
  * contact-centre threshold, rounded to 0.72 m. This keeps shoulder/neck contacts in the body region.
  */
 export const HEAD_ABOVE = 0.72;
-export const isHeadHit = (contactY: number, capsuleCentreY: number) => contactY - capsuleCentreY > HEAD_ABOVE;
+export const CROUCH_HEAD_ABOVE = 0.34;
+export const isHeadHit = (contactY: number, capsuleCentreY: number, crouched = false) =>
+    contactY - capsuleCentreY > (crouched ? CROUCH_HEAD_ABOVE : HEAD_ABOVE);
 /**
  * Sniper throws (a fully aimed charge): launched at `speed`, they fly dead straight (no drop, no lift) for
  * `straightSeconds`. Every disc headshot is lethal; the sniper flag adds flight/feedback only, at ≥ `minSpeed`.
@@ -124,6 +126,8 @@ export type PlayerPose = {
     pitch: number;
     /** How far into a sniper aim the player is (0–1), so others can see the scope glint. */
     aim?: number;
+    /** Optional for protocol-15 compatibility; absent means standing. */
+    crouched?: boolean;
 };
 
 export type PlayerSummary = {
@@ -296,6 +300,10 @@ export type ServerMessage =
           t: number;
           /** Match clock excludes any prior global cinematic pauses. */
           matchTime: number;
+          /** Optional capability; older servers omit it and clients keep online posture standing. */
+          crouchV1?: boolean;
+          /** This connection's restored pose only; never included for other players. */
+          ownPose?: PlayerPose;
       }
     | { type: 'rejected'; reason: 'version' | 'full' | 'protocol' | 'auth' }
     | { type: 'joined'; player: PlayerSummary }
@@ -432,7 +440,8 @@ export const isPose = (value: unknown): value is PlayerPose => {
         isVec3(pose.p) &&
         isNumber(pose.yaw) &&
         isNumber(pose.pitch) &&
-        (pose.aim === undefined || isNumber(pose.aim))
+        (pose.aim === undefined || isNumber(pose.aim)) &&
+        (pose.crouched === undefined || typeof pose.crouched === 'boolean')
     );
 };
 

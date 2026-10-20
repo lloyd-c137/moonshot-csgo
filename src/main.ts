@@ -34,8 +34,11 @@ import { createIntro } from './gameplay/intro';
 import { createMatch } from './gameplay/match';
 import { PickupAssetLoader } from './gameplay/pickupAssetLoader';
 import { StuckDetector } from './gameplay/stuck';
+import { adaptDesktopControllerInput } from './input/controllerAdapter';
+import { input } from './input/InputManager';
 import { apiBase, createAuth } from './net/auth';
 import { addCampusCollisions } from './physics/collisionWorld';
+import { CrouchController, hasGroundSupport } from './player/crouch';
 import {
     applySettings,
     createPlayer,
@@ -131,29 +134,56 @@ const fetchJson = async (url: string, label: string) => {
     return response.json() as Promise<unknown>;
 };
 
-const createFpsMeter = () => {
+const createFpsMeter = (initiallyEnabled: boolean) => {
     const readout = document.createElement('div');
-    readout.style.cssText =
-        'position:fixed;left:8px;bottom:8px;z-index:50;padding:2px 8px;font:12px/1.6 ui-monospace,monospace;' +
-        'color:#eef2f4;background:rgb(15 24 34 / 0.7);pointer-events:none';
+    readout.className = 'fps-hud';
+    readout.setAttribute('aria-label', '帧率');
     document.body.append(readout);
+    let enabled = initiallyEnabled;
     let frames = 0;
     let elapsed = 0;
     let worst = 0;
     let last = performance.now();
-    // Measured with the wall clock: the engine clamps its own frame delta, which would hide long stalls.
-    return () => {
-        const now = performance.now();
-        const frame = (now - last) / 1000;
-        last = now;
-        frames++;
-        elapsed += frame;
-        worst = Math.max(worst, frame);
-        if (elapsed < 2) return;
-        readout.textContent = `${Math.round(frames / elapsed)} fps · 最慢一帧 ${Math.round(worst * 1000)} ms`;
+    readout.hidden = !enabled;
+    const reset = () => {
         frames = 0;
         elapsed = 0;
         worst = 0;
+        last = performance.now();
+    };
+    document.addEventListener('visibilitychange', reset);
+    return {
+        setEnabled(value: boolean) {
+            enabled = value;
+            readout.hidden = !enabled;
+            reset();
+        },
+        update() {
+            if (!enabled || document.hidden) {
+                last = performance.now();
+                return;
+            }
+            // Use wall-clock intervals rather than PlayCanvas' clamped delta time. Refresh the DOM
+            // twice a second; a long pause is excluded when the tab becomes visible again.
+        const now = performance.now();
+        const frame = (now - last) / 1000;
+        last = now;
+        if (frame > 1) {
+            reset();
+            return;
+        }
+        frames++;
+        elapsed += frame;
+        worst = Math.max(worst, frame);
+        if (elapsed < 0.5) return;
+        readout.replaceChildren();
+        const fps = document.createElement('b');
+        fps.textContent = String(Math.round(frames / elapsed));
+        const detail = document.createElement('span');
+        detail.textContent = `FPS · ${Math.round((elapsed / frames) * 1000)} ms`;
+        readout.append(fps, detail);
+        frames = elapsed = worst = 0;
+        }
     };
 };
 
@@ -304,10 +334,13 @@ const boot = async () => {
         ...authoredScenes.flatMap((scene) => scene.lights)
     ]);
     const storage = browserStorage();
-    const settings = loadSettings(storage);
+    let settings = loadSettings(storage);
+    input.setBindings(settings.keyBindings);
     applySettings(player, camera, settings);
     match.setView(settings.fieldOfView, settings.lookSensitivity);
     match.setFeedbackSettings(settings);
+    const crouch = new CrouchController(player, app.systems.rigidbody as RigidBodyComponentSystem, match.setCrouched);
+    match.setCrouchRestore((value) => crouch.restoreAtCurrentCentre(value));
 
     // The exploration log was removed; drop what older versions saved.
     storage?.removeItem('moonshot-open-world.discovered.v1');
@@ -335,7 +368,7 @@ const boot = async () => {
     let recoveries = 0;
     // Stuck detection: movement keys held with no progress (or sunk into the floor) offers a one-key escape.
     const stuck = new StuckDetector();
-    const moveKeys = new Set<string>();
+    const moveKeys = { size: 0, clear: input.releaseAll };
     let stuckShown = false;
     let previousFinisherLocked = false;
     let closeChat: (() => void) | null = null;
@@ -353,24 +386,13 @@ const boot = async () => {
         escapeStuck();
         canvas.requestPointerLock()?.catch?.(() => undefined);
     });
-    for (const type of ['keydown', 'keyup'] as const) {
-        window.addEventListener(type, (event) => {
-            if (
-                !['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
-                    event.code
-                )
-            )
-                return;
-            if (shell.chatOpen()) return;
-            if (type === 'keydown') moveKeys.add(event.code);
-            else moveKeys.delete(event.code);
-        });
-    }
-    window.addEventListener('blur', () => moveKeys.clear());
-    // ?fps=1: a small frame-time readout (average fps and the worst frame of the last two seconds), to diagnose hitches.
-    const fpsMeter = new URLSearchParams(window.location.search).get('fps') === '1' ? createFpsMeter() : null;
+    const fpsMeter = createFpsMeter(settings.showFps || new URLSearchParams(window.location.search).get('fps') === '1');
+    const debugFps = new URLSearchParams(window.location.search).get('fps') === '1';
     app.on('update', (deltaTime: number) => {
-        fpsMeter?.();
+        adaptDesktopControllerInput(player);
+        input.beginFrame();
+        moveKeys.size = Number(input.isDown('moveForward') || input.isDown('moveBackward') || input.isDown('strafeLeft') || input.isDown('strafeRight'));
+        fpsMeter.update();
         const position = player.getPosition();
         if (isOutOfWorld(position.y)) {
             recoveries++;
@@ -422,6 +444,15 @@ const boot = async () => {
         atmosphere.update(deltaTime);
         sun.light!.intensity += ((night ? 0.04 : 0.55) - sun.light!.intensity) * Math.min(1, deltaTime * 6);
         lightPool.update(deltaTime, position);
+        crouch.update({
+            enabled: match.crouchAllowed,
+            grounded: !crouch.needsGroundSupport || hasGroundSupport(player, rigidbodySystem),
+            alive: match.alive,
+            playing: match.phase === 'playing',
+            locked: document.pointerLockElement === canvas,
+            restricted: match.crouchRestricted || match.executing || match.detained,
+            mode: settings.crouchMode
+        });
         match.update(deltaTime);
         if (match.finisherLocked !== previousFinisherLocked) {
             previousFinisherLocked = match.finisherLocked;
@@ -549,6 +580,7 @@ const boot = async () => {
     window.addEventListener(
         'keydown',
         (event) => {
+            if (input.isRecording || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
             if (match.finisherLocked) {
                 if (event.code !== 'Escape') {
                     event.preventDefault();
@@ -558,7 +590,7 @@ const boot = async () => {
             }
             if (shell.chatOpen()) return; // typing in the chat box
             if (
-                event.code === 'Enter' &&
+                input.matchesKey(event, 'activeSkill') &&
                 !event.repeat &&
                 document.pointerLockElement === canvas &&
                 match.activateActiveSkill()
@@ -568,7 +600,7 @@ const boot = async () => {
                 return;
             }
             if (
-                (event.code === 'Enter' || event.code === 'KeyT') &&
+                (input.matchesKey(event, 'chat') || (event.code === 'Enter' && !input.matchesKey(event, 'activeSkill'))) &&
                 document.pointerLockElement === canvas &&
                 match.online
             ) {
@@ -585,13 +617,13 @@ const boot = async () => {
             } else if (event.code === 'Escape' && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 document.exitPointerLock();
-            } else if (event.code === 'KeyR' && hasEntered && document.pointerLockElement === canvas) {
+            } else if (input.matchesKey(event, 'recover') && hasEntered && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 recover();
-            } else if (event.code === 'KeyG' && stuckShown && document.pointerLockElement === canvas) {
+            } else if (input.matchesKey(event, 'unstuck') && stuckShown && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 escapeStuck();
-            } else if (event.code === 'KeyM' && document.pointerLockElement === canvas) {
+            } else if (input.matchesKey(event, 'map') && document.pointerLockElement === canvas) {
                 event.preventDefault();
                 shell.toggleMap();
             }
@@ -615,7 +647,10 @@ const boot = async () => {
             },
             enter,
             settingsChanged: (next) => {
+                settings = next;
                 applySettings(player, camera, next);
+                fpsMeter.setEnabled(next.showFps || debugFps);
+                input.setBindings(next.keyBindings);
                 match.setView(next.fieldOfView, next.lookSensitivity);
                 match.setFeedbackSettings(next);
                 saveSettings(storage, next);
@@ -663,6 +698,7 @@ const boot = async () => {
             },
             position: () => player.getPosition().toArray(),
             fov: () => camera.camera!.fov,
+            crouch: () => ({ active: crouch.active, capsuleHeight: player.collision!.height, cameraY: camera.getLocalPosition().y }),
             cameraAngles: () => camera.getEulerAngles().toArray(),
             recover: () => {
                 recoverPlayer(player, safeSpot());

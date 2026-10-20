@@ -1,3 +1,6 @@
+import { ACTIONS, conflictsFor, DEFAULT_BINDINGS, setBinding } from '../input/actions';
+import type { InputAction } from '../input/actions';
+import { input } from '../input/InputManager';
 import type { AccountStats } from '../net/protocol';
 import type { CampusRoom } from '../world/roomIndex';
 import { roomLabel } from '../world/roomNaming';
@@ -86,25 +89,26 @@ const EVENT_ICON_SVG: Record<EventIcon, string> = {
 };
 
 const CONTROLS_HTML = `
-            <div><dt><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></dt><dd>移动</dd></div>
-            <div><dt><span class="kbd">Shift</span></dt><dd>冲刺</dd></div>
-            <div><dt><span class="kbd">空格</span></dt><dd>跳跃</dd></div>
-            <div><dt><span class="kbd">左键</span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd" data-action="moveForward"></span><span class="kbd" data-action="strafeLeft"></span><span class="kbd" data-action="moveBackward"></span><span class="kbd" data-action="strafeRight"></span></dt><dd>移动</dd></div>
+            <div><dt><span class="kbd" data-action="sprint"></span></dt><dd>冲刺</dd></div>
+            <div><dt><span class="kbd" data-action="jump"></span></dt><dd>跳跃</dd></div>
+            <div><dt><span class="kbd" data-action="throw"></span></dt><dd>按住蓄力，松开投掷飞盘</dd></div>
+            <div><dt><span class="kbd" data-action="crouch"></span></dt><dd>蹲下</dd></div>
             <div><dt><span class="kbd">点击</span></dt><dd>在监控室对准电脑查看其他玩家位置</dd></div>
-            <div><dt><span class="kbd">F</span></dt><dd>检视飞盘</dd></div>
-            <div><dt><span class="kbd">E</span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
-            <div><dt><span class="kbd">V</span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
-            <div><dt><span class="kbd">Enter</span></dt><dd>发动当前主动技能；聊天中发送消息</dd></div>
-            <div><dt><span class="kbd">T</span></dt><dd>世界聊天</dd></div>
-            <div><dt><span class="kbd">Tab</span></dt><dd>本局排行</dd></div>
-            <div><dt><span class="kbd">M</span></dt><dd>全屏地图</dd></div>
-            <div><dt><span class="kbd">G</span></dt><dd>脱离卡死（出现提示时）</dd></div>
-            <div><dt><span class="kbd">R</span></dt><dd>回到南入口</dd></div>
+            <div><dt><span class="kbd" data-action="inspect"></span></dt><dd>检视飞盘</dd></div>
+            <div><dt><span class="kbd" data-action="interact"></span></dt><dd>西侧 SVC-10 配电室拉闸（全服每局一次）</dd></div>
+            <div><dt><span class="kbd" data-action="execute"></span></dt><dd>靠近玩家背后处决；完成后对方观战到下一局</dd></div>
+            <div><dt><span class="kbd" data-action="activeSkill"></span></dt><dd>发动当前主动技能；聊天中发送消息</dd></div>
+            <div><dt><span class="kbd" data-action="chat"></span></dt><dd>世界聊天</dd></div>
+            <div><dt><span class="kbd" data-action="scoreboard"></span></dt><dd>本局排行</dd></div>
+            <div><dt><span class="kbd" data-action="map"></span></dt><dd>全屏地图</dd></div>
+            <div><dt><span class="kbd" data-action="unstuck"></span></dt><dd>脱离卡死（出现提示时）</dd></div>
+            <div><dt><span class="kbd" data-action="recover"></span></dt><dd>回到南入口</dd></div>
             <div><dt><span class="kbd">Esc</span></dt><dd>暂停与设置</dd></div>`;
 
 const MARKUP = `
 <div id="app-ui" data-screen="loading" data-map="closed">
-  <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
+  <button id="execute-button" class="execute-button" type="button" data-state="ready" hidden><span class="hold-ring" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="hold-track" cx="24" cy="24" r="20" /><circle class="hold-fill" cx="24" cy="24" r="20" pathLength="100" /></svg><span class="kbd" data-action="execute">V</span></span><span class="execute-copy"><span class="execute-verb">长按处决</span><b id="execute-target"></b></span></button>
   <div class="finisher-bars" aria-hidden="true"><i></i><i></i></div>
   <div id="intro" class="intro" hidden><div class="intro-bars" aria-hidden="true"><i></i><i></i></div><div class="intro-card" id="intro-card"></div><span class="intro-skip">点击或按空格跳过</span></div>
   <div id="finisher-flash" class="finisher-flash" aria-hidden="true"></div>
@@ -300,10 +304,10 @@ const MARKUP = `
       <canvas id="minimap" width="150" height="150" aria-label="小地图，北方朝上"></canvas>
     </div>
     <div class="hints" aria-hidden="true">
-      <span><span class="kbd">左键</span>飞盘</span>
-      <span><span class="kbd">F</span>检视</span>
-      <span><span class="kbd">Tab</span>排行</span>
-      <span><span class="kbd">M</span>地图</span>
+      <span><span class="kbd" data-action="throw">左键</span>飞盘</span>
+      <span><span class="kbd" data-action="inspect">F</span>检视</span>
+      <span><span class="kbd" data-action="scoreboard">Tab</span>排行</span>
+      <span><span class="kbd" data-action="map">M</span>地图</span>
       <span><span class="kbd">Esc</span>暂停</span>
     </div>
     <p class="toast" id="toast" role="status" hidden></p>
@@ -358,6 +362,8 @@ const MARKUP = `
       <div class="pause-panel" data-pause-panel="video" hidden>
       <fieldset>
         <legend>操作</legend>
+        <label class="check-row"><input id="show-fps" type="checkbox" />显示帧率</label>
+        <label class="slider">蹲下方式<select id="crouch-mode"><option value="hold">按住蹲下</option><option value="toggle">切换蹲下</option></select></label>
         <label class="slider">鼠标灵敏度<output id="sensitivity-value"></output>
           <input id="sensitivity" type="range" /></label>
         <label class="slider">视野<output id="fov-value"></output>
@@ -385,6 +391,9 @@ const MARKUP = `
       </div>
       <div class="pause-panel" data-pause-panel="keys" hidden>
         <dl class="controls">${CONTROLS_HTML}</dl>
+        <div id="keybindings" class="keybindings"></div>
+        <p id="keybinding-status" role="status" aria-live="polite"></p>
+        <button class="secondary" id="reset-bindings" type="button">恢复全部默认按键</button>
       </div>
       <footer class="pause-foot"><span class="kbd">Esc</span>继续游戏</footer>
     </div>
@@ -874,6 +883,93 @@ export const createUi = () => {
             });
             const current = { ...settings };
             root.dataset.reducedFlashes = String(current.reducedFlashes);
+            const showFps = $<HTMLInputElement>('#show-fps');
+            showFps.checked = settings.showFps;
+            showFps.addEventListener('change', () => {
+                current.showFps = showFps.checked;
+                actions.settingsChanged({ ...current });
+            });
+            const crouchMode = $<HTMLSelectElement>('#crouch-mode');
+            crouchMode.value = settings.crouchMode;
+            crouchMode.addEventListener('change', () => {
+                current.crouchMode = crouchMode.value === 'toggle' ? 'toggle' : 'hold';
+                actions.settingsChanged({ ...current });
+            });
+            const actionNames: Record<InputAction, string> = {
+                moveForward: '前进', moveBackward: '后退', strafeLeft: '左移', strafeRight: '右移', sprint: '冲刺', jump: '跳跃', crouch: '蹲下',
+                throw: '蓄力 / 投掷', cancelThrow: '取消投掷', spectateNext: '观战切换', inspect: '检视飞盘', interact: '互动 / 拉闸',
+                execute: '处决（按住）', activeSkill: '主动技能', chat: '聊天', map: '地图', scoreboard: '本局排行', recover: '返回入口',
+                unstuck: '脱离卡死', emote1: '表情 1', emote2: '表情 2', emote3: '表情 3', skipCutscene: '跳过镜头'
+            };
+            const codeLabel = (code: string) => ({
+                Space: '空格', ShiftLeft: '左 Shift', ShiftRight: '右 Shift', Enter: 'Enter', Tab: 'Tab',
+                MouseLeft: '鼠标左键', MouseMiddle: '鼠标中键', MouseRight: '鼠标右键',
+                Escape: 'Esc', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'
+            } as Record<string, string>)[code] ?? code.replace(/^Key/, '').replace(/^Digit/, '');
+            const refreshActionHints = () => {
+                for (const hint of root.querySelectorAll<HTMLElement>('[data-action]')) {
+                    const action = hint.dataset.action as InputAction | undefined;
+                    if (action && current.keyBindings[action]) hint.textContent = codeLabel(current.keyBindings[action]);
+                }
+            };
+            const keybindings = $<HTMLDivElement>('#keybindings');
+            const status = $<HTMLParagraphElement>('#keybinding-status');
+            const renderBindings = () => {
+                refreshActionHints();
+                keybindings.replaceChildren();
+                for (const action of ACTIONS) {
+                    const row = document.createElement('div');
+                    row.className = 'keybinding-row';
+                    const name = document.createElement('span');
+                    name.textContent = actionNames[action];
+                    const bind = document.createElement('button');
+                    bind.type = 'button';
+                    bind.className = 'secondary';
+                    bind.textContent = codeLabel(current.keyBindings[action]);
+                    bind.setAttribute('aria-label', `${actionNames[action]}，当前 ${bind.textContent}，点击修改`);
+                    bind.addEventListener('click', () => {
+                        status.textContent = '请按下新的按键；按 Esc 取消';
+                        bind.textContent = '请按键…';
+                        input.record((code) => {
+                            const conflicts = conflictsFor(current.keyBindings, action, code);
+                            if (!code || code === 'Escape') {
+                                status.textContent = '该按键不能用于游戏操作';
+                            } else if (conflicts.length) {
+                                const other = conflicts[0];
+                                status.textContent = `${codeLabel(code)} 已用于${actionNames[other]}`;
+                                const swap = document.createElement('button');
+                                swap.type = 'button'; swap.className = 'secondary'; swap.textContent = '交换按键';
+                                swap.onclick = () => {
+                                    const next = setBinding(current.keyBindings, action, code, true);
+                                    if (next) { current.keyBindings = next; actions.settingsChanged({ ...current }); status.textContent = '按键已交换'; renderBindings(); }
+                                };
+                                status.append(' ', swap);
+                                bind.textContent = codeLabel(current.keyBindings[action]);
+                            } else {
+                                const next = setBinding(current.keyBindings, action, code);
+                                if (next) { current.keyBindings = next; actions.settingsChanged({ ...current }); status.textContent = '按键已更新'; renderBindings(); }
+                            }
+                        }, () => { status.textContent = '已取消改键'; renderBindings(); });
+                    });
+                    const reset = document.createElement('button');
+                    reset.type = 'button'; reset.className = 'link'; reset.textContent = '默认';
+                    reset.setAttribute('aria-label', `恢复${actionNames[action]}默认按键`);
+                    reset.addEventListener('click', () => {
+                        current.keyBindings = setBinding(current.keyBindings, action, DEFAULT_BINDINGS[action], true) ?? current.keyBindings;
+                        actions.settingsChanged({ ...current }); status.textContent = `${actionNames[action]}已恢复默认`; renderBindings();
+                    });
+                    row.append(name, bind, reset);
+                    keybindings.append(row);
+                }
+            };
+            renderBindings();
+            $('#reset-bindings').addEventListener('click', () => {
+                input.cancelRecording();
+                current.keyBindings = { ...DEFAULT_BINDINGS };
+                actions.settingsChanged({ ...current });
+                status.textContent = '已恢复全部默认按键';
+                renderBindings();
+            });
             bindSlider(
                 'sensitivity',
                 SETTING_RANGES.lookSensitivity,

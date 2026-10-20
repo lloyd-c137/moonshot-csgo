@@ -65,13 +65,14 @@ const REACH_SLACK = 1.5;
 /** Minimum time (ms) between two crowd emotes from one spectator. */
 const EMOTE_INTERVAL = 1000;
 const samePlayerPose = (a: PlayerPose | null, b: PlayerPose) =>
-    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim;
+    !!a && a.p[0] === b.p[0] && a.p[1] === b.p[1] && a.p[2] === b.p[2] && a.yaw === b.yaw && a.pitch === b.pitch && a.aim === b.aim && a.crouched === b.crouched;
 
 type Player = Omit<PlayerSummary, 'account'> & {
     pose: PlayerPose | null;
     poseRevision: number;
     poseAt: number;
     lastThrowAt: number;
+    lastCrouchAt: number;
     respawnAt: number;
     hurtAt: number;
     spawnedAt: number;
@@ -144,6 +145,7 @@ type RoundStanding = {
     coachGift: boolean;
     reviveTaken: boolean;
     fanPose: PlayerPose | null;
+    pose: PlayerPose | null;
     lastSeen: number;
 };
 
@@ -312,20 +314,26 @@ export class Room {
                     player.alive = true;
                     player.spawnedAt = now;
                 }
-                if (!samePlayerPose(player.pose, message.pose)) player.poseRevision++;
-                player.pose = message.pose;
+                let acceptedPose = message.pose;
+                const stanceChanged = !!player.pose?.crouched !== !!message.pose.crouched && (player.pose !== null || message.pose.crouched === true);
+                // Stance is discrete. Throttle rapid toggles without discarding the position update.
+                if (stanceChanged && now - player.lastCrouchAt < 250)
+                    acceptedPose = { ...message.pose, crouched: !!player.pose?.crouched };
+                else if (stanceChanged) player.lastCrouchAt = now;
+                if (!samePlayerPose(player.pose, acceptedPose)) player.poseRevision++;
+                player.pose = acceptedPose;
                 player.poseAt = message.type === 'pose' ? stampPose(player, message.ct, now) : now;
                 // Lag-compensation history runs on the real room clock (the one snapshots and hit claims use), not the
                 // match clock that stops during a global finisher.
                 const historyAt = player.poseAt + (realNow - now);
-                if (message.type === 'respawned' || message.tp) player.history.reset(historyAt, message.pose);
+                if (message.type === 'respawned' || message.tp) player.history.reset(historyAt, acceptedPose);
                 else {
                     if (implausibleMove(player.history.latest(), historyAt, message.pose.p)) {
                         // Log-only until real sprint speeds and every in-game teleport are measured in playtests.
                         if (++player.suspiciousMoves % 20 === 1)
                             console.warn(`implausible move #${player.suspiciousMoves} by ${player.name}`);
                     }
-                    player.history.push(historyAt, message.pose);
+                    player.history.push(historyAt, acceptedPose);
                 }
                 this.tryPickup(player, now);
                 this.pickupDiscs(player);
@@ -548,10 +556,11 @@ export class Room {
             deaths: resumed?.deaths ?? 0,
             pose: phase === 'lobby'
                 ? { p: [SOUTH_GATE.spawn.x, SOUTH_GATE.spawn.y, SOUTH_GATE.spawn.z], yaw: 0, pitch: 0 }
-                : null,
+                : resumed?.pose ? structuredClone(resumed.pose) : null,
             poseRevision: 0,
-            poseAt: phase === 'lobby' ? now : 0,
+            poseAt: phase === 'lobby' || resumed?.pose ? now : 0,
             lastThrowAt: -Infinity,
+            lastCrouchAt: -Infinity,
             respawnAt: resumed ? (resumed.alive || resumed.finalOut ? 0 : Math.max(now, resumed.respawnAt)) : 0,
             hurtAt: 0,
             spawnedAt: this.matchNow(realNow),
@@ -634,7 +643,9 @@ export class Room {
             discs: this.discs,
             items: [...this.items.values()],
             t: realNow,
-            matchTime: this.matchNow(realNow)
+            matchTime: this.matchNow(realNow),
+            crouchV1: true,
+            ownPose: player.pose ? structuredClone(player.pose) : undefined
         });
         this.out.all({ type: 'joined', player: summary(player) }, id);
     }
@@ -657,6 +668,7 @@ export class Room {
             coachGift: player.coachGift,
             reviveTaken: player.reviveTaken,
             fanPose: player.fanPose ? structuredClone(player.fanPose) : null,
+            pose: player.pose ? structuredClone(player.pose) : null,
             lastSeen: realNow
         });
     }
@@ -1244,7 +1256,10 @@ export class Room {
         this.dropHeldItems(target, now);
         if (this.gold.holder === target.id) this.dropGold(target, now);
         if (target.pose) {
-            this.discs.push({ id: ++this.discId, at: [target.pose.p[0], 0.02, target.pose.p[2]] });
+            // Poses are capsule centres (standing centre ~= floor + 0.9 m). Keep death drops on
+            // the same vertical level instead of teleporting every spare disc to the ground floor.
+            const centreToFoot = target.pose.crouched ? 0.6 : 0.9;
+            this.discs.push({ id: ++this.discId, at: [target.pose.p[0], Math.max(0.02, target.pose.p[1] - centreToFoot), target.pose.p[2]] });
             this.out.all({ type: 'discs', discs: this.discs });
         }
         this.checkLastStanding(now);
@@ -1547,7 +1562,9 @@ export class Room {
     }
 
     private dropGold(holder: Player, now: number) {
-        const at: Vec3Tuple = holder.pose ? [holder.pose.p[0], 0.92, holder.pose.p[2]] : this.gold.at;
+        // GoldState.at uses the capsule-centre anchor consumed by pickup and rendering. Preserve
+        // all three coordinates so elevated stands and stairs don't drop the disc through floors.
+        const at: Vec3Tuple = holder.pose ? [...holder.pose.p] : [...this.gold.at];
         this.gold = { holder: null, at };
         this.goldDroppedAt = now;
         this.out.all({ type: 'gold', gold: this.gold, event: 'dropped' });

@@ -241,7 +241,8 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
             onTracer?: (at: V3, hue: number, speed: number, skin: string | null) => void,
             onRest?: (rest: { owner: string; throwId: number; local: boolean; gold: boolean; at: V3 | null }) => void,
             listener?: V3,
-            onFlyby?: (at: V3, speed: number) => void
+            onFlyby?: (at: V3, speed: number) => void,
+            crouchedTargets?: ReadonlySet<string>
         ) {
             bounceHandler = onBounce ?? null;
             // Backwards, so removing a disc does not skip the next one (and no per-frame array copy).
@@ -285,7 +286,7 @@ export const createDiscs = (app: AppBase, worldGravity: number) => {
                 disc.spin += deltaTime * Math.min(40, speed * 3);
                 disc.visual.setLocalEulerAngles(0, (disc.spin * 180) / Math.PI, 0);
                 if (disc.live && disc.local) {
-                    const earliest = earliestDiscContact(disc.last, position, targets, disc.owner);
+                    const earliest = earliestDiscContact(disc.last, position, targets, disc.owner, crouchedTargets);
                     if (earliest) {
                         disc.live = false;
                         onHit(disc.throwId, earliest.target, earliest.contact, velocity, disc.bounces);

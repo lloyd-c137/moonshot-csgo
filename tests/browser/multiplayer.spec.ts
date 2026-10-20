@@ -1,4 +1,4 @@
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
 import { collectErrors, enterHome } from './support';
@@ -6,13 +6,23 @@ import { collectErrors, enterHome } from './support';
 // Two players join the local shared-world room (wrangler dev) by typing a new username and password (one-step
 // sign-in registers them). They see each other, chat, and one eliminates the other with frisbees; the server
 // scores it, records lifetime stats for the account, and respawns the target. Runs in real time.
-const SERVER = 'ws://127.0.0.1:8787/ws';
-const API = 'http://127.0.0.1:8787';
+const SERVER_PORT = process.env.MOONSHOT_TEST_SERVER_PORT ?? '8787';
+const SERVER = `ws://127.0.0.1:${SERVER_PORT}/ws`;
+const API = `http://127.0.0.1:${SERVER_PORT}`;
 // The room only answers pages from allowed origins.
 const ORIGIN = { origin: 'http://127.0.0.1:5174' };
+const contexts = new Set<BrowserContext>();
+
+test.afterEach(async () => {
+    await Promise.all([...contexts].map(async (context) => {
+        contexts.delete(context);
+        try { await context.close(); } catch { /* A failed browser run may already have closed it. */ }
+    }));
+});
 
 const open = async (browser: Browser, audioLab = false, captureSpatialAudio = false, captureSnapshots = false) => {
     const context = await browser.newContext();
+    contexts.add(context);
     if (captureSnapshots) {
         await context.addInitScript(`(() => {
             const Native = window.WebSocket;
@@ -129,6 +139,40 @@ test('delta wire frames follow the accepted baseline and resync restores a full 
     const rebuilt = (await frames()).filter((frame) => frame.type === 'snapshotFull' && frame.epoch !== oldEpoch).at(-1)!;
     expect(Object.keys(rebuilt.poses as Record<string, unknown>).length).toBeGreaterThanOrEqual(1);
     expect(await a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), remoteId)).not.toBeNull();
+    expect(a.errors).toEqual([]);
+    expect(b.errors).toEqual([]);
+    await Promise.all([a.page.context().close(), b.page.context().close()]);
+});
+
+test('online crouch is present in remote snapshot state and standing clears it', async ({ browser }) => {
+    const a = await open(browser, false, false, true);
+    const b = await open(browser);
+    const stamp = Date.now().toString(36).slice(-6);
+    await enter(a.page, `蹲姿甲${stamp}`, 'secret-123');
+    await enter(b.page, `蹲姿乙${stamp}`, 'secret-456');
+    await Promise.all([
+        a.page.evaluate(() => {
+            window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6);
+            window.__MOONSHOT__!.setLook(0, 90);
+        }),
+        b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6))
+    ]);
+    await a.page.waitForTimeout(500);
+    const remoteId = await a.page.evaluate((prefix) => window.__MOONSHOT__!.match.state().players.find((player) => player.name.startsWith(prefix))!.id, `蹲姿乙${stamp}`);
+    const remoteStance = async () => a.page.evaluate((id) => {
+        const frames = (window as Window & { __snapshotFrames?: Record<string, unknown>[] }).__snapshotFrames ?? [];
+        for (let index = frames.length - 1; index >= 0; index--) {
+            const frame = frames[index];
+            const poses = (frame.type === 'snapshotFull' ? frame.poses : frame.updates) as Record<string, { crouched?: boolean }> | undefined;
+            if (poses?.[id]) return poses[id].crouched === true;
+        }
+        return null;
+    }, remoteId);
+    await b.page.keyboard.down('c');
+    await expect.poll(remoteStance, { timeout: 5_000 }).toBe(true);
+    await a.page.screenshot({ path: 'test-results/multiplayer-remote-crouch.png' });
+    await b.page.keyboard.up('c');
+    await expect.poll(remoteStance, { timeout: 5_000 }).toBe(false);
     expect(a.errors).toEqual([]);
     expect(b.errors).toEqual([]);
     await Promise.all([a.page.context().close(), b.page.context().close()]);

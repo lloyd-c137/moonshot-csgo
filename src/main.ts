@@ -138,8 +138,10 @@ const fetchJson = async (url: string, label: string) => {
 const createFpsMeter = (initiallyEnabled: boolean) => {
     const readout = document.createElement('div');
     readout.className = 'fps-hud';
+    readout.id = 'fps-hud';
     readout.setAttribute('aria-label', '帧率');
-    document.body.append(readout);
+    const performanceHud = document.getElementById('performance-hud');
+    if (performanceHud) performanceHud.append(readout);
     let enabled = initiallyEnabled;
     let frames = 0;
     let elapsed = 0;

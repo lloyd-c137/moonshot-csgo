@@ -78,10 +78,7 @@ input {
 }
 
 .fps-hud {
-    position: fixed;
-    z-index: 8;
-    top: 14px;
-    right: calc(var(--gutter) + 190px);
+    position: static;
     display: flex;
     align-items: baseline;
     gap: 7px;
@@ -2833,15 +2830,24 @@ legend {
 }
 
 .latency {
-    position: absolute;
-    bottom: var(--gutter);
-    left: var(--gutter);
+    position: static;
     padding: 1px 8px;
     border-radius: 3px;
     background: rgb(15 24 34 / 0.6);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
+}
+
+.performance-hud {
+    position: absolute;
+    bottom: var(--gutter);
+    left: var(--gutter);
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
 }
 
 .latency::before {

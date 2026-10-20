@@ -75,8 +75,10 @@ test('FPS HUD reports a real frame rate while the tab is visible', async ({ page
     await expect(page.locator('.fps-hud b')).toHaveText(/^\d+$/, { timeout: 5_000 });
     await expect(page.locator('.fps-hud span')).toContainText(/FPS · \d+ ms/);
     const hudBox = await page.locator('.fps-hud').boundingBox();
-    const mapBox = await page.locator('#minimap').boundingBox();
-    expect(hudBox && mapBox && (hudBox.x + hudBox.width <= mapBox.x || mapBox.x + mapBox.width <= hudBox.x)).toBe(true);
+    const latencyBox = await page.locator('#latency').boundingBox();
+    expect(hudBox && latencyBox).toBeTruthy();
+    expect(hudBox!.x).toBeGreaterThanOrEqual(latencyBox!.x + latencyBox!.width);
+    expect(hudBox!.y + hudBox!.height / 2).toBeCloseTo(latencyBox!.y + latencyBox!.height / 2, 0);
     await page.screenshot({ path: 'test-results/gameplay-controls-fps.png' });
 });
 

@@ -157,7 +157,8 @@ test('two real clients see the simulated shutdown and the initiator receives the
         await expect(a.page.locator('.george-reboot')).toContainText('SERVER REBOOT INITIATED');
         await expect(b.page.locator('.george-reboot')).toContainText('SERVER REBOOT INITIATED');
         await a.page.screenshot({ path: 'test-results/george-shutdown-countdown.png' });
-        await expect(a.page.locator('.george-blackout strong')).toHaveText('VICTORY', { timeout: 15_000 });
+        await expect.poll(async () => (await state(a.page)).round?.outcome, { timeout: 45_000 }).toBe('george-reboot');
+        await expect(a.page.locator('.george-blackout strong')).toHaveText('VICTORY', { timeout: 10_000 });
         await expect(a.page.locator('.george-blackout span')).toContainText('GEORGE PROTOCOL EXECUTED');
         await expect(b.page.locator('.george-blackout strong')).toHaveText('DEFEAT');
         await expect(b.page.locator('.george-blackout span')).toContainText('MATCH TERMINATED');

@@ -1,0 +1,31 @@
+# Gameplay & Controls 2.0 — verification report
+
+Date: 2026-10-20. Worktree: `msa-gameplay-campus`, branch `feat/gameplay-controls-campus`, based on `origin/perf/realtime-campus` (`c82fc3b`). Production services and data were not modified.
+
+## Results
+
+| Check | Result | Evidence |
+|---|---|---|
+| Unit / integration suite | PASS | `npm test`: 251 passed, 0 failed |
+| Focused gameplay/network/input suite | PASS | 85 passed, 0 failed |
+| TypeScript client + Worker + Node | PASS | `npm run typecheck` exited 0 |
+| ESLint | PASS | `npm run lint` exited 0 |
+| Campus production bundle | PASS | `npm run campus:build`; Vite and Node 22 esbuild bundle completed |
+| Cloudflare-compatible build | PASS | `npm run build`; Vite + Wrangler compilation succeeded |
+| Campus control browser smoke | PASS | `MOONSHOT_TEST_SERVER_PORT=8877 npx playwright test tests/browser/gameplay-controls.spec.ts`: 3 passed; Chromium exercised capsule height/centre/camera, FPS HUD, settings and crouch rebinding |
+| Real Node host WebSocket | PASS | `test/node-server.test.js` verifies two clients receive crouch/stand snapshot state; server HTTP/API, combat, origin and persistence checks also pass |
+| Slow-client isolation | PASS (local simulated WS) | Three real `ws` clients: one slow reader, two healthy clients; 20Hz tick and combat/finisher exercised. Healthy ping RTT samples [1,1,1,1,1] ms; Tick drift P95 1.73ms, P99 3.86ms, max 15.60ms; tick duration P95 0.752ms, max 6.47ms; event-loop delay P95 21.41ms, max 41.68ms; SQLite op P95 0.297ms; max bufferedAmount 5,360 bytes; 37 coalesced snapshots, one slow connection isolated. Local test evidence only, not real network evidence. |
+| Full multiplayer browser suite | NOT RUN | Only the control browser suite was rerun on this branch; do not infer cinematic or all-game browser coverage |
+| Full staged compatibility matrix | NOT MEASURED | No old/new client-server matrix was provisioned |
+| Full spatial golden-drop matrix | FAIL / INCOMPLETE | Elevated anchor preservation is covered; no authoritative walkable-surface index or multi-level recovery exists |
+| Rendered crouch animation visual review | NOT MEASURED | Network stance state is tested, but no clear visual crouch acceptance evidence across avatar animation states |
+
+## Relevant tests
+
+The campus Node-host test runs real WebSocket clients against the Node server and confirms crouch-only state changes are delivered. The Worker room suite covers validated/rate-limited stance, stance-aware Full/Delta encoding, reconnect state, historical combat stance and elevated gold anchor preservation.
+
+The slow-client measurement above came from an in-process localhost load test with real `ws` sockets. RTT is the test's local ping measurement and must not be represented as public-network latency.
+
+## NOT MEASURED / NOT PASS
+
+No production-network or real-player evidence, no multi-floor server collision/recovery proof, no clear rendered crouch animation review, no old/new protocol matrix, and no full multiplayer browser suite result are available. Main-thread SQLite is still synchronous; this run did not establish it as a source of a user-visible stall, and no database worker migration was performed. An existing Ammo.js scaled triangle mesh capability warning appeared in browser runs. These omissions prevent a production-ready PASS.

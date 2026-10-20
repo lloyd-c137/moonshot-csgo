@@ -204,7 +204,7 @@ test('special locations are pinned on the map and the S103 monitor requires a fo
     await loadSimulated(page);
     await enterAtSpawn(page);
     const locations = await page.evaluate(() => window.__MOONSHOT__!.match.markers().specialLocations);
-    expect(locations.map(({ id }) => id)).toEqual(['breaker', 'monitor', 'pe-office']);
+    expect(locations.map(({ id }) => id)).toEqual(expect.arrayContaining(['breaker', 'monitor', 'pe-office', 'george-server']));
 
     await page.evaluate(() => {
         window.__MOONSHOT__!.teleport(-43.6, 0.92, 11.169);

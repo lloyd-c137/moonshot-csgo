@@ -852,7 +852,7 @@ export const createSound = () => {
                 }
             }, 'environment'),
         /** Round over: a triumphant chord if you won, a falling one otherwise. */
-        roundEnd: (won: boolean, outcome: 'golden-disc' | 'last-survivor' | 'draw') =>
+        roundEnd: (won: boolean, outcome: 'golden-disc' | 'last-survivor' | 'draw' | 'george-reboot') =>
             play(
                 (audio, now) => {
                     const notes =

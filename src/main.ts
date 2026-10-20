@@ -581,6 +581,11 @@ const boot = async () => {
             if (!hasEntered) beginPlay(false);
             rigidbodySystem.timeScale = 1;
             shell.playing();
+        } else if (match.georgeTerminalOpen) {
+            // The terminal owns local input but remains vulnerable while the authoritative room continues.
+            clearVelocity();
+            rigidbodySystem.timeScale = 1;
+            return;
         } else if (hasEntered) {
             fallbackInput = false;
             canvas.dataset.gameplayInputActive = 'false';

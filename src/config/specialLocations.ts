@@ -1,3 +1,4 @@
+import { GEORGE_TERMINAL } from './george.ts';
 import { PE_OFFICE } from './office.ts';
 
 /** Monitor is GAMEPLAY_AUTHORED on the S103 desk derived from the published room layout. */
@@ -11,5 +12,6 @@ export const SPECIAL_LOCATIONS = [
     { id: 'breaker', short: '配', name: '配电室', x: BREAKER_CABINET[0], z: BREAKER_CABINET[2], colour: '#ff765f' },
     { id: 'monitor', short: '监', name: '监控室', x: MONITOR_CONSOLE.x, z: MONITOR_CONSOLE.z, colour: '#65d8e8' },
     { id: 'pe-office', short: '体', name: '体育办公室', x: PE_OFFICE.x, z: PE_OFFICE.z, colour: '#b8d879' },
-    { id: 'medical', short: '医', name: '医务室', x: MEDICAL_ROOM.x, z: MEDICAL_ROOM.z, colour: '#ff9f9a' }
+    { id: 'medical', short: '医', name: '医务室', x: MEDICAL_ROOM.x, z: MEDICAL_ROOM.z, colour: '#ff9f9a' },
+    { id: 'george-server', short: 'G', name: 'George 服务器 · M103 创客空间', x: GEORGE_TERMINAL.x, z: GEORGE_TERMINAL.z, colour: '#ff5969' }
 ] as const;

@@ -1035,7 +1035,7 @@ export const createUi = () => {
             result: {
                 winner: string | null;
                 mine: boolean;
-                outcome: 'golden-disc' | 'last-survivor' | 'draw';
+                outcome: 'golden-disc' | 'last-survivor' | 'draw' | 'george-reboot';
                 nextIn: number;
             } | null
         ) => {

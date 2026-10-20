@@ -11,6 +11,8 @@ import type {
     ChatLine,
     GoldState,
     GroundDisc,
+    GeorgeProgress,
+    GeorgeReboot,
     King,
     PlayerPose,
     PlayerSummary,
@@ -47,8 +49,17 @@ type Handlers = {
             discs: GroundDisc[];
             items: WorldItem[];
             matchTime: number;
+            george: GeorgeProgress;
+            georgeCredential: { id: string; code: string; status: 'available' | 'used' } | null;
+            georgeReboot: GeorgeReboot;
         }
     ) => void;
+    georgeProgress: (playerId: string, progress: GeorgeProgress) => void;
+    georgeCredential: (credential: { id: string; code: string; status: 'available' | 'used' | 'revoked' } | null) => void;
+    georgeResult: (requestId: string, result: 'granted' | 'denied' | 'started' | 'not-available', reason?: string) => void;
+    georgeReboot: (state: GeorgeReboot) => void;
+    georgeSecurityAlert: () => void;
+    georgeShutdown: (id: string, initiatorId: string, initiatorName: string, resolvedAt: number) => void;
     joined: (player: PlayerSummary) => void;
     phaseChanged: (id: string, phase: 'lobby' | 'playing') => void;
     joinRoundDenied: (reason: string) => void;
@@ -173,13 +184,34 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
                     ammo: message.ammo,
                     discs: message.discs,
                     items: message.items,
-                    matchTime: message.matchTime
+                    matchTime: message.matchTime,
+                    george: message.george,
+                    georgeCredential: message.georgeCredential,
+                    georgeReboot: message.georgeReboot
                 });
                 break;
             }
             case 'rejected':
                 setState('rejected', message.reason);
                 socket?.close();
+                break;
+            case 'georgeProgress':
+                handlers.georgeProgress(message.playerId, message.progress);
+                break;
+            case 'georgeCredential':
+                handlers.georgeCredential(message.credential);
+                break;
+            case 'georgeResult':
+                handlers.georgeResult(message.requestId, message.result, message.reason);
+                break;
+            case 'georgeReboot':
+                handlers.georgeReboot(message.state);
+                break;
+            case 'georgeSecurityAlert':
+                handlers.georgeSecurityAlert();
+                break;
+            case 'georgeShutdown':
+                handlers.georgeShutdown(message.id, message.initiatorId, message.initiatorName, message.resolvedAt);
                 break;
             case 'joined':
                 handlers.joined(message.player);
@@ -466,6 +498,18 @@ export const createNetClient = (url: string | null, handlers: Handlers) => {
         },
         interact(target: string) {
             send({ type: 'interact', target });
+        },
+        georgeLogin(requestId: string, code: string) {
+            send({ type: 'georgeLogin', requestId, code });
+        },
+        georgeStart(requestId: string) {
+            send({ type: 'georgeStart', requestId });
+        },
+        georgeBeginDisarm(requestId: string) {
+            send({ type: 'georgeDisarmBegin', requestId });
+        },
+        georgeCancelDisarm(requestId: string) {
+            send({ type: 'georgeDisarmCancel', requestId });
         },
         toggleFrc() {
             send({ type: 'toggleFrc' });

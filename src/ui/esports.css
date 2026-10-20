@@ -2185,3 +2185,43 @@ body {
         animation: none;
     }
 }
+/* GAMEPLAY_AUTHORED George Protocol HUD; compact and inert until the server feature is in play. */
+.george-hud { position: fixed; z-index: 45; inset: 0; pointer-events: none; color: #e9f2f5; font-family: inherit; }
+.george-progress { position: absolute; top: 34%; right: 24px; width: 238px; padding: 11px 13px; background: rgba(5, 13, 20, .88); border: 1px solid rgba(65, 204, 226, .34); border-top: 2px solid #28c9e6; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+.george-progress-heading { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .11em; }
+.george-progress-heading span { color: #5fe6f4; font-size: 18px; }
+.george-progress-heading b { margin-left: auto; font: 700 18px/1 "Barlow Condensed", sans-serif; color: #62e8f4; }
+.george-progress-track,.george-disarm-track { height: 3px; margin-top: 9px; overflow: hidden; background: rgba(211,231,237,.15); }
+.george-progress-track i,.george-disarm-track i { display: block; width: 0; height: 100%; background: #45e3ef; transition: width .22s ease; }
+.george-progress small { display: block; margin-top: 7px; color: #8da4ad; font-size: 9px; letter-spacing: .12em; }
+.george-code-toggle,.george-terminal-prompt { pointer-events: auto; margin-top: 9px; padding: 5px 8px; color: #9cf3fb; border: 1px solid rgba(69,227,239,.5); background: rgba(5,18,26,.92); font: 700 11px inherit; letter-spacing: .08em; cursor: pointer; }
+.george-milestone { position: absolute; top: 43%; left: 50%; transform: translate(-50%,-50%); padding: 14px 24px; min-width: 280px; text-align: center; background: rgba(5,13,20,.94); border: 1px solid #36d8eb; border-top: 3px solid #36d8eb; animation: george-in .22s ease-out; }
+.george-milestone b,.george-milestone span { display: block; }
+.george-milestone b { font: 700 22px/1.1 "Barlow Condensed", sans-serif; letter-spacing: .1em; }
+.george-milestone span { margin-top: 6px; color: #7ce9f2; font-size: 11px; letter-spacing: .15em; }
+.george-alert { position: absolute; top: 16%; left: 50%; transform: translateX(-50%); padding: 12px 20px; color: #ffd9db; background: rgba(56,10,17,.95); border: 1px solid #ff6572; font: 700 14px "Barlow Condensed", sans-serif; letter-spacing: .12em; }
+.george-reboot { position: absolute; top: 16%; left: 50%; transform: translateX(-50%); min-width: 310px; padding: 10px 18px; text-align: center; color: #ffd8db; background: rgba(39,8,14,.94); border: 1px solid rgba(255,86,101,.8); border-top: 3px solid #ff5264; font: 700 12px "Barlow Condensed", sans-serif; letter-spacing: .12em; }
+.george-reboot b,.george-reboot strong,.george-reboot small { display: block; }
+.george-reboot strong { margin: 3px 0; color: #fff; font-size: 28px; letter-spacing: .08em; }
+.george-reboot small { color: #ffadb4; font-size: 10px; }
+.george-reboot .george-disarm-track { height: 2px; margin-top: 8px; }
+.george-reboot .george-disarm-track i { background: #ff5969; }
+.george-disarm { position: absolute; z-index: 2; top: calc(16% + 82px); left: 50%; transform: translateX(-50%); min-width: 310px; padding: 10px 16px; color: #ffe5e6; background: rgba(128,25,36,.94); border: 1px solid #ff6b76; font: 700 12px "Barlow Condensed", sans-serif; letter-spacing: .12em; cursor: pointer; touch-action: none; pointer-events: auto; }
+.george-disarm.is-holding { background: #a32636; box-shadow: inset 0 -4px 0 #ff5969; }
+.george-terminal-prompt { position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%); padding: 10px 15px; font-size: 13px; }
+.george-console-backdrop { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; background: rgba(1,5,10,.76); backdrop-filter: blur(5px); }
+.george-console { position: relative; width: min(420px, calc(100vw - 34px)); padding: 25px; color: #e8f1f3; background: linear-gradient(145deg,rgba(18,31,39,.98),rgba(4,11,17,.99)); border: 1px solid rgba(68,207,226,.6); border-top: 3px solid #45d9e8; box-shadow: 0 18px 55px rgba(0,0,0,.5); }
+.george-console-close { position: absolute; right: 10px; top: 8px; border: 0; color: #b9c9ce; background: none; font-size: 23px; cursor: pointer; }
+.george-console>small { color: #59d7e7; letter-spacing: .2em; }
+.george-console h2 { margin: 8px 0 16px; font: 700 25px "Barlow Condensed", sans-serif; letter-spacing: .08em; }
+.george-console p { color: #91a5ab; font: 12px "Barlow Condensed", sans-serif; letter-spacing: .14em; }
+.george-console .george-console-status { color: #83e5ed; }
+.george-console label { display: block; margin-top: 22px; color: #8da4ad; font-size: 10px; letter-spacing: .15em; }
+.george-code-input { display: block; box-sizing: border-box; width: 100%; margin: 8px 0 16px; padding: 12px; color: #b7fbff; background: #071117; border: 1px solid #42606a; text-align: center; font: 700 24px "Barlow Condensed",monospace; letter-spacing: .45em; }
+.george-console button:not(.george-console-close) { width: 100%; margin-top: 8px; padding: 11px; color: #e9fbfc; background: rgba(25,115,133,.5); border: 1px solid #55d5e3; font: 700 13px "Barlow Condensed", sans-serif; letter-spacing: .12em; cursor: pointer; }
+.george-console button[hidden],.george-hud [hidden] { display: none !important; }
+.george-blackout { position: fixed; z-index: 1000; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #f4f5f6; background: #020304; font: 700 15px "Barlow Condensed", sans-serif; letter-spacing: .2em; }
+.george-blackout strong { font-size: clamp(42px,8vw,86px); }
+.george-blackout span { color: #8f9a9e; }
+@keyframes george-in { from { opacity: 0; transform: translate(-50%,-46%); } to { opacity: 1; transform: translate(-50%,-50%); } }
+@media (max-width: 720px) { .george-progress { top: 27%; right: 8px; width: 185px; padding: 8px; } .george-progress-heading { font-size: 10px; } .george-alert { top: 22%; width: max-content; max-width: calc(100vw - 24px); font-size: 11px; } }

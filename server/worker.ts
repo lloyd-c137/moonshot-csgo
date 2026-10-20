@@ -343,6 +343,7 @@ export class World extends DurableObject<Env> {
             if (
                 typeof remainingSeconds !== 'number' ||
                 ![
+                    ROUND.roundSeconds,
                     ROUND.blackoutSecondsLeft,
                     ROUND.finalSecondsLeft,
                     ROUND.finalSecondsLeft + ROUND.ceremonySeconds

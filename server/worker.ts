@@ -20,6 +20,12 @@ import { Room } from './room.ts';
 /** The single room instance. Renamed when an incompatible room must start fresh (v2: accounts and chat). */
 const ROOM_NAME = 'campus-v2';
 
+function roomNameForRequest(url: URL, env: Env) {
+    // Isolate local browser-test rooms and their SQLite state; this selector is inert outside COMBAT_TEST.
+    const testRoom = env.COMBAT_TEST === '1' ? url.searchParams.get('testRoom') : null;
+    return testRoom && /^[a-z0-9-]{1,48}$/i.test(testRoom) ? `${ROOM_NAME}-test-${testRoom}` : ROOM_NAME;
+}
+
 /** START_AMMO: local test rooms only (npm run server:dev) — lets browser tests throw repeatedly. */
 type Env = {
     WORLD: DurableObjectNamespace<World>;
@@ -35,7 +41,7 @@ export default {
         if (url.pathname === '/health') return new Response('ok', { headers: { 'cache-control': 'no-store' } });
         const origin = request.headers.get('Origin');
         const allowed = originAllowed(origin, env.ALLOWED_ORIGINS);
-        const room = env.WORLD.get(env.WORLD.idFromName(ROOM_NAME));
+        const room = env.WORLD.get(env.WORLD.idFromName(roomNameForRequest(url, env)));
         if (url.pathname.startsWith('/api/')) {
             const requestAllowed = requestOriginAllowed(request, env.ALLOWED_ORIGINS);
             const cors: Record<string, string> = allowed
@@ -352,6 +358,16 @@ export class World extends DurableObject<Env> {
             return this.room.setTestRoundRemaining(now, remainingSeconds * 1000)
                 ? json({ ok: true })
                 : json({ error: '当前没有进行中的回合' }, 409);
+        }
+        if (url.pathname === '/api/__test/george-streak' && request.method === 'POST') {
+            // Local browser-test fixture only. It advances the authenticated player to 9/10; the final
+            // elimination, credential generation, login, reboot and disarm still use real gameplay paths.
+            if (!this.combatTestEnabled) return json({ error: 'not found' }, 404);
+            const account = this.accounts.resolve(bearer, now);
+            if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+            return this.room.setTestGeorgeStreakAtNine(account.name, now)
+                ? json({ ok: true })
+                : json({ error: '玩家当前不能准备 George 测试' }, 409);
         }
         if (url.pathname === '/api/__test/points' && request.method === 'POST') {
             // Local browser tests only (COMBAT_TEST=1): grant skin points to the signed-in account.

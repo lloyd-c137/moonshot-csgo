@@ -14,7 +14,8 @@ import type { GlobalFinisher } from '../gameplay/finisher/FinisherTypes.ts';
 import type { PowerState } from '../gameplay/power.ts';
 export type { PowerState } from '../gameplay/power.ts';
 
-export const PROTOCOL_VERSION = 15;
+// George Protocol changes both private welcome state and the authoritative round outcome.
+export const PROTOCOL_VERSION = 16;
 export const MAX_PLAYERS = 32;
 /** Initial authoritative logic scheduler; stays aligned with snapshots until publication is separately scheduled. */
 export const GAME_TICK_HZ = 20;
@@ -102,7 +103,7 @@ export const DETENTION_SECONDS = 4;
 
 /** Where the golden disc is: lying somewhere (`at`), or carried by `holder`. */
 export type GoldState = { holder: string | null; at: Vec3Tuple };
-export type RoundOutcome = 'golden-disc' | 'last-survivor' | 'draw';
+export type RoundOutcome = 'golden-disc' | 'last-survivor' | 'draw' | 'george-reboot';
 /** The current round: playing until `endsAt` (room clock), or ended with a winner (name, or null) until `nextAt`. */
 export type RoundState =
     | { phase: 'playing'; endsAt: number }
@@ -219,6 +220,19 @@ export type ChatLine = {
 /** Per-player [score, eliminations, times eliminated]. */
 export type Scores = Record<string, [number, number, number]>;
 
+export type GeorgeProgress = {
+    streak: number;
+    required: 10;
+    unlocked: boolean;
+    issuedThisRound: boolean;
+    credentialAvailable: boolean;
+};
+export type GeorgeReboot =
+    | { phase: 'idle' }
+    | { phase: 'pending'; id: string; roundId: number; initiatorId: string; initiatorName: string; initiatorAccountName: string | null; startsAt: number; endsAt: number; disarmerId: string | null; disarmStartedAt: number | null; disarmLastSeenAt: number | null }
+    | { phase: 'shutdown'; id: string; roundId: number; initiatorId: string; initiatorName: string; initiatorAccountName: string | null; resolvedAt: number }
+    | { phase: 'resolved'; id: string; roundId: number; initiatorId: string; initiatorName: string; initiatorAccountName: string | null; outcome: 'aborted' | 'shutdown'; resolvedAt: number; disarmedBy?: string };
+
 export type ThrowRecord = {
     /** Thrower-local id, unique per thrower. */
     id: number;
@@ -272,7 +286,11 @@ export type ClientMessage =
     /** App-level receipt used by the Worker runtime where writable-buffer size is unavailable. */
     | { type: 'snapshotAck'; seq: number; epoch?: number }
     | { type: 'snapshotResync'; epoch?: number; seq?: number }
-    | { type: 'respawned'; pose: PlayerPose };
+    | { type: 'respawned'; pose: PlayerPose }
+    | { type: 'georgeLogin'; requestId: string; code: string }
+    | { type: 'georgeStart'; requestId: string }
+    | { type: 'georgeDisarmBegin'; requestId: string }
+    | { type: 'georgeDisarmCancel'; requestId: string };
 
 export type ServerMessage =
     | {
@@ -292,6 +310,9 @@ export type ServerMessage =
           ammo: number;
           discs: GroundDisc[];
           items: WorldItem[];
+          george: GeorgeProgress;
+          georgeCredential: { id: string; code: string; status: 'available' | 'used' } | null;
+          georgeReboot: GeorgeReboot;
           /** Room clock now (ms), so the patrol and countdown line up before the first snapshot. */
           t: number;
           /** Match clock excludes any prior global cinematic pauses. */
@@ -392,7 +413,13 @@ export type ServerMessage =
     | { type: 'globalFinisherStarted'; finisher: GlobalFinisher }
     | { type: 'globalFinisherState'; finisher: GlobalFinisher }
     | { type: 'globalFinisherCompleted'; id: string; sequence: number; target: string; by: string; resumedAt: number }
-    | { type: 'globalFinisherCancelled'; id: string; sequence: number; reason: string; resumedAt: number };
+    | { type: 'globalFinisherCancelled'; id: string; sequence: number; reason: string; resumedAt: number }
+    | { type: 'georgeProgress'; playerId: string; progress: GeorgeProgress }
+    | { type: 'georgeCredential'; credential: { id: string; code: string; status: 'available' | 'used' | 'revoked' } | null }
+    | { type: 'georgeResult'; requestId: string; result: 'granted' | 'denied' | 'started' | 'not-available'; reason?: string }
+    | { type: 'georgeReboot'; state: GeorgeReboot }
+    | { type: 'georgeSecurityAlert' }
+    | { type: 'georgeShutdown'; id: string; initiatorId: string; initiatorName: string; resolvedAt: number };
 
 /** Cleans a player-supplied nickname: trims, drops control/format characters, caps the length. */
 export const cleanName = (raw: unknown) => {
@@ -494,6 +521,17 @@ export const parseClientMessage = (text: string): ClientMessage | null => {
                 : null;
         case 'executionCommit':
         case 'executionCancel':
+            return typeof value.requestId === 'string' && value.requestId.length <= 80
+                ? (value as ClientMessage)
+                : null;
+        case 'georgeLogin':
+            return typeof value.requestId === 'string' && value.requestId.length <= 80 &&
+                typeof value.code === 'string' && /^\d{6}$/.test(value.code)
+                ? (value as ClientMessage)
+                : null;
+        case 'georgeStart':
+        case 'georgeDisarmBegin':
+        case 'georgeDisarmCancel':
             return typeof value.requestId === 'string' && value.requestId.length <= 80
                 ? (value as ClientMessage)
                 : null;

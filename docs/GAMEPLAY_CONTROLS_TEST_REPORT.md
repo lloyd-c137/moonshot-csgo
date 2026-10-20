@@ -28,3 +28,15 @@ Date: 2026-10-20. Worktree: `msa-gameplay-main`, branch `feat/gameplay-controls-
 ## NOT MEASURED / NOT PASS
 
 No representative-device FPS/CPU comparison, no production-network or real-player evidence, no server-side multi-floor gold recovery, no clear rendered crouch animation review, and no full old/new protocol matrix. Full multiplayer browser E2E is incomplete. An existing Ammo.js scaled triangle mesh capability warning appeared in browser runs. These omissions block a production-ready PASS.
+
+## Follow-up verification — 2026-10-20
+
+Commit `b890b12` fixes authoritative respawn publication and stabilizes browser test setup. After respawn the room now restores the selected spawn pose and pose history before emitting the respawn event, so peers receive the player in snapshots immediately instead of waiting for a client acknowledgement. The browser account scenario now waits for the remote pose to converge before throwing.
+
+- Lint, client/Worker typecheck, and `npm run build`: PASS.
+- `node --test test/*.test.js`: 243 passed, 0 failed.
+- Focused Chromium: account/combat flow passed; Full/Delta resync, remote crouch, and final entrance ceremony passed (3/3); global finisher and power-room flows passed (3/3).
+- The campus-derived browser startup helper now accepts either the visible “continue” button or an already-ready app. A campus power-room test first exposed the hidden-button assumption; it passed after the helper fix.
+- GitHub Actions for `b890b12` was in progress when this report was updated: [run 39360354532](https://github.com/lloyd-c137/moonshot-csgo/actions/runs/39360354532). This is not a CI PASS.
+
+The safe multi-level gold-drop resolver and the broader release checklist remain incomplete. No production service or data was changed; production deployment remains blocked by those documented gates.

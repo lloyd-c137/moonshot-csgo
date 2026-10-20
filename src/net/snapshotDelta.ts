@@ -4,7 +4,8 @@ const samePose = (pose: StampedPose, previous: StampedPose) =>
     pose.rev !== undefined && previous.rev !== undefined
         ? pose.rev === previous.rev
         : pose.p[0] === previous.p[0] && pose.p[1] === previous.p[1] && pose.p[2] === previous.p[2] &&
-          pose.yaw === previous.yaw && pose.pitch === previous.pitch && pose.aim === previous.aim;
+          pose.yaw === previous.yaw && pose.pitch === previous.pitch && pose.aim === previous.aim &&
+          pose.crouched === previous.crouched;
 
 export const poseChangeCount = (base: Record<string, StampedPose>, current: Record<string, StampedPose>, stopAt = Infinity) => {
     let count = 0;

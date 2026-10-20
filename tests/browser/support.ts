@@ -17,6 +17,7 @@ declare global {
             teleport: (x: number, y: number, z: number) => void;
             recoveries: () => number;
             setRendering: (enabled: boolean) => void;
+            crouch: () => { active: boolean; capsuleHeight: number; cameraY: number };
             perf: () => { shadersLinked: number; compileMs: number; shaders: string[]; drawCallsPerFrame: number };
             sceneTransition: (relocate: () => void) => void;
             showRoundResult: (outcome: 'golden-disc' | 'last-survivor' | 'draw', mine: boolean) => void;

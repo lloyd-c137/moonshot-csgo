@@ -37,7 +37,7 @@ const harness = () => {
         room.message(id, { type: 'hello', version: PROTOCOL_VERSION, name, phase }, now);
         return inbox.get(id);
     };
-    const pose = (id, p, now) => room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0 } }, now);
+    const pose = (id, p, now, crouched = false) => room.message(id, { type: 'pose', pose: { p, yaw: 0, pitch: 0, crouched } }, now);
     return { room, inbox, closed, join, pose };
 };
 
@@ -45,6 +45,7 @@ test('players join one shared room with cleaned, unique nicknames', () => {
     const { join, inbox } = harness();
     const a = join('a', '  小明\u0000<b>  ');
     assert.equal(a[0].type, 'welcome');
+    assert.equal(a[0].crouchV1, true);
     assert.equal(a[0].name, '小明b');
     const b = join('b', '小明b');
     assert.equal(b[0].name, '小明b·2');
@@ -57,6 +58,22 @@ test('players join one shared room with cleaned, unique nicknames', () => {
     assert.match(c[0].name, /^飞盘手\d{3}$/);
 });
 
+test('crouch stance is validated, rate-limited and carried through snapshots', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    pose('a', [1, 0.92, 2], 100, true);
+    assert.equal(room.players.get('a').pose.crouched, true);
+    pose('a', [1, 0.62, 2], 150, false);
+    assert.equal(room.players.get('a').pose.crouched, true, 'rapid stance flip is ignored but position remains accepted');
+    pose('a', [1, 0.62, 2], 360, false);
+    assert.equal(room.players.get('a').pose.crouched, false);
+    room.tick(400);
+    const snapshot = inbox.get('b').findLast((message) => message.type === 'snapshot');
+    assert.equal(snapshot.poses.a.crouched, false);
+    assert.equal(snapshot.poses.a.p[1], 0.62);
+});
+
 test('wrong protocol versions and garbage are rejected', () => {
     const { room, inbox, closed } = harness();
     inbox.set('x', []);
@@ -66,6 +83,8 @@ test('wrong protocol versions and garbage are rejected', () => {
     assert.ok(closed.has('x'));
     assert.equal(parseClientMessage('{"type":"pose","pose":{"p":[1,2],"yaw":0,"pitch":0}}'), null);
     assert.equal(parseClientMessage('not json'), null);
+    assert.equal(parseClientMessage('{"type":"pose","pose":{"p":[1,2,3],"yaw":0,"pitch":0,"crouched":true}}')?.type, 'pose');
+    assert.equal(parseClientMessage('{"type":"pose","pose":{"p":[1,2,3],"yaw":0,"pitch":0,"crouched":"yes"}}'), null);
     assert.equal(parseClientMessage('x'.repeat(5000)), null);
     assert.equal(cleanName('a'.repeat(40)).length, 16);
 });
@@ -745,6 +764,20 @@ test('rounds: the golden disc spawns, is picked up, drops on elimination, and it
     // Latency probe is echoed.
     room.message('a', { type: 'ping', c: 42 }, 1);
     assert.deepEqual(inbox.get('a').at(-1), { type: 'pong', c: 42 });
+});
+
+test('golden disc disconnect drop preserves the holder floor on an elevated stand', () => {
+    const { room, join, pose, inbox } = harness();
+    join('a', 'A');
+    join('b', 'B');
+    pose('a', [-20, 5.52, 0], 100);
+    room.gold = { holder: 'a', at: [-20, 5.52, 0] };
+
+    room.disconnect('a', 200);
+
+    const dropped = inbox.get('b').findLast((message) => message.type === 'gold');
+    assert.equal(dropped.event, 'dropped');
+    assert.deepEqual(dropped.gold.at, [-20, 5.52, 0]);
 });
 
 test('discs are ammunition: throws spend them, landed discs are picked up, the PE office hands out more', () => {

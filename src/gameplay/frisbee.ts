@@ -138,7 +138,7 @@ export const segmentDistance = (p0: V3, p1: V3, q0: V3, q1: V3) => {
 };
 
 /** Player hit volume (slightly generous, favouring the thrower): capsule centre `c`, radius, core half-height. */
-export const PLAYER_HIT = { radius: 0.36, halfCore: 0.64 } as const;
+export const PLAYER_HIT = { radius: 0.36, halfCore: 0.64, crouchedHalfCore: 0.34 } as const;
 
 export type DiscContact = {
     /** First point on the swept disc-centre segment that touches the player's existing hit capsule. */
@@ -151,8 +151,9 @@ export type DiscContact = {
     region: 'head' | 'body';
 };
 
-const capsuleDistanceSquared = (point: V3, centre: V3) => {
-    const nearestY = Math.max(centre[1] - PLAYER_HIT.halfCore, Math.min(centre[1] + PLAYER_HIT.halfCore, point[1]));
+const capsuleDistanceSquared = (point: V3, centre: V3, crouched = false) => {
+    const halfCore = crouched ? PLAYER_HIT.crouchedHalfCore : PLAYER_HIT.halfCore;
+    const nearestY = Math.max(centre[1] - halfCore, Math.min(centre[1] + halfCore, point[1]));
     const dx = point[0] - centre[0];
     const dy = point[1] - nearestY;
     const dz = point[2] - centre[2];
@@ -160,18 +161,18 @@ const capsuleDistanceSquared = (point: V3, centre: V3) => {
 };
 
 /** Earliest swept-segment contact with the existing capsule, including its disc-radius allowance. */
-export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | null => {
+export const discContactWithPlayer = (a: V3, b: V3, centre: V3, crouched = false): DiscContact | null => {
     const delta = sub(b, a);
     const radius = PLAYER_HIT.radius + DISC.radius;
     const radiusSquared = radius * radius;
     const atFraction = (fraction: number): V3 => add(a, scale(delta, fraction));
-    if (capsuleDistanceSquared(a, centre) <= radiusSquared) {
+    if (capsuleDistanceSquared(a, centre, crouched) <= radiusSquared) {
         const at = a;
         return {
             at,
             fraction: 0,
             impactDirection: normalise(delta),
-            region: isHeadHit(at[1], centre[1]) ? 'head' : 'body'
+            region: isHeadHit(at[1], centre[1], crouched) ? 'head' : 'body'
         };
     }
 
@@ -182,20 +183,20 @@ export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | n
     for (let iteration = 0; iteration < 36; iteration++) {
         const left = (2 * low + high) / 3;
         const right = (low + 2 * high) / 3;
-        if (capsuleDistanceSquared(atFraction(left), centre) <= capsuleDistanceSquared(atFraction(right), centre)) {
+        if (capsuleDistanceSquared(atFraction(left), centre, crouched) <= capsuleDistanceSquared(atFraction(right), centre, crouched)) {
             high = right;
         } else {
             low = left;
         }
     }
     const minimum = (low + high) / 2;
-    if (capsuleDistanceSquared(atFraction(minimum), centre) > radiusSquared) return null;
+    if (capsuleDistanceSquared(atFraction(minimum), centre, crouched) > radiusSquared) return null;
 
     low = 0;
     high = minimum;
     for (let iteration = 0; iteration < 36; iteration++) {
         const middle = (low + high) / 2;
-        if (capsuleDistanceSquared(atFraction(middle), centre) <= radiusSquared) high = middle;
+        if (capsuleDistanceSquared(atFraction(middle), centre, crouched) <= radiusSquared) high = middle;
         else low = middle;
     }
     const fraction = high;
@@ -204,7 +205,7 @@ export const discContactWithPlayer = (a: V3, b: V3, centre: V3): DiscContact | n
         at,
         fraction,
         impactDirection: normalise(delta),
-        region: isHeadHit(at[1], centre[1]) ? 'head' : 'body'
+        region: isHeadHit(at[1], centre[1], crouched) ? 'head' : 'body'
     };
 };
 
@@ -213,12 +214,13 @@ export const earliestDiscContact = (
     a: V3,
     b: V3,
     targets: Map<string, V3>,
-    ignoreId?: string
+    ignoreId?: string,
+    crouchedTargets?: ReadonlySet<string>
 ): { target: string; contact: DiscContact } | null => {
     let earliest: { target: string; contact: DiscContact } | null = null;
     for (const [target, centre] of targets) {
         if (target === ignoreId) continue;
-        const contact = discContactWithPlayer(a, b, centre);
+        const contact = discContactWithPlayer(a, b, centre, crouchedTargets?.has(target) === true);
         if (
             contact &&
             (!earliest ||

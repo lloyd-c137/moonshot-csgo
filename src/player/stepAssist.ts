@@ -3,6 +3,7 @@ import { Vec3 } from 'playcanvas';
 import { FirstPersonController } from 'playcanvas/scripts/esm/first-person-controller.mjs';
 
 import { PLAYER } from '../config/gameplay';
+import { input } from '../input/InputManager';
 
 /**
  * Step-up for the upstream capsule controller, which cannot climb a ledge: when the player walks into a step no
@@ -15,10 +16,6 @@ export const STEP_ASSIST = { maxStep: 0.5, minStep: 0.06, reach: 0.22, cooldown:
 export const stepBoost = (height: number) => Math.sqrt(2 * -PLAYER.gravity * (height + 0.08));
 
 export const createStepAssist = (app: AppBase, player: Entity, camera: Entity) => {
-    const keys = new Set<string>();
-    window.addEventListener('keydown', (event) => keys.add(event.code));
-    window.addEventListener('keyup', (event) => keys.delete(event.code));
-    window.addEventListener('blur', () => keys.clear());
     const system = app.systems.rigidbody as RigidBodyComponentSystem;
     const from = new Vec3(),
         to = new Vec3(),
@@ -31,11 +28,8 @@ export const createStepAssist = (app: AppBase, player: Entity, camera: Entity) =
             const controller = player.script?.get(FirstPersonController) as { enabled?: boolean } | null;
             const body = player.rigidbody;
             if (cooldown > 0 || !body || controller?.enabled === false) return;
-            const forward =
-                (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-            const strafe =
-                (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
-                (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+            const forward = Number(input.isDown('moveForward')) - Number(input.isDown('moveBackward'));
+            const strafe = Number(input.isDown('strafeRight')) - Number(input.isDown('strafeLeft'));
             if (!forward && !strafe) return;
             // Horizontal forward of the view; right is forward turned a quarter clockwise seen from above.
             const look = camera.forward;

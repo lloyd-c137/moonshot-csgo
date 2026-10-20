@@ -4,12 +4,13 @@
 import { Entity, Vec3 } from 'playcanvas';
 import type { AppBase, Entity as EntityType } from 'playcanvas';
 
+import { input } from '../input/InputManager';
+
 import { INTRO_DURATION, introCamera, introLines } from './introPath';
 
 export type IntroUi = {
     intro: (lines: string[] | null) => void;
 };
-
 export const createIntro = (app: AppBase, playerCamera: EntityType, ui: IntroUi) => {
     const camera = new Entity('intro-camera');
     camera.addComponent('camera');
@@ -36,7 +37,7 @@ export const createIntro = (app: AppBase, playerCamera: EntityType, ui: IntroUi)
     };
     const skip = (event: Event) => {
         if (startedAt === null) return;
-        if (event instanceof KeyboardEvent && !['Space', 'Enter', 'Escape'].includes(event.code)) return;
+        if (event instanceof KeyboardEvent && !input.matchesKey(event, 'skipCutscene') && event.code !== 'Enter') return;
         if (event instanceof KeyboardEvent && event.code !== 'Escape') event.preventDefault();
         end();
     };

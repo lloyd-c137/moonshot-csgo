@@ -142,6 +142,15 @@ test('Node campus server serves static/API, hosts authoritative multiplayer, rej
     const snapshotB = await until(b, (message) => hasPose(message, welcomeA.id));
     assert.ok(snapshotA.type === 'snapshotFull' ? snapshotA.poses[welcomeB.id] : snapshotA.updates[welcomeB.id]);
     assert.ok(snapshotB.type === 'snapshotFull' ? snapshotB.poses[welcomeA.id] : snapshotB.updates[welcomeA.id]);
+    const poseFor = (message, id) => message.type === 'snapshotFull' ? message.poses?.[id] : message.updates?.[id];
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    b.send(JSON.stringify({ type: 'pose', pose: { p: bPos, yaw: 0, pitch: 0, crouched: true } }));
+    const crouched = await until(a, (message) => hasPose(message, welcomeB.id) && poseFor(message, welcomeB.id)?.crouched === true);
+    assert.equal(poseFor(crouched, welcomeB.id).crouched, true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    b.send(JSON.stringify({ type: 'pose', pose: { p: bPos, yaw: 0, pitch: 0, crouched: false } }));
+    const standing = await until(a, (message) => hasPose(message, welcomeB.id) && poseFor(message, welcomeB.id)?.crouched !== true);
+    assert.notEqual(poseFor(standing, welcomeB.id)?.crouched, true);
     a.send(JSON.stringify({ type: 'throw', throw: { id: 1, o: [-18, 1.5, -3], v: [15, 0, 0], tilt: 0 } }));
     await new Promise((resolve) => setTimeout(resolve, 400));
     a.send(JSON.stringify({ type: 'hit', throwId: 1, target: welcomeB.id, at: [-12, 1.2, -3] }));

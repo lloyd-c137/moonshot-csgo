@@ -12,6 +12,7 @@ import type { ItemKind } from '../config/gameplayItems';
 import { skinById } from '../config/skins';
 import { SPAWN_POINTS } from '../config/spawns';
 import { BREAKER_CABINET, SPECIAL_LOCATIONS } from '../config/specialLocations';
+import { input } from '../input/InputManager';
 import { apiBase } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
@@ -30,6 +31,7 @@ import {
     THROW_COOLDOWN
 } from '../net/protocol';
 import { PARAPET_BARRIER_ENTITY_NAME } from '../physics/collisionWorld';
+import { CROUCH } from '../player/crouch.ts';
 import { setLook } from '../player/playerController';
 import { box, merge, place, torus } from '../render/shapes';
 import { createSkinLibrary } from '../render/skinDisc';
@@ -177,6 +179,10 @@ export const createMatch = ({
         () => roster.get('local')?.colour ?? colourFor('local')
     );
     let netState: NetState = 'offline';
+    let serverCrouchV1 = false;
+    let localCrouched = false;
+    let restorePosture: (crouched: boolean) => void = () => undefined;
+    let crouchCameraOffset = 0;
     let alive = true;
     let deadUntil = 0;
     let chargingSince: number | null = null;
@@ -635,7 +641,7 @@ export const createMatch = ({
         beats: Set<string>;
     } | null = null;
     window.addEventListener('keydown', (event) => {
-        if (event.code === 'Space' && cutsceneRun && !cutsceneRun.skipped) {
+        if (input.matchesKey(event, 'skipCutscene') && cutsceneRun && !cutsceneRun.skipped) {
             cutsceneRun.skipped = true;
             if (cutsceneRun.moment) {
                 if (net.state === 'online') net.skipMomentCutscene(cutsceneRun.moment.id);
@@ -712,6 +718,7 @@ export const createMatch = ({
     let inputPaused = false;
     let poses = new Map<string, PlayerPose>();
     const targets = new Map<string, V3>();
+    const crouchedTargets = new Set<string>();
     /** Recent eliminations per killer, for streak announcements. */
     const streaks = new Map<string, { count: number; at: number }>();
     // Feel: FOV punch on release, damped local camera impulses, in-hand disc that winds up and snaps forward.
@@ -1008,6 +1015,7 @@ export const createMatch = ({
             pitch: round((Math.asin(Math.max(-1, Math.min(1, f.y))) * 180) / Math.PI)
         };
         if (aim > 0.01) result.aim = Math.round(aim * 100) / 100;
+        if (localCrouched && (netState !== 'online' || serverCrouchV1)) result.crouched = true;
         return result;
     };
 
@@ -1077,7 +1085,7 @@ export const createMatch = ({
         ui.spectate({ reason: null, watching: target.name });
     };
     window.addEventListener('mousedown', (event) => {
-        if (!globalFinisher && spectating && event.button === 0) watchIndex++;
+        if (!globalFinisher && spectating && input.matchesMouse(event, 'spectateNext')) watchIndex++;
     });
     /** The last minute of a round (or the lab's final-arena override). */
     const inFinalMinute = () =>
@@ -1134,9 +1142,7 @@ export const createMatch = ({
 
     window.addEventListener('keydown', (event) => {
         if (!spectating || !inFinalMinute() || event.repeat) return;
-        const kind = ({ Digit1: 'cheer', Digit2: 'stick', Digit3: 'confetti' } as const)[
-            event.code as 'Digit1' | 'Digit2' | 'Digit3'
-        ];
+        const kind = input.matchesKey(event, 'emote1') ? 'cheer' : input.matchesKey(event, 'emote2') ? 'stick' : input.matchesKey(event, 'emote3') ? 'confetti' : null;
         if (!kind || performance.now() - lastEmoteAt < 1000) return;
         lastEmoteAt = performance.now();
         if (net.state === 'online') net.emote(kind);
@@ -1172,6 +1178,7 @@ export const createMatch = ({
                 ui.notify('登录已失效，刷新页面后重新登录即可继续联机');
             }
             if (state !== 'online') {
+                serverCrouchV1 = false;
                 currentMomentCutscene = null;
                 if (matchPausedAt !== null) resumeMatchClock(Date.now());
                 globalFinisher = null;
@@ -1199,6 +1206,16 @@ export const createMatch = ({
             refreshCount();
         },
         welcome: (me, players, extra) => {
+            serverCrouchV1 = extra.crouchV1 === true;
+            if (extra.ownPose) {
+                player.rigidbody!.teleport(...extra.ownPose.p, 0, extra.ownPose.yaw, 0);
+                player.rigidbody!.linearVelocity = Vec3.ZERO;
+                player.rigidbody!.angularVelocity = Vec3.ZERO;
+                setLook(player, extra.ownPose.pitch, extra.ownPose.yaw);
+                teleportPending = true;
+            }
+            localCrouched = !!(me.alive && !me.spectating && serverCrouchV1 && extra.ownPose?.crouched);
+            if (extra.ownPose) restorePosture(localCrouched);
             matchClockOffset = Math.max(0, realRoomNow() - extra.matchTime);
             matchPausedAt = null;
             welcomeSyncPending = true;
@@ -2017,10 +2034,8 @@ export const createMatch = ({
         applyWorldItems(worldItems);
         skillGained(item.kind);
     };
-    window.addEventListener('mousedown', (event) => {
-        // Right button while charging or aiming: stand down without throwing.
-        if (event.button === 2 && chargingSince !== null) return cancelCharge();
-        if (event.button !== 0 || !locked() || !alive || !started || inputPaused) return;
+    const beginCharge = () => {
+        if (!locked() || !alive || !started || inputPaused) return;
         if (performance.now() < detainedUntil) return; // standing still for 纪老师
         if (!hasDisc()) {
             ui.notify('没有飞盘了：去捡回扔出去的飞盘，或到体育组办公室领取');
@@ -2030,19 +2045,30 @@ export const createMatch = ({
         aimSoundPlayed = false;
         aimReadyPlayed = false;
         inspectSince = null; // attacking cancels an inspect
+    };
+    const releaseCharge = () => {
+        if (chargingSince === null) return;
+        const held = (performance.now() - chargingSince) / 1000;
+        cancelCharge();
+        if (!locked()) return;
+        if (aimReady(held)) throwDisc(SNIPER.speed, true);
+        else throwDisc(chargeSpeed(held));
+    };
+    window.addEventListener('mousedown', (event) => {
+        // Right button while charging or aiming: stand down without throwing.
+        if (input.matchesMouse(event, 'cancelThrow') && chargingSince !== null) return cancelCharge();
+        if (input.matchesMouse(event, 'throw')) beginCharge();
+    });
+    window.addEventListener('keydown', (event) => {
+        if (input.matchesKey(event, 'throw') && !event.repeat) beginCharge();
     });
     window.addEventListener('contextmenu', (event) => {
         if (locked()) event.preventDefault();
     });
     window.addEventListener('mouseup', (event) => {
-        if (event.button !== 0 || chargingSince === null) return;
-        const held = (performance.now() - chargingSince) / 1000;
-        cancelCharge();
-        if (!locked()) return;
-        // Fully aimed: a sniper throw; otherwise the usual charged throw.
-        if (aimReady(held)) throwDisc(SNIPER.speed, true);
-        else throwDisc(chargeSpeed(held));
+        if (input.matchesMouse(event, 'throw')) releaseCharge();
     });
+    window.addEventListener('keyup', (event) => { if (input.matchesKey(event, 'throw')) releaseCharge(); });
     const startInspect = () => {
         if (globalFinisher || executionView.hasActor(selfId())) return false;
         if (!started || !alive || inputPaused || chargingSince !== null || inspectSince !== null) return false;
@@ -2209,13 +2235,13 @@ export const createMatch = ({
             if (event.code !== 'Escape') event.preventDefault();
             return;
         }
-        if (event.code === 'KeyV' && !event.repeat && locked()) {
+        if (input.matchesKey(event, 'execute') && !event.repeat && locked()) {
             event.preventDefault();
             beginFinisherHold();
         }
-        if (event.code === 'KeyE' && !event.repeat && locked()) interactNearby();
+        if (input.matchesKey(event, 'interact') && !event.repeat && locked()) interactNearby();
         if (
-            event.code === 'KeyE' &&
+            input.matchesKey(event, 'interact') &&
             !event.repeat &&
             locked() &&
             alive &&
@@ -2236,21 +2262,20 @@ export const createMatch = ({
                 } else power = { pulledAt: now };
             }
         }
-        if (event.code === 'Tab' && locked()) {
+        if (input.matchesKey(event, 'scoreboard') && locked()) {
             event.preventDefault();
             showBoard(true);
         }
         // F: inspect the disc in hand (only when it is in hand and not winding up).
-        if (event.code === 'KeyF' && !event.repeat && locked()) startInspect();
-        // Q while charging (or aiming): put the throw away.
-        if (event.code === 'KeyQ' && chargingSince !== null) {
+        if (input.matchesKey(event, 'inspect') && !event.repeat && locked()) startInspect();
+        if (input.matchesKey(event, 'cancelThrow') && chargingSince !== null) {
             cancelCharge();
             ui.popup('已取消投掷', 'hit');
         }
     });
     window.addEventListener('keyup', (event) => {
-        if (event.code === 'Tab') showBoard(false);
-        if (event.code === 'KeyV' && finisherHoldStartedAt !== null) completeFinisherHold();
+        if (input.matchesKey(event, 'scoreboard')) showBoard(false);
+        if (input.matchesKey(event, 'execute') && finisherHoldStartedAt !== null) completeFinisherHold();
     });
     window.addEventListener('blur', () => {
         cancelFinisherHold();
@@ -2337,11 +2362,13 @@ export const createMatch = ({
             script.speedGround =
                 walkSpeed *
                 (1 - (1 - SCOPE.moveScale) * aim) *
-                (holdingGold() ? ROUND.goldSpeedFactor : 1);
+                (holdingGold() ? ROUND.goldSpeedFactor : 1) *
+                (localCrouched ? 0.55 : 1);
         }
         ui.scope(aim, ready);
         const [impulseX, impulseY] = cameraImpulses.update(deltaTime);
-        camera.setLocalPosition(eyeOffset.x + impulseX, eyeOffset.y + impulseY, eyeOffset.z);
+        crouchCameraOffset += ((localCrouched ? CROUCH.standingEye - CROUCH.crouchingEye : 0) - crouchCameraOffset) * (1 - Math.exp(-deltaTime / CROUCH.transitionSeconds));
+        camera.setLocalPosition(eyeOffset.x + impulseX, eyeOffset.y - crouchCameraOffset + impulseY, eyeOffset.z);
         // In-hand disc: visible when ready, pulled back while charging, gone during the cooldown after a throw.
         const sinceThrow = (now - lastThrowAt) / 1000;
         const inHand = Math.min(1, Math.max(0, (sinceThrow - THROW_COOLDOWN * 0.5) / (THROW_COOLDOWN * 0.5)));
@@ -3409,14 +3436,18 @@ export const createMatch = ({
             updateRound(now);
             effects.update(now < hitStopUntil ? 0 : deltaTime);
             targets.clear();
-            for (const [id, each] of poses) targets.set(id, each.p);
+            crouchedTargets.clear();
+            for (const [id, each] of poses) {
+                targets.set(id, each.p);
+                if (each.crouched) crouchedTargets.add(id);
+            }
             discs.update(
                 deltaTime,
                 targets,
                 (throwId, target, contact: DiscContact, _velocity, bounces) => {
                     const { at } = contact;
                     if (audioLab && target === labTargetId) {
-                        const head = isHeadHit(at[1], labTargetPose.p[1]);
+                        const head = isHeadHit(at[1], labTargetPose.p[1], labTargetPose.crouched === true);
                         const frcHit = localFrcThrows.delete(throwId);
                         simulateDummyHit(head ? 'head' : frcHit ? 'frc' : 'body');
                         return;
@@ -3453,7 +3484,8 @@ export const createMatch = ({
                     }
                 },
                 [camera.getPosition().x, camera.getPosition().y, camera.getPosition().z],
-                (at, speed) => sound.flyby(at, speed)
+                (at, speed) => sound.flyby(at, speed),
+                crouchedTargets
             );
             for (const [throwId, expiresAt] of pendingHitClaims) {
                 if (now <= expiresAt) continue;
@@ -3476,6 +3508,21 @@ export const createMatch = ({
         },
         get alive() {
             return alive;
+        },
+        get spectating() {
+            return spectating;
+        },
+        get crouchAllowed() {
+            return netState === 'offline' || netState === 'rejected' || (netState === 'online' && serverCrouchV1);
+        },
+        get crouchRestricted() {
+            return executionFrozen || inputPaused || performance.now() < detainedUntil || spectating;
+        },
+        setCrouched(value: boolean) {
+            localCrouched = value && (netState !== 'online' || serverCrouchV1);
+        },
+        setCrouchRestore(callback: (crouched: boolean) => void) {
+            restorePosture = callback;
         },
         get executing() {
             return globalFinisher !== null || executionView.hasActor(selfId());

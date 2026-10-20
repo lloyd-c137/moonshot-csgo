@@ -105,6 +105,26 @@ test('the remapped controller input source still moves the player', async ({ pag
     expect(remapEnd[2]).toBeLessThan(remapStart[2] - 0.5);
 });
 
+test('one jump press releases cleanly and does not make the player auto-bounce', async ({ page }) => {
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    await advance(page, 500);
+    const groundY = (await page.evaluate(() => window.__MOONSHOT__!.position()))[1];
+
+    await page.keyboard.down('Space');
+    await advance(page, 100);
+    await page.keyboard.up('Space');
+    await advance(page, 1_000);
+    const lateHeights: number[] = [];
+    for (let i = 0; i < 12; i++) {
+        await advance(page, 100);
+        lateHeights.push((await page.evaluate(() => window.__MOONSHOT__!.position()))[1]);
+    }
+
+    expect(Math.max(...lateHeights)).toBeLessThan(groundY + 0.15);
+    expect(Math.min(...lateHeights)).toBeGreaterThan(groundY - 0.15);
+});
+
 test('FPS preference and crouch keybinding update immediately and persist', async ({ page }) => {
     await loadSimulated(page);
     await enterAtSpawn(page);

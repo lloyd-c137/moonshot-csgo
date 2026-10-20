@@ -14,6 +14,8 @@ export type GoldDropResolution = {
 const HORIZONTAL_SUPPORT_RADIUS = 0.42;
 const VERTICAL_SUPPORT_RADIUS = 0.72;
 const MAX_RELOCATION_DISTANCE = 2.4;
+// A drop may happen while the holder is briefly airborne, but must never snap through a floor to another level.
+const MAX_RELOCATION_VERTICAL_DISTANCE = 2.25;
 
 /**
  * Resolve a drop to a previously audited capsule-centre anchor. Y participates in selection, so stacked floors,
@@ -49,9 +51,13 @@ export const resolveGoldDrop = (
         // Only relocate a bad/stale position if a known safe anchor is close; otherwise use the audited spawn.
         const nearby = surfaces.reduce<GoldDropAnchor | null>((best, candidate) => {
             const distance = Math.hypot(candidate[0] - origin[0], candidate[2] - origin[2]);
-            if (distance > MAX_RELOCATION_DISTANCE) return best;
-            const bestDistance = best ? Math.hypot(best[0] - origin[0], best[2] - origin[2]) : Infinity;
-            return distance < bestDistance ? candidate : best;
+            const vertical = Math.abs(candidate[1] - origin[1]);
+            if (distance > MAX_RELOCATION_DISTANCE || vertical > MAX_RELOCATION_VERTICAL_DISTANCE) return best;
+            const score = distance + vertical * 1.5;
+            const bestScore = best
+                ? Math.hypot(best[0] - origin[0], best[2] - origin[2]) + Math.abs(best[1] - origin[1]) * 1.5
+                : Infinity;
+            return score < bestScore ? candidate : best;
         }, null);
         if (nearby) return { at: [nearby[0], nearby[1], nearby[2]], source: 'nearby-surface', relocated: true };
     }

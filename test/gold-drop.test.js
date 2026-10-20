@@ -24,10 +24,25 @@ test('drop stays on the holder’s multi-level support instead of snapping throu
 
 test('unsupported stale position relocates to a nearby audited anchor and missing pose uses safe spawn', () => {
     const sample = GOLD_DROP_SURFACES[0];
-    const local = resolveGoldDrop({ p: [sample[0] + 0.2, sample[1] + 2.5, sample[2]], yaw: 0, pitch: 0 });
+    const local = resolveGoldDrop({ p: [sample[0] + 0.2, sample[1] + 1.5, sample[2]], yaw: 0, pitch: 0 });
     assert.equal(local.source, 'nearby-surface');
     assert.equal(local.relocated, true);
     const fallback = resolveGoldDrop(null, []);
     assert.equal(fallback.source, 'fallback-spawn');
     assert.deepEqual(fallback.at, [-8.7, 0.92, 46.3]);
+});
+
+test('unsupported airborne drop prefers its current level and never relocates through a lower floor', () => {
+    const surfaces = [
+        [0, 0.92, 0],
+        [2, 5.92, 0]
+    ];
+    const resolved = resolveGoldDrop({ p: [0, 4, 0], yaw: 0, pitch: 0 }, surfaces);
+    assert.deepEqual(resolved.at, surfaces[1]);
+    assert.equal(resolved.source, 'nearby-surface');
+    assert.equal(resolved.relocated, true);
+
+    const noReachableLevel = resolveGoldDrop({ p: [0, 8.5, 0], yaw: 0, pitch: 0 }, surfaces);
+    assert.equal(noReachableLevel.source, 'fallback-spawn');
+    assert.deepEqual(noReachableLevel.at, [-8.7, 0.92, 46.3]);
 });

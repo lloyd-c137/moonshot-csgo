@@ -112,6 +112,14 @@ export async function handleApi(
             ? json({ ok: true })
             : json({ error: '当前没有进行中的回合' }, 409);
     }
+    if (url.pathname === '/api/__test/george-streak' && request.method === 'POST') {
+        if (!combatTestEnabled) return json({ error: 'not found' }, 404);
+        const account = accounts.resolve(bearer, now);
+        if (!account) return json({ error: '登录已过期，请重新登录' }, 401);
+        return room.setTestGeorgeStreakAtNine(account.name, now)
+            ? json({ ok: true })
+            : json({ error: '玩家当前不能准备 George 测试' }, 409);
+    }
     if (url.pathname === '/api/__test/points' && request.method === 'POST') {
         // Local browser tests only (COMBAT_TEST=1): grant skin points to the signed-in account.
         if (!combatTestEnabled) return json({ error: 'not found' }, 404);

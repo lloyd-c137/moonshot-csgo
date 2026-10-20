@@ -720,6 +720,15 @@ export class Room {
         const player = [...this.players.values()].find((candidate) => candidate.accountName === accountName);
         if (!player || player.phase !== 'playing' || !player.alive || player.spectating || this.round?.phase !== 'playing' || player.georgeIssued)
             return false;
+        // Re-arm an aborted George state only for the authenticated local COMBAT_TEST fixture.
+        if (this.georgeReboot.phase === 'resolved' && this.georgeReboot.outcome === 'aborted') {
+            this.georgeReboot = { phase: 'idle' };
+            this.georgeRequests.clear();
+            this.georgeLoginAt.clear();
+            this.georgeCodes.clear();
+            this.out.all({ type: 'georgeReboot', state: this.georgeReboot });
+        }
+        if (this.georgeReboot.phase !== 'idle') return false;
         player.georgeStreak = 9;
         player.georgeCredential = null;
         this.out.to(player.id, { type: 'georgeProgress', playerId: player.id, progress: this.georgeProgress(player) });

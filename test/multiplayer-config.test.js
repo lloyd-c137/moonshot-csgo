@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { multiplayerUrl } from '../src/config/multiplayer.ts';
-import { apiBase } from '../src/net/auth.ts';
+import { apiBase, apiUrl } from '../src/net/auth.ts';
 
 test('production account and room traffic use the Pages origin', () => {
     const room = multiplayerUrl('', true, 'moonshot-csgo.pages.dev');
@@ -17,4 +17,10 @@ test('local previews remain offline unless a local room is explicitly supplied',
         multiplayerUrl('?server=ws://127.0.0.1:8787/ws', false, 'localhost'),
         'ws://127.0.0.1:8787/ws'
     );
+});
+
+test('test-only room selectors are preserved for the corresponding API namespace', () => {
+    const base = apiBase('ws://127.0.0.1:8787/ws?testRoom=george-a');
+    assert.equal(base, 'http://127.0.0.1:8787?testRoom=george-a');
+    assert.equal(apiUrl(base, '/api/signin'), 'http://127.0.0.1:8787/api/signin?testRoom=george-a');
 });

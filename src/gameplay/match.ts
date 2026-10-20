@@ -9,10 +9,11 @@ import { CHARACTER_SOURCE_HEIGHT } from '../characters/CharacterAssetLoader';
 import { PLAYER, SAFE_SPAWN } from '../config/gameplay';
 import { ITEM_RULES, ITEM_SPAWNS, NPC_SPAWNS } from '../config/gameplayItems';
 import type { ItemKind } from '../config/gameplayItems';
+import { GEORGE_TERMINAL } from '../config/george';
 import { skinById } from '../config/skins';
 import { SPAWN_POINTS } from '../config/spawns';
 import { BREAKER_CABINET, SPECIAL_LOCATIONS } from '../config/specialLocations';
-import { apiBase } from '../net/auth';
+import { apiBase, apiUrl } from '../net/auth';
 import type { Auth } from '../net/auth';
 import { createNetClient } from '../net/client';
 import type { NetState } from '../net/client';
@@ -34,11 +35,12 @@ import { setLook } from '../player/playerController';
 import { box, merge, place, torus } from '../render/shapes';
 import { createSkinLibrary } from '../render/skinDisc';
 import type { AudioLabUi } from '../ui/audioLab';
+import { createGeorgeView } from '../ui/george';
 import { killIcons } from '../ui/killFeed';
 import type { EventIcon, Ui } from '../ui/shell';
 import type { RestroomMirrorMount } from '../world/dressing';
-import type { SeatSlot } from '../world/stadiumLayout';
 import { fanSectionFocus, ringRadii } from '../world/stadiumLayout';
+import type { SeatSlot } from '../world/stadiumLayout';
 
 import { createAvatars } from './avatars';
 import { createBreakerView } from './breakerView';
@@ -66,6 +68,7 @@ import type { GlobalFinisher } from './finisher/FinisherTypes';
 import { GLOBAL_FINISHER_CONFIG } from './finisher/FinisherTypes';
 import type { DiscContact, V3 } from './frisbee';
 import { chargeSpeed, DISC, launchNormal, THROW } from './frisbee';
+import { createGeorgeServerView } from './george/serverView';
 import { createGold, GOLD_COLOUR } from './gold';
 import { createGroundDiscs } from './groundDiscs';
 import { guardAt } from './guard';
@@ -336,7 +339,7 @@ export const createMatch = ({
         const base = import.meta.env.DEV ? apiBase(url) : null;
         if (!base || !auth.token) return false;
         try {
-            const response = await fetch(`${base}/api/__test/round-clock`, {
+            const response = await fetch(apiUrl(base, '/api/__test/round-clock'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json', authorization: `Bearer ${auth.token}` },
                 body: JSON.stringify({ remainingSeconds })
@@ -487,6 +490,7 @@ export const createMatch = ({
     let viewmodelSkin: 'normal' | 'frc' | 'gold' = 'normal';
     const guard = createGuard(app, camera, ui.nameTagLayer(), characters);
     const breakerView = createBreakerView(app);
+    const georgeServerView = createGeorgeServerView(app);
     let power: PowerState = { pulledAt: null };
     let wasPowerOut = false;
     let teacherGraceUntil = 0;
@@ -578,7 +582,7 @@ export const createMatch = ({
     /** Test hook: an MVP sequence starting now for a stand-in result. */
     let labMvp: { at: number; entry: PlayerSummary; outcome: RoundOutcome } | null = null;
     const mvpResultLabel = (outcome: RoundOutcome) =>
-        outcome === 'golden-disc' ? '金飞盘胜利' : outcome === 'last-survivor' ? '最后的幸存者' : '本局最高分';
+        outcome === 'george-reboot' ? 'GEORGE PROTOCOL' : outcome === 'golden-disc' ? '金飞盘胜利' : outcome === 'last-survivor' ? '最后的幸存者' : '本局最高分';
     const startMvp = (at: number, entry: PlayerSummary, outcome: RoundOutcome) => {
         mvpRun = { at };
         const url = entry.avatarId && entry.avatarVersion ? auth.avatarUrl(entry.avatarId, entry.avatarVersion) : null;
@@ -1159,6 +1163,7 @@ export const createMatch = ({
         for (const [id, expiry] of pendingHitClaims) pendingHitClaims.set(id, expiry + delta);
     };
 
+    let georgeUi: ReturnType<typeof createGeorgeView> | null = null;
     const net = createNetClient(url, {
         state: (state, detail) => {
             netState = state;
@@ -1214,6 +1219,12 @@ export const createMatch = ({
             power = extra.power;
             currentMomentCutscene = extra.momentCutscene;
             applyWorldItems(extra.items);
+            georgeUi?.renderProgress(extra.george);
+            georgeUi?.credential(extra.georgeCredential);
+            georgeUi?.reboot(extra.georgeReboot);
+            if (extra.georgeReboot.phase === 'shutdown') georgeUi?.shutdown(extra.georgeReboot.initiatorId, me.id);
+            if (extra.round.phase === 'ended' && extra.round.outcome === 'george-reboot')
+                georgeUi?.resultScreen(extra.round.winnerId === me.id);
             Object.assign(localAbilities, {
                 revive: me.hasReviveArmor === true, frc: me.hasFrc === true, eye: me.hasEye === true,
                 reviveTaken: me.reviveTaken === true, reviveUsed: me.reviveTaken === true,
@@ -1455,6 +1466,7 @@ export const createMatch = ({
             }
             const entry = roster.get(target);
             if (entry) Object.assign(entry, { hp: targetHp, alive: !out });
+            if (target === selfId() && out) georgeUi?.closeTerminal?.();
             if (shot?.counter !== undefined && by === selfId()) refreshLocalSkin();
             if (!presentation.accepted) return;
             if (by === selfId() && throwId !== undefined) {
@@ -1694,7 +1706,12 @@ export const createMatch = ({
                 const result = feedback.submit({ id: `round:${next.nextAt}`, kind: 'round-result' }, performance.now());
                 const mine = next.winnerId === selfId();
                 if (result.accepted) sound.roundEnd(mine, next.outcome);
+                if (next.outcome === 'george-reboot') georgeUi?.resultScreen(mine);
             } else if (was?.phase === 'ended') {
+                georgeUi?.reboot({ phase: 'idle' });
+                georgeUi?.credential(null);
+                georgeUi?.renderProgress({ streak: 0, required: 10, unlocked: false, issuedThisRound: false, credentialAvailable: false });
+                georgeUi?.restoreControls?.();
                 sound.roundStart();
                 ui.notify('新一局开始！争夺金飞盘');
             }
@@ -1798,6 +1815,43 @@ export const createMatch = ({
             ui.feed(`已复活 · ${SPAWN_PROTECTION} 秒保护`, 'mine');
             net.respawned(pose());
             refreshBoard();
+        },
+        georgeProgress: (playerId, progress) => { if (playerId === selfId()) georgeUi?.renderProgress(progress); },
+        georgeCredential: (credential) => georgeUi?.credential(credential),
+        georgeResult: (_requestId, result, reason) => georgeUi?.result(result, reason),
+        georgeReboot: (state) => georgeUi?.reboot(state),
+        georgeSecurityAlert: () => {
+            georgeUi?.securityAlert();
+            sound.blackout();
+            ui.broadcastText('GEORGE PROTOCOL · SERVER CREDENTIAL LEAK DETECTED');
+        },
+        georgeShutdown: (_id, initiatorId, _initiatorName, _resolvedAt) => {
+            cancelCharge();
+            inputPaused = true;
+            const script = controller();
+            if (script) script.enabled = false;
+            sound.blackout();
+            document.exitPointerLock?.();
+            georgeUi?.shutdown(initiatorId, selfId());
+        }
+    });
+    georgeUi = createGeorgeView({
+        login: (requestId, code) => net.georgeLogin(requestId, code),
+        start: (requestId) => net.georgeStart(requestId),
+        disarm: (requestId) => net.georgeBeginDisarm(requestId),
+        cancelDisarm: (requestId) => net.georgeCancelDisarm(requestId),
+        focus: (active) => {
+            if (active) {
+                cancelCharge();
+                document.exitPointerLock?.();
+                inputPaused = true;
+                const script = controller();
+                if (script) script.enabled = false;
+            } else if (inputPaused && alive && !spectating && !executionFrozen && document.pointerLockElement === canvas) {
+                inputPaused = false;
+                const script = controller();
+                if (script) script.enabled = true;
+            }
         }
     });
 
@@ -2210,6 +2264,12 @@ export const createMatch = ({
             if (event.code !== 'Escape') event.preventDefault();
             return;
         }
+        if (event.code === 'KeyE' && !event.repeat && locked() && georgeUi?.near) {
+            event.preventDefault();
+            if (georgeUi.rebootState.phase === 'pending') georgeUi.beginDisarm();
+            else georgeUi.openTerminal();
+            return;
+        }
         if (event.code === 'KeyV' && !event.repeat && locked()) {
             event.preventDefault();
             beginFinisherHold();
@@ -2250,11 +2310,15 @@ export const createMatch = ({
         }
     });
     window.addEventListener('keyup', (event) => {
+        if (event.code === 'KeyE' && georgeUi?.disarming) georgeUi.cancelDisarm();
+    });
+    window.addEventListener('keyup', (event) => {
         if (event.code === 'Tab') showBoard(false);
         if (event.code === 'KeyV' && finisherHoldStartedAt !== null) completeFinisherHold();
     });
     window.addEventListener('blur', () => {
         cancelFinisherHold();
+        georgeUi?.cancelDisarm();
     });
 
     /** Combat feel 3.0, per frame: aim state, elimination marks and the final-kill slow motion. */
@@ -2642,9 +2706,20 @@ export const createMatch = ({
                 sound.pickup();
             }
         }
+        const georgePosition = player.getPosition();
+        const georgeNearby = started && playerPhase !== 'lobby' && alive && !spectating &&
+            Math.hypot(georgePosition.x - GEORGE_TERMINAL.x, georgePosition.z - GEORGE_TERMINAL.z) <= GEORGE_TERMINAL.radius &&
+            Math.abs(georgePosition.y - GEORGE_TERMINAL.y) <= 1.6;
+        georgeUi?.setNearby(georgeNearby, selfId());
+        georgeUi?.tick(roomNow());
+        georgeServerView.update(georgeUi?.rebootState ?? { phase: 'idle' }, georgeUi?.credentialAvailable ?? false);
         const near = started && playerPhase !== 'lobby' && alive && !spectating ? nearestInteraction() : null;
         ui.interaction(
-            near
+            georgeNearby && georgeUi?.rebootState.phase === 'pending'
+                ? georgeUi.rebootState.initiatorId === selfId() ? null : 'HOLD E · ABORT SERVER REBOOT'
+                : georgeNearby && georgeUi?.rebootState.phase === 'idle'
+                  ? georgeUi.terminalOpen ? null : 'E · ACCESS GEORGE’S SERVER'
+                  : near
                   ? (() => {
                         const talk = near.id.startsWith('coach-') || near.id === 'mark';
                         const skill = activeLocalSkill();
@@ -3503,6 +3578,9 @@ export const createMatch = ({
         markers: mapMarkers,
         get online() {
             return net.state === 'online';
+        },
+        get georgeTerminalOpen() {
+            return georgeUi?.terminalOpen ?? false;
         },
         get phase() {
             return playerPhase;

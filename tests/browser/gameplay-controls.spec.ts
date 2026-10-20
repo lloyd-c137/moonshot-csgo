@@ -36,6 +36,31 @@ test('FPS HUD reports a real frame rate while the tab is visible', async ({ page
     await page.screenshot({ path: 'test-results/gameplay-controls-fps.png' });
 });
 
+test('the remapped controller input source still moves the player', async ({ page }) => {
+    await loadSimulated(page);
+    await enterAtSpawn(page);
+    const before = await page.evaluate(() => window.__MOONSHOT__!.position());
+    await page.keyboard.down('w');
+    await advance(page, 500);
+    await page.keyboard.up('w');
+    const after = await page.evaluate(() => window.__MOONSHOT__!.position());
+    expect(after[2]).toBeLessThan(before[2] - 0.5);
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: '按键' }).click();
+    await page.getByRole('button', { name: '前进，当前 W，点击修改' }).click();
+    await page.keyboard.press('ArrowUp');
+    await page.getByRole('tab', { name: '游戏' }).click();
+    await page.getByRole('button', { name: '继续游戏' }).click();
+    await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
+    const remapStart = await page.evaluate(() => window.__MOONSHOT__!.position());
+    await page.keyboard.down('ArrowUp');
+    await advance(page, 500);
+    await page.keyboard.up('ArrowUp');
+    const remapEnd = await page.evaluate(() => window.__MOONSHOT__!.position());
+    expect(remapEnd[2]).toBeLessThan(remapStart[2] - 0.5);
+});
+
 test('FPS preference and crouch keybinding update immediately and persist', async ({ page }) => {
     await loadSimulated(page);
     await enterAtSpawn(page);

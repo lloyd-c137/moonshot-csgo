@@ -29,3 +29,15 @@ The test harness now owns its Vite/Worker ports and uses a fresh per-run Wrangle
 ## NOT MEASURED / NOT PASS
 
 No production-network or real-player evidence, no multi-floor server collision/recovery proof, no clear rendered crouch animation review, no old/new protocol matrix, and no full multiplayer browser suite result are available. Main-thread SQLite is still synchronous; this run did not establish it as a source of a user-visible stall, and no database worker migration was performed. An existing Ammo.js scaled triangle mesh capability warning appeared in browser runs. These omissions prevent a production-ready PASS.
+
+## Follow-up verification — 2026-10-20
+
+Commit `0d7100a` fixes authoritative respawn publication and stabilizes browser test setup. After respawn the room restores the selected spawn pose and pose history before emitting the respawn event, so peers receive the player in snapshots immediately instead of waiting for a client acknowledgement. The browser account scenario now waits for the remote pose to converge before throwing.
+
+- Lint, client/Worker/Node typecheck, Cloudflare build, and `npm run campus:build`: PASS.
+- `node --test test/*.test.js`: PASS, including Node HTTP/API, account persistence, and local real-WebSocket slow-client isolation.
+- Focused Chromium: account/combat flow passed; Full/Delta resync, remote crouch, and final entrance ceremony passed (3/3); global finisher and power-room flows passed (3/3 after correcting the hidden-button startup assumption).
+- The campus power-room test first exposed that the shared browser helper assumed the “continue” button must be visible even when the app was already ready. The helper now waits for either the visible button or ready state; the failing test passed on rerun.
+- GitHub Actions for `0d7100a` was in progress when this report was updated: [run 39360362105](https://github.com/lloyd-c137/moonshot-csgo/actions/runs/39360362105). This is not a CI PASS.
+
+The safe multi-level gold-drop resolver and the broader release checklist remain incomplete. No production service or data was changed; production deployment remains blocked by those documented gates.

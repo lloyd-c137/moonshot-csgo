@@ -1294,6 +1294,7 @@ export const createMatch = ({
             const entry = roster.get(id);
             if (entry) entry.phase = phase;
             if (id === selfId()) {
+                if (playerPhase === 'lobby' && phase === 'playing') sound.gatePass();
                 playerPhase = phase;
                 if (phase === 'playing') ui.notify('已通过闸机 · 加入本局');
             }
@@ -3293,6 +3294,7 @@ export const createMatch = ({
                 net.joinRound();
             } else {
                 playerPhase = 'playing';
+                sound.gatePass();
                 if (audioLab && !roundState) beginLocalTestRound();
             }
         },

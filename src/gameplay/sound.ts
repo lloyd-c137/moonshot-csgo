@@ -278,7 +278,8 @@ export const createSound = () => {
         name.endsWith('-theme') || MATCH_PLAYLIST_AUDIO.some((track) => track.name === name);
     const optionalAudio = [
         { name: 'defeat', url: '/assets/audio/defeat.mp3' },
-        { name: 'legacy-kill', url: '/assets/audio/kill.mp3' }
+        { name: 'legacy-kill', url: '/assets/audio/kill.mp3' },
+        { name: 'gate-pass', url: '/assets/audio/gate-pass.m4a' }
     ];
 
     // Browsers only let audio start (or restart after the tab was hidden, the device changed or Safari
@@ -1011,7 +1012,18 @@ export const createSound = () => {
         join: () =>
             play((audio, now) => {
                 tone(audio, bus(), 'sine', 880, 880, now, 0.08, 0.06);
-            }, 'ui')
+            }, 'ui'),
+        /** Play the supplied gate chime only after the server confirms entry (or offline entry succeeds). */
+        gatePass: () =>
+            play(
+                (audio, now) => {
+                    if (playClip(audio, 'gate-pass', 0.72)) return;
+                    tone(audio, bus(), 'sine', 880, 1174, now, 0.16, 0.16);
+                    tone(audio, bus(), 'sine', 1174, 1568, now + 0.13, 0.2, 0.14);
+                },
+                'ui',
+                AUDIO_PRIORITY.action
+            )
     };
 };
 

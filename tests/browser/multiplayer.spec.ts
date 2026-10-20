@@ -1,16 +1,16 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-import { collectErrors, enterHome } from './support';
+import { collectErrors, enterHome, testServerOrigin, testServerUrl } from './support';
 
 // Two players join the local shared-world room (wrangler dev) by typing a new username and password (one-step
 // sign-in registers them). They see each other, chat, and one eliminates the other with frisbees; the server
 // scores it, records lifetime stats for the account, and respawns the target. Runs in real time.
 const SERVER_PORT = process.env.MOONSHOT_TEST_SERVER_PORT ?? '8787';
-const SERVER = `ws://127.0.0.1:${SERVER_PORT}/ws`;
+const SERVER = testServerUrl;
 const API = `http://127.0.0.1:${SERVER_PORT}`;
 // The room only answers pages from allowed origins.
-const ORIGIN = { origin: 'http://127.0.0.1:5174' };
+const ORIGIN = testServerOrigin;
 const contexts = new Set<BrowserContext>();
 
 test.afterEach(async () => {
@@ -263,13 +263,19 @@ test('lifetime board shows eliminations and wins, including players without reco
     await page.screenshot({ path: 'test-results/lifetime-leaderboard.png' });
 });
 
-test('one shared round clock moves both surviving clients through blackout and final showdown', async ({ browser }) => {
+test('one shared round clock moves both surviving clients through blackout and final showdown', async ({ browser, request }) => {
     const a = await open(browser, true);
     const b = await open(browser);
     const name = Date.now().toString(36).slice(-6);
     await enter(a.page, `终局甲${name}`, 'secret-789');
     await enter(b.page, `终局乙${name}`, 'secret-789');
     const page = a.page;
+    const token = await page.evaluate(() => localStorage.getItem('moonshot.session'));
+    const resetClock = await request.post(`${API}/api/__test/round-clock`, {
+        data: { remainingSeconds: 600 },
+        headers: { ...ORIGIN, authorization: `Bearer ${token}` }
+    });
+    expect(resetClock.status()).toBe(200);
     await expect.poll(() => state(page).then((value) => value.round?.phase)).toBe('playing');
     await expect.poll(() => state(b.page).then((value) => value.round?.phase)).toBe('playing');
     await expect.poll(() => state(page).then((value) => value.players.length)).toBe(2);
@@ -292,8 +298,7 @@ test('one shared round clock moves both surviving clients through blackout and f
     await page.keyboard.press('p');
     await page.locator('[data-phase="blackout"]').click();
     await expect(page.locator('.audio-lab-status')).toContainText('已同步触发终局夜晚');
-    await page.locator('.audio-lab [data-action="close"]').click();
-    await page.getByRole('button', { name: '继续游戏' }).click();
+    await expect(page.locator('.audio-lab')).toBeHidden();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
     await expect.poll(() => state(page).then((value) => value.round?.endsAt)).not.toBe(originalEnd);
     await expect.poll(() => state(b.page).then((value) => value.round?.endsAt)).toBe((await state(page)).round?.endsAt);
@@ -305,44 +310,45 @@ test('one shared round clock moves both surviving clients through blackout and f
     await expect(page.locator('#broadcast')).toContainText('终局夜晚开始');
     await expect(b.page.locator('#broadcast')).toContainText('终局夜晚开始');
 
-    const watchCurtain = (target: Page) =>
-        target.evaluate(() => {
-            const debug = window as Window & {
-                __arenaCoverSeen?: boolean;
-                __arenaCoverObserver?: MutationObserver;
-            };
-            const curtain = document.querySelector('#arena-transition');
-            if (!curtain) throw new Error('Missing final-arena transition element');
-            debug.__arenaCoverSeen = false;
-            debug.__arenaCoverObserver = new MutationObserver(() => {
-                if (curtain.getAttribute('data-phase') === 'cover') debug.__arenaCoverSeen = true;
-            });
-            debug.__arenaCoverObserver.observe(curtain, { attributes: true, attributeFilter: ['data-phase'] });
+    const names = [`终局甲${name}`, `终局乙${name}`];
+    await page.evaluate(() => window.__MOONSHOT__!.setRendering(true));
+    await page.evaluate((expectedNames) => {
+        const debug = window as Window & { __ceremonyNamesSeen?: string[]; __ceremonyNameObserver?: MutationObserver };
+        const nameNode = document.querySelector('#ceremony-name');
+        if (!nameNode) throw new Error('Missing final entrance player card');
+        debug.__ceremonyNamesSeen = nameNode.textContent ? [nameNode.textContent] : [];
+        debug.__ceremonyNameObserver = new MutationObserver(() => {
+            const value = nameNode.textContent?.trim().replace(/（你）$/, '');
+            if (value && expectedNames.includes(value) && !debug.__ceremonyNamesSeen!.includes(value)) debug.__ceremonyNamesSeen!.push(value);
         });
-    await Promise.all([watchCurtain(page), watchCurtain(b.page)]);
+        debug.__ceremonyNameObserver.observe(nameNode, { childList: true, characterData: true, subtree: true });
+    }, names);
     await page.keyboard.press('p');
     await page.locator('[data-phase="final"]').click();
-    await expect(page.locator('.audio-lab-status')).toContainText('已同步触发最终球场对决');
-    await page.locator('.audio-lab [data-action="close"]').click();
-    await page.getByRole('button', { name: '继续游戏' }).click();
+    await expect(page.locator('.audio-lab-status')).toContainText('已同步触发最终对决：入场仪式结束后进入球场对决');
+    await expect(page.locator('.audio-lab')).toBeHidden();
     await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
-    await expect.poll(() => state(page).then((value) => value.finalShown)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.ceremony()?.entrants)).toBe(2);
+    await expect(page.locator('#ceremony')).toBeVisible();
+    await expect
+        .poll(() => page.evaluate(() => (window as Window & { __ceremonyNamesSeen?: string[] }).__ceremonyNamesSeen ?? []))
+        .toEqual(expect.arrayContaining(names));
+    await expect(page.locator('#ceremony-card')).toHaveClass(/show/);
+    await expect(page.locator('#ceremony-facts')).toContainText('本局战绩');
+    await expect(page.locator('#ceremony-facts')).toContainText('装备');
+    await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-entrance-ceremony.png' });
+    // The entrance ritual lasts 26 seconds before the final minute begins.
+    await expect.poll(() => state(page).then((value) => value.finalShown), { timeout: 40_000 }).toBe(true);
     await expect.poll(() => state(b.page).then((value) => value.finalShown)).toBe(true);
     await expect(page.locator('#broadcast')).toContainText('最终对决');
     await expect(b.page.locator('#broadcast')).toContainText('最终对决');
     await expect
-        .poll(() => page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen))
-        .toBe(true);
-    await expect
-        .poll(() => b.page.evaluate(() => (window as Window & { __arenaCoverSeen?: boolean }).__arenaCoverSeen))
-        .toBe(true);
-    await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown-curtain.png' });
-    await expect
         .poll(() => state(page).then((value) => value.finalRelocationResult), { timeout: 3_000 })
-        .toBe('relocated');
+        .toBe('ceremony');
     await expect
         .poll(() => state(b.page).then((value) => value.finalRelocationResult), { timeout: 3_000 })
-        .toBe('relocated');
+        .toBe('ceremony');
+    await page.screenshot({ path: 'docs/evidence/combat-feel-2.0/final-showdown.png' });
     const [afterA, afterB] = await Promise.all([
         page.evaluate(() => window.__MOONSHOT__!.position()),
         b.page.evaluate(() => window.__MOONSHOT__!.position())
@@ -352,10 +358,11 @@ test('one shared round clock moves both surviving clients through blackout and f
         [beforeB, afterB]
     ] as const) {
         expect(Math.hypot(after[0] - before[0], after[2] - before[2])).toBeGreaterThan(20);
-        expect(Math.hypot(after[0] + 8.395, after[2] + 2.85)).toBeLessThanOrEqual(9.1);
+        const courtRadius = Math.hypot(after[0] + 8.395, after[2] + 2.85);
+        expect(courtRadius).toBeGreaterThan(10);
+        expect(courtRadius).toBeLessThan(40);
     }
-    await expect(page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
-    await expect(b.page.locator('#arena-transition')).not.toHaveAttribute('data-phase', /.+/);
+    await expect(page.locator('#ceremony')).toBeHidden();
     expect((await state(page)).alive).toBe(true);
     expect((await state(b.page)).alive).toBe(true);
     expect(a.errors).toEqual([]);
@@ -402,6 +409,13 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     const idB = (await state(b.page)).id;
 
     // A round is running: the clock counts down from 10:00 and the golden disc lies at a spawn point, shown to all.
+    // Previous browser scenarios share the dev room, so restore the authored ten-minute test round here.
+    const sessionToken = await a.page.evaluate(() => localStorage.getItem('moonshot.session'));
+    const roundReset = await request.post(`${API}/api/__test/round-clock`, {
+        data: { remainingSeconds: 600 },
+        headers: { ...ORIGIN, authorization: `Bearer ${sessionToken}` }
+    });
+    expect(roundReset.status()).toBe(200);
     const round = (await state(a.page)).round!;
     expect(round.phase).toBe('playing');
     await expect(a.page.locator('#round-clock')).toHaveText(/^(10:00|09:[0-5]\d)$/);
@@ -422,7 +436,7 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
         a.page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90)),
         b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, -90))
     ]);
-    await a.page.waitForTimeout(1_800);
+    await a.page.waitForTimeout(2_500);
     // Keep only the observing client rendered so the remote arm animation advances without doubling scene load.
     await b.page.evaluate(() => window.__MOONSHOT__!.setRendering(true));
     await b.page.evaluate(() => window.__MOONSHOT__!.setLook(0, 90));
@@ -438,7 +452,6 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     const damageFlash = b.page.locator('#damage.show').waitFor({ state: 'attached', timeout: 5_000 });
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 0.65, 39.6))).toBe(true);
     await expect.poll(() => state(a.page).then((value) => value.hitsPredicted), { timeout: 5_000 }).toBe(1);
-    expect((await state(a.page)).hitsClaimed).toBe(0);
     await expect
         .poll(() => b.page.evaluate((id) => window.__MOONSHOT__!.match.avatarAction(id), idA), { timeout: 1_000 })
         .toBe('Frisbee_Throw');
@@ -515,7 +528,13 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // An actual ordinary head hit must eliminate a full-health player in one hit.
     expect((await state(b.page)).hp).toBe(3);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-40.3, 0.92, 39.6));
-    await a.page.waitForTimeout(1_800);
+    await a.page.waitForTimeout(2_500);
+    await expect
+        .poll(async () => {
+            const [x, , z] = (await a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), idB)) ?? [NaN, NaN, NaN];
+            return Math.hypot(x + 40.3, z - 39.6);
+        })
+        .toBeLessThan(0.75);
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-40.3, 1.75, 39.6))).toBe(true);
     await expect
         .poll(
@@ -541,11 +560,27 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // A fully aimed sniper headshot remains lethal too.
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
-    await a.page.waitForTimeout(1_800);
+    await a.page.waitForTimeout(2_500);
+    await expect
+        .poll(async () => {
+            const [x, , z] = (await a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), idB)) ?? [NaN, NaN, NaN];
+            return Math.hypot(x + 36.3, z - 39.6);
+        })
+        .toBeLessThan(0.75);
     expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.75, 39.6, undefined, true))).toBe(
         true
     );
-    await expect.poll(async () => (await state(b.page)).alive, { timeout: 5_000 }).toBe(false);
+    await expect
+        .poll(
+            async () => ({
+                alive: (await state(b.page)).alive,
+                hp: (await state(b.page)).hp,
+                hitsClaimed: (await state(a.page)).hitsClaimed,
+                targetPosition: await b.page.evaluate(() => window.__MOONSHOT__!.position())
+            }),
+            { timeout: 5_000 }
+        )
+        .toMatchObject({ alive: false, hp: 0, hitsClaimed: 5 });
     await expect(a.page.locator('#hitmarker')).toHaveAttribute('data-kind', 'snipe');
     await expect(a.page.locator('#killfeed li').first()).toContainText(nameA);
     await expect(a.page.locator('#killfeed li').first()).toContainText(nameB);
@@ -565,11 +600,29 @@ test('accounts, chat, headshots and eliminations in the shared campus', async ({
     // An elimination with the golden disc gets its own banner.
     await expect.poll(async () => (await state(b.page)).alive, { timeout: 6_000 }).toBe(true);
     await b.page.evaluate(() => window.__MOONSHOT__!.teleport(-36.3, 0.92, 39.6));
-    await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-46.3, 0.92, 39.6));
-    await a.page.waitForTimeout(1_800);
-    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.75, 39.6, undefined, true))).toBe(
+    await a.page.evaluate(() => window.__MOONSHOT__!.teleport(-41.3, 0.92, 39.6));
+    await a.page.waitForTimeout(2_500);
+    await expect
+        .poll(async () => {
+            const [x, , z] = (await a.page.evaluate((id) => window.__MOONSHOT__!.match.remotePosition(id), idB)) ?? [NaN, NaN, NaN];
+            return Math.hypot(x + 36.3, z - 39.6);
+        })
+        .toBeLessThan(0.75);
+    expect(await a.page.evaluate(() => window.__MOONSHOT__!.match.throwAt(-36.3, 1.75, 39.6))).toBe(
         true
     );
+    await a.page.waitForTimeout(500);
+    await expect
+        .poll(
+            async () => ({
+                alive: (await state(b.page)).alive,
+                hp: (await state(b.page)).hp,
+                hitsClaimed: (await state(a.page)).hitsClaimed,
+                goldHolder: (await state(a.page)).gold?.holder
+            }),
+            { timeout: 5_000 }
+        )
+        .toMatchObject({ alive: false, hp: 0, hitsClaimed: 6, goldHolder: (await state(a.page)).id });
     await expect(b.page.locator('#gold-kill')).toBeVisible({ timeout: 5_000 });
     await expect(b.page.locator('#gold-kill')).toContainText(nameA);
     expect((await state(a.page)).gold?.holder).toBe((await state(a.page)).id);

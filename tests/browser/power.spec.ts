@@ -5,7 +5,9 @@ import { BREAKER_ROUTE } from '../../src/config/breakerRoute';
 import { GUARD_ROUTE } from '../../src/config/guardRoute';
 import { POWER_TRAVEL_MS, POWER_RESTORE_MS, POWER_RETURN_MS } from '../../src/gameplay/power';
 
-import { advance, collectErrors, enterAtSpawn, enterHome, hold, loadSimulated, position } from './support';
+import { advance, collectErrors, enterAtSpawn, enterHome, hold, loadSimulated, position, testAppUrl, testServerUrl } from './support';
+
+const API = `http://127.0.0.1:${process.env.MOONSHOT_TEST_SERVER_PORT ?? '8787'}`;
 
 test('walk through the source power-room entrance, pull once, see blackout and guard repair/return', async ({
     page
@@ -183,26 +185,50 @@ test('walk through the source power-room entrance, pull once, see blackout and g
     expect(errors).toEqual([]);
 });
 
-test('two real clients receive one authoritative outage and the same repair route', async ({ browser, page }) => {
-    const second = await browser.newPage({ baseURL: 'http://127.0.0.1:5174' });
+test('two real clients receive one authoritative outage and the same repair route', async ({ browser, page, request }) => {
+    const second = await browser.newPage({ baseURL: testAppUrl });
     const suffix = Date.now().toString(36);
     const open = async (p: Page, name: string) => {
-        await p.goto('/?server=' + encodeURIComponent('ws://127.0.0.1:8787/ws'));
+        await p.goto('/?server=' + encodeURIComponent(testServerUrl) + '&lobby=1');
         await enterHome(p);
         await p.evaluate(() => window.__MOONSHOT__!.setRendering(false));
         await p.locator('#auth-name').fill(name);
         await p.locator('#auth-password').fill('local-power-test-42');
         await p.getByRole('button', { name: '进入校园' }).click();
         await expect.poll(() => p.evaluate(() => window.__MOONSHOT__!.match.state().net)).toBe('online');
+        await expect.poll(() => p.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('lobby');
+        await p.evaluate(() => window.__MOONSHOT__!.teleport(-8.25, 0.92, 52.9));
+        await expect.poll(() => p.evaluate(() => window.__MOONSHOT__!.match.state().phase)).toBe('playing');
+        if ((await p.locator('#app-ui').getAttribute('data-screen')) === 'paused') {
+            await p.locator('#resume-button').click();
+            await expect(p.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
+        }
     };
     try {
         await open(page, 'powerA' + suffix);
         await open(second, 'powerB' + suffix);
+        const token = await page.evaluate(() => localStorage.getItem('moonshot.session'));
+        const resetClock = await request.post(`${API}/api/__test/round-clock`, {
+            data: { remainingSeconds: 600 },
+            headers: { origin: new URL(testAppUrl).origin, authorization: `Bearer ${token}` }
+        });
+        expect(resetClock.status()).toBe(200);
+        await page.bringToFront();
+        if ((await page.locator('#app-ui').getAttribute('data-screen')) === 'paused') await page.locator('#resume-button').click();
+        await expect(page.locator('#app-ui')).toHaveAttribute('data-screen', 'play');
+        await expect.poll(() => page.evaluate(() => document.pointerLockElement?.id)).toBe('application-canvas');
         const goal = BREAKER_ROUTE[BREAKER_ROUTE.length - 1];
-        await page.evaluate(([x, z]) => window.__MOONSHOT__!.teleport(x, 0.92, z), goal);
-        if ((await page.locator('#app-ui').getAttribute('data-screen')) === 'paused')
-            await page.getByRole('button', { name: '继续游戏', exact: true }).click();
-        await page.waitForTimeout(300);
+        await page.evaluate(([x, z]) => {
+            window.__MOONSHOT__!.teleport(x, 0.92, z);
+            window.__MOONSHOT__!.setLook(0, 0);
+        }, goal);
+        await expect
+            .poll(async () => {
+                const [x, , z] = await position(page);
+                return Math.hypot(x - goal[0], z - goal[1]);
+            }, { timeout: 2_000 })
+            .toBeLessThan(0.2);
+        await expect(page.locator('#interaction')).toContainText('E 拉闸');
         await page.keyboard.press('e');
         await expect.poll(() => page.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(true);
         await expect.poll(() => second.evaluate(() => window.__MOONSHOT__!.match.state().power.dark)).toBe(true);

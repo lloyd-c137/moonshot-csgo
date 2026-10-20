@@ -431,12 +431,21 @@ export class Room {
             if (!player.alive && !player.spectating && player.respawnAt > 0 && now >= player.respawnAt) {
                 player.respawnAt = 0;
                 player.hp = MAX_HP;
+                player.alive = true;
+                player.spawnedAt = now;
+                const spawn = this.nextSpawn();
+                const [x, z] = SPAWN_POINTS[spawn];
+                const pose: PlayerPose = { p: [x, 0.92, z], yaw: player.pose?.yaw ?? 0, pitch: 0 };
+                player.pose = pose;
+                player.poseAt = now;
+                player.poseRevision++;
+                player.history.reset(realNow, pose);
                 const respawnAmmo = Math.min(this.startAmmo, player.ammoCapacity);
                 if (player.ammo < respawnAmmo) {
                     player.ammo = respawnAmmo;
                     this.sendAmmo(player);
                 }
-                this.out.all({ type: 'respawn', id: player.id, spawn: this.nextSpawn() });
+                this.out.all({ type: 'respawn', id: player.id, spawn });
             }
             if (player.alive && player.hp < MAX_HP && now - player.hurtAt > HEAL_SECONDS * 1000) {
                 player.hp = MAX_HP;
@@ -1462,7 +1471,7 @@ export class Room {
         if (
             this.globalFinisher ||
             this.round?.phase !== 'playing' ||
-            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
+            ![ROUND.roundSeconds, ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
                 (seconds) => seconds * 1000 === remainingMs
             )
         )

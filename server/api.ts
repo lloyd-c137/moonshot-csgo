@@ -103,7 +103,7 @@ export async function handleApi(
         const remainingSeconds = body.remainingSeconds;
         if (
             typeof remainingSeconds !== 'number' ||
-            ![ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
+            ![ROUND.roundSeconds, ROUND.blackoutSecondsLeft, ROUND.finalSecondsLeft, ROUND.finalSecondsLeft + ROUND.ceremonySeconds].some(
                 (seconds) => seconds === remainingSeconds
             )
         )

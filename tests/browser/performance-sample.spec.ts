@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-import { enterHome } from './support';
+import { enterHome, testServerUrl } from './support';
 
 type PerformanceSample = {
     durationMs: number;
@@ -115,7 +115,7 @@ test('solo idle and fixed-dummy impact performance sample (opt-in)', async ({ pa
 test('two authenticated clients rendered performance sample (opt-in)', async ({ browser, page }, testInfo) => {
     test.skip(process.env.COMBAT_PERF !== '1', 'Run explicitly with COMBAT_PERF=1; sample is machine-specific.');
     const other = await browser.newPage();
-    const server = 'ws://127.0.0.1:8787/ws';
+    const server = testServerUrl;
     const suffix = Date.now().toString(36).slice(-6);
     const enterOnline = async (client: Page, name: string) => {
         await client.goto(`/?server=${encodeURIComponent(server)}`);

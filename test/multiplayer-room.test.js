@@ -124,6 +124,12 @@ test('three body hits eliminate (one per disc), scoring one point for the elimin
     const respawn = inbox.get('b').find((message) => message.type === 'respawn');
     assert.equal(respawn.id, 'b');
     assert.ok(respawn.spawn >= 0 && respawn.spawn < 24);
+    assert.deepEqual([room.players.get('b').alive, room.players.get('b').hp, room.players.get('b').respawnAt], [true, MAX_HP, 0]);
+    assert.ok(room.players.get('b').pose, 'the room restores an authoritative pose with the respawn event');
+    assert.ok(
+        inbox.get('a').some((message) => message.type === 'snapshot' && message.poses.b),
+        'the respawned player is visible to other players immediately'
+    );
     room.message('b', { type: 'respawned', pose: { p: [1, 0.9, 1], yaw: 0, pitch: 0 } }, 7000);
     assert.deepEqual([room.players.get('b').alive, room.players.get('b').hp], [true, MAX_HP]);
 });
